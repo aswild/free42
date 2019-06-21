@@ -1,0 +1,44 @@
+apply plugin: 'com.android.application'
+
+android {
+    signingConfigs {
+        release {
+            storeFile file('/Users/thomas/android-release-keystore')
+            storePassword 'foo'
+            keyAlias 'mykey'
+            keyPassword 'foo'
+        }
+    }
+    compileSdkVersion 28
+    defaultConfig {
+        applicationId "com.thomasokken.free42"
+        minSdkVersion 14
+        targetSdkVersion 28
+        versionCode 97
+        versionName "2.2.1b"
+    }
+    buildTypes {
+        debug {
+            ndk {
+                abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+            }
+        }
+        release {
+            ndk {
+                abiFilters 'armeabi-v7a', 'arm64-v8a'
+            }
+            minifyEnabled false
+            useProguard false
+            signingConfig signingConfigs.release
+        }
+    }
+    externalNativeBuild {
+        ndkBuild {
+            path "src/main/cpp/Android.mk"
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+}
