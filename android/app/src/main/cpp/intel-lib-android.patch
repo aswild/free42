@@ -1,0 +1,1115 @@
+diff --git a/LIBRARY/float128/dpml_exception.c b/LIBRARY/float128/dpml_exception.c
+index 30ff38b..b337d4c 100755
+--- a/LIBRARY/float128/dpml_exception.c
++++ b/LIBRARY/float128/dpml_exception.c
+@@ -131,7 +131,7 @@
+ #if !defined(DPML_SIGNAL) && !defined(MINIMAL_SILENT_MODE_EXCEPTION_HANDLER) && \
+     !defined(wnt)
+ 
+-#   include <sys/signal.h>
++#   include <signal.h>
+ #   define DPML_SIGNAL(p)	 raise(SIGFPE)
+ 
+ #else
+diff --git a/LIBRARY/makefile b/LIBRARY/makefile
+index ffaa2cf..7042f3b 100755
+--- a/LIBRARY/makefile
++++ b/LIBRARY/makefile
+@@ -109,7 +109,7 @@ _CFLAGS_CONFIG :=
+ _CFLAGS_OS     := $(call HostOsTypeSelect, -DLINUX, -DWINDOWS)
+ _CFLAGS_ARCH   := $(call HostArchTypeSelect,-Dia32,-DITANIUM -Dia64, -Defi2)
+ _CFLAGS_CC     :=
+-_CFLAGS_OPT    := 
++_CFLAGS_OPT    := -fPIC
+     
+ ifeq ($(BID_BIG_ENDIAN),true)
+     _CFLAGS_CONFIG += -DBID_BIG_ENDIAN=1
+diff --git a/LIBRARY/makefile.iml_head b/LIBRARY/makefile.iml_head
+index d135291..561a7e4 100755
+--- a/LIBRARY/makefile.iml_head
++++ b/LIBRARY/makefile.iml_head
+@@ -320,29 +320,30 @@ HOST_OS_TYPE_INDEX := $(call GetIndex,$(IML_HOST_OS_TYPE),$(OS_TYPES))
+ # Determine host architecture.
+ # ==============================================================================
+ 
+-ifeq ($(IML_HOST_OS_TYPE),LINUX)
+-    ifneq ($(IML_HOST_OS),MACH)
+-        _HOST_ARCH := $(shell uname -m)
+-    else
+-        # ======================================================================
+-        # MACH may report "i386" for uname -m command in both 32 and 64 cases
+-        # Therefore we use the following command sequence found in ICS scripts
+-        # ======================================================================
+-        __RUN_SYSCTL := $(word 2,\
+-                            $(shell sysctl -a hw | grep hw.optional.x86_64:\ 1))
+-        ifeq ($(__RUN_SYSCTL),1)
+-            _HOST_ARCH := x86_64
+-        else
+-            _HOST_ARCH := x86
+-        endif
+-    endif
+-else
+-    ifeq ($(IML_HOST_OS_TYPE),WINNT)
+-        _HOST_ARCH := $(word 1,$(PROCESSOR_IDENTIFIER))
+-    else
+-        $(error Don't know how to determine architecture for $(IML_HOST_OS))
+-    endif
+-endif
++#ifeq ($(IML_HOST_OS_TYPE),LINUX)
++#    ifneq ($(IML_HOST_OS),MACH)
++#        _HOST_ARCH := $(shell uname -m)
++#    else
++#        # ======================================================================
++#        # MACH may report "i386" for uname -m command in both 32 and 64 cases
++#        # Therefore we use the following command sequence found in ICS scripts
++#        # ======================================================================
++#        __RUN_SYSCTL := $(word 2,\
++#                            $(shell sysctl -a hw | grep hw.optional.x86_64:\ 1))
++#        ifeq ($(__RUN_SYSCTL),1)
++#            _HOST_ARCH := x86_64
++#        else
++#            _HOST_ARCH := x86
++#        endif
++#    endif
++#else
++#    ifeq ($(IML_HOST_OS_TYPE),WINNT)
++#        _HOST_ARCH := $(word 1,$(PROCESSOR_IDENTIFIER))
++#    else
++#        $(error Don't know how to determine architecture for $(IML_HOST_OS))
++#    endif
++#endif
++_HOST_ARCH := x86_64
+ 
+ ARCH_ALIAS := x86  ia64 EM64T x86_64 i686 amd64 Intel64 sun4u
+ ARCH_LIST  := IA32 IA64 EFI2  EFI2   IA32 EFI2  EFI2    EFI2
+diff --git a/LIBRARY/src/bid_functions.h b/LIBRARY/src/bid_functions.h
+index 2b3f76d..1e025b1 100755
+--- a/LIBRARY/src/bid_functions.h
++++ b/LIBRARY/src/bid_functions.h
+@@ -42,6 +42,7 @@
+ #include <ctype.h>
+ 
+ // Fix system header issue on Sun solaris and define required type by ourselves
++#define _WCHAR_T_DEFINED
+ #if !defined(_WCHAR_T) && !defined(_WCHAR_T_DEFINED) && !defined(__QNX__)
+ typedef int   wchar_t;
+ #endif
+@@ -149,8 +150,10 @@ typedef BID_UINT128 _Quad;
+ 
+ ///////////////////////////////////////////////////////
+ //  This section may move to fenv_support.h
++#include <fenv.h>
++#define _FENV_INCLUDED
+ 
+-#if !defined(__FENV_H_INCLUDED) && !defined (_FENV_H) && !defined(_FENV_INCLUDED)          /* Otherwise we already defined fexcept_t type */
++#if !defined(__FENV_H_INCLUDED) && !defined (_FENV_H) && !defined (_FENV_H_) && !defined(_FENV_INCLUDED)          /* Otherwise we already defined fexcept_t type */
+ #if defined(__ECL) || defined(__ECC)            /* Intel(R) Itanium(R) architecture */
+ /* Default 64-bit Floating Point Status Register   */
+ #if defined(__linux__)
+diff --git a/TESTS/readtest.c b/TESTS/readtest.c
+index afb77da..6f5a6db 100755
+--- a/TESTS/readtest.c
++++ b/TESTS/readtest.c
+@@ -1,3 +1,4 @@
++#ifdef FREE42_FPTEST
+ /*
+ Copyright (c) 2007-2011, Intel Corp.
+ All rights reserved.
+@@ -52,6 +53,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #if !defined _MSC_VER && !defined __INTEL_COMPILER
+ #include <fenv.h>	
+ #endif
++#include <setjmp.h>
+ 
+ #include "test_bid_conf.h"
+ #include "test_bid_functions.h"
+@@ -120,6 +122,11 @@ void save_binary_status();
+ int check_restore_binary_status();
+ int check_pollution_workaround(void);
+ 
++jmp_buf env;
++int testlogprintf(const char *fmt, ...);
++int tests_eof();
++void tests_readline(char *buf, int bufsize);
++
+ #ifndef HPUX_OS
+ #ifndef FE_UNNORMAL
+ #define FE_UNNORMAL     2
+@@ -143,8 +150,8 @@ int check_pollution_workaround(void);
+           dpd = bid; \
+           BIDECIMAL_CALL1_NORND_RESREF(bid128_to_string, str, bid); \
+ 		  } else { \
+-			 printf("Internal error - can't read number form string %s\n", op+1); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", op+1); \
++			 longjmp(env, 1); \
+ 		  } \
+       } else { \
+         BIDECIMAL_CALL1_RESARG(bid128_from_string, (bid), (op)); \
+@@ -162,8 +169,8 @@ int check_pollution_workaround(void);
+           dpd = (bid); \
+           BIDECIMAL_CALL1_NORND_RESREF(bid32_to_string, str, bid); \
+ 		  } else { \
+-			 printf("Internal error - can't read number form string %s\n", (op)+1); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)+1); \
++			 longjmp(env, 1); \
+ 		  } \
+       } else { \
+         BIDECIMAL_CALL1_RESARG(bid32_from_string, bid, op); \
+@@ -182,8 +189,8 @@ int check_pollution_workaround(void);
+           dpd = bid; \
+           BIDECIMAL_CALL1_NORND_RESREF(bid64_to_string, str, bid); \
+ 		  } else { \
+-			 printf("Internal error - can't read number form string %s\n", (op)+1); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)+1); \
++			 longjmp(env, 1); \
+ 		  } \
+       } else { \
+         BIDECIMAL_CALL1_RESARG(bid64_from_string, bid, op); \
+@@ -198,13 +205,13 @@ int check_pollution_workaround(void);
+ #define getop32i(bid, op, str) \
+       if (*op == '[') { \
+         if (!sscanf(op+1, "%08x", &bid)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)+1); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)+1); \
++			 longjmp(env, 1); \
+ 		  } \
+       } else { \
+         if (!sscanf(op, "%d", &bid)) { \
+-			 printf("Internal error - can't read number form string %s\n", op); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", op); \
++			 longjmp(env, 1); \
+ 		  } \
+       } \
+       sprintf(str, "%d", bid);
+@@ -212,13 +219,13 @@ int check_pollution_workaround(void);
+ #define getop16i(bid, op, str) \
+       if (*op == '[') { \
+         if (!sscanf(op+1, "%04x", &bid)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)+1); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)+1); \
++			 longjmp(env, 1); \
+ 		  } \
+       } else { \
+         if (!sscanf(op, "%d", &bid)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)); \
++			 longjmp(env, 1); \
+ 		  } \
+       } \
+       sprintf(str, "%d", bid);
+@@ -227,13 +234,13 @@ int check_pollution_workaround(void);
+       if (*op == '[') { \
+         if (!sscanf(op+1, "%02x", &bid)) { \
+ 		  } else { \
+-			 printf("Internal error - can't read number form string %s\n", (op)+1); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)+1); \
++			 longjmp(env, 1); \
+ 		  } \
+       } else { \
+         if (!sscanf(op, "%d", &bid)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)); \
++			 longjmp(env, 1); \
+ 		  } \
+       } \
+       sprintf(str, "%d", bid);
+@@ -241,13 +248,13 @@ int check_pollution_workaround(void);
+ #define getop32u(bid, op, str) \
+       if (*op == '[') { \
+         if (!sscanf(op+1, "%08x", &bid)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)+1); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)+1); \
++			 longjmp(env, 1); \
+ 		  } \
+       } else { \
+         if (!sscanf(op, "%u", &bid)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)); \
++			 longjmp(env, 1); \
+ 		  } \
+       } \
+       sprintf(str, "%u", bid);
+@@ -255,13 +262,13 @@ int check_pollution_workaround(void);
+ #define getop16u(bid, op, str) \
+       if (*op == '[') { \
+         if (!sscanf(op+1, "%04x", &bid)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)+1); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)+1); \
++			 longjmp(env, 1); \
+ 		  } \
+       } else { \
+         if (!sscanf(op, "%u", &bid)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)); \
++			 longjmp(env, 1); \
+ 		  } \
+       } \
+       sprintf(str, "%u", bid);
+@@ -269,13 +276,13 @@ int check_pollution_workaround(void);
+ #define getop8u(bid, op, str) \
+       if (*op == '[') { \
+         if (!sscanf(op+1, "%02x", &bid)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)+1); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)+1); \
++			 longjmp(env, 1); \
+ 		  } \
+       } else { \
+         if (!sscanf(op, "%u", &bid)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)); \
++			 longjmp(env, 1); \
+ 		  } \
+       } \
+       sprintf(str, "%u", bid);
+@@ -283,13 +290,13 @@ int check_pollution_workaround(void);
+ #define getop64i(bid, op, str) \
+       if (*op == '[') { \
+         if (!sscanf(op+1, BID_FMT_LLX16, &bid)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)+1); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)+1); \
++			 longjmp(env, 1); \
+ 		  } \
+       } else { \
+         if (!sscanf(op, BID_FMT_LLD, &bid)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)); \
++			 longjmp(env, 1); \
+ 		  } \
+       } \
+       sprintf(str, BID_FMT_LLD, bid);
+@@ -297,13 +304,13 @@ int check_pollution_workaround(void);
+ #define getop64u(bid, op, str) \
+       if (*op == '[') { \
+         if (!sscanf(op+1, BID_FMT_LLX16, &bid)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)+1); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)+1); \
++			 longjmp(env, 1); \
+ 		  } \
+       } else { \
+         if (!sscanf(op, BID_FMT_LLU, &bid)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)); \
++			 longjmp(env, 1); \
+ 		  } \
+       } \
+       sprintf(str, BID_FMT_LLU, bid);
+@@ -311,8 +318,8 @@ int check_pollution_workaround(void);
+ #define getopquad(quad1, quad2, op, str) \
+       if (*op == '[') { \
+         if (sscanf(op+1, BID_FMT_LLX16""BID_FMT_LLX16, ((BID_UINT64*)&quad1+BID_HIGH_128W), (BID_UINT64*)&quad1+BID_LOW_128W) != 2) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)+1); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)+1); \
++			 longjmp(env, 1); \
+ 		  } \
+       } \
+      strcpy(str, "unavalable");
+@@ -324,16 +331,16 @@ int tmpi; \
+ 		arg80_den = arg80_snan = 0; \
+       if (*op == '[') { \
+         if (sscanf(op+1, BID_FMT_LLX16""BID_FMT_X4, (BID_UINT64*)&ldbl1, &tmpi) != 2) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)+1); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)+1); \
++			 longjmp(env, 1); \
+ 		  } else {\
+           *((unsigned short*)((BID_UINT64*)&ldbl1+1)) = tmpi & 0xffff; \
+         } \
+       } else { \
+         double dtmp; \
+         if (!sscanf (op, "%lf", &dtmp)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)); \
++			 longjmp(env, 1); \
+ 		  } \
+ 		  ldbl1 = (BINARY80)dtmp; \
+       } \
+@@ -348,14 +355,14 @@ int tmpi; \
+ 		arg80_den = arg80_snan = 0; \
+       if (*op == '[') { \
+         if (sscanf(op+1, BID_FMT_X4""BID_FMT_LLX16, (unsigned short*)((BID_UINT64*)&ldbl1+1), (BID_UINT64*)&ldbl1) != 2) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)+1); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)+1); \
++			 longjmp(env, 1); \
+ 		  } \
+       } else { \
+         double dtmp; \
+         if (!sscanf (op, "%lf", &dtmp)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)); \
++			 longjmp(env, 1); \
+ 		  } \
+ 		  ldbl1 = (BINARY80)dtmp; \
+       } \
+@@ -370,13 +377,13 @@ int tmpi; \
+ 		arg64_den = arg64_snan = 0; \
+       if (*op == '[') { \
+         if (!sscanf(op+1, BID_FMT_LLX16, (BID_UINT64*)&dbl1)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)+1); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)+1); \
++			 longjmp(env, 1); \
+ 		  } \
+       } else { \
+         if (!sscanf (op, "%lf", &dbl1)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)); \
++			 longjmp(env, 1); \
+ 		  } \
+       } \
+ 		{ int *px = (int*)&dbl1; \
+@@ -389,13 +396,13 @@ int tmpi; \
+ 		arg32_den = arg32_snan = 0; \
+       if (*op == '[') { \
+         if (!sscanf(op+1, BID_FMT_X8, (BID_UINT32*)&flt1)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)+1); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)+1); \
++			 longjmp(env, 1); \
+ 		  } \
+       } else { \
+         if (!sscanf (op, "%f", &flt1)) { \
+-			 printf("Internal error - can't read number form string %s\n", (op)); \
+-			 exit(1); \
++			 testlogprintf("Internal error - can't read number form string %s\n", (op)); \
++			 longjmp(env, 1); \
+ 		  } \
+       } \
+ 		{ int *px = (int*)&flt1;  \
+@@ -550,7 +557,7 @@ setrounding (char *s) {
+     rnd = rnd_mode = BID_ROUNDING_TO_ZERO;
+     strcpy (rounding, roundstr[4]);
+   } else {
+-    printf
++    testlogprintf
+       ("setrounding: unknown rounding mode string!!!  Mode unchanged.\n");
+   }
+   return 1;
+@@ -741,8 +748,8 @@ check128_rel(BID_UINT128 a, BID_UINT128 b)
+ 	}
+ 
+ 	if (e1 != e2) {
+-		printf("ERROR a, b "BID_FMT_LLX16" "BID_FMT_LLX16" "BID_FMT_LLX16" "BID_FMT_LLX16"\n", a.w[BID_HIGH_128W], a.w[BID_LOW_128W], b.w[BID_HIGH_128W], b.w[BID_LOW_128W]);
+-		printf("ERROR r1, r2 "BID_FMT_LLX16" "BID_FMT_LLX16" "BID_FMT_LLX16" "BID_FMT_LLX16"\n", r1.w[BID_HIGH_128W], r1.w[BID_LOW_128W], r2.w[BID_HIGH_128W], r2.w[BID_LOW_128W]);
++		testlogprintf("ERROR a, b "BID_FMT_LLX16" "BID_FMT_LLX16" "BID_FMT_LLX16" "BID_FMT_LLX16"\n", a.w[BID_HIGH_128W], a.w[BID_LOW_128W], b.w[BID_HIGH_128W], b.w[BID_LOW_128W]);
++		testlogprintf("ERROR r1, r2 "BID_FMT_LLX16" "BID_FMT_LLX16" "BID_FMT_LLX16" "BID_FMT_LLX16"\n", r1.w[BID_HIGH_128W], r1.w[BID_LOW_128W], r2.w[BID_HIGH_128W], r2.w[BID_LOW_128W]);
+ 		return 1;
+ 	}
+ 
+@@ -751,7 +758,7 @@ check128_rel(BID_UINT128 a, BID_UINT128 b)
+         //TODO HIGH part difference 
+    	BIDECIMAL_CALL2_NORND (bid128_quiet_less, less, a, b);
+ 	if (less) ulp *= -1.0;
+-//printf("ulp %f +add %f max %f\n", ulp, ulp+ulp_add, mre_max[rnd_mode]);
++//testlogprintf("ulp %f +add %f max %f\n", ulp, ulp+ulp_add, mre_max[rnd_mode]);
+ 	if (fabs(ulp+ulp_add) > mre_max[rnd_mode]) {
+ 		return 1;
+ 	}
+@@ -808,15 +815,15 @@ check64_rel(BID_UINT64 a, BID_UINT64 b)
+ 	}
+ 
+ 	if (e1 != e2) {
+-		printf("ERROR a, b "BID_FMT_LLX16" "BID_FMT_LLX16"\n", a, b);
+-		printf("ERROR r1, r2 "BID_FMT_LLX16" "BID_FMT_LLX16"\n", r1, r2);
++		testlogprintf("ERROR a, b "BID_FMT_LLX16" "BID_FMT_LLX16"\n", a, b);
++		testlogprintf("ERROR r1, r2 "BID_FMT_LLX16" "BID_FMT_LLX16"\n", r1, r2);
+ 		return 1;
+ 	}
+ 
+ 	ulp = m1 > m2 ? m1 - m2 : m2 - m1;
+    	BIDECIMAL_CALL2_NORND (bid64_quiet_less, less, a, b);
+ 	if (less) ulp *= -1.0;
+-//printf("ulp %f +add %f max %f\n", ulp, ulp+ulp_add, mre_max[rnd_mode]);
++//testlogprintf("ulp %f +add %f max %f\n", ulp, ulp+ulp_add, mre_max[rnd_mode]);
+ 	if (fabs(ulp+ulp_add) > mre_max[rnd_mode]) {
+ 		return 1;
+ 	}
+@@ -876,15 +883,15 @@ check32_rel(BID_UINT32 a32, BID_UINT32 b32)
+ 	}
+ 
+ 	if (e1 != e2) {
+-		printf("ERROR a, b %08x %08x\n", a32, b32);
+-		printf("ERROR r1, r2 %08x %08x\n", r1, r2);
++		testlogprintf("ERROR a, b %08x %08x\n", a32, b32);
++		testlogprintf("ERROR r1, r2 %08x %08x\n", r1, r2);
+ 		return 1;
+ 	}
+ 
+ 	ulp = m1 > m2 ? m1 - m2 : m2 - m1;
+    	BIDECIMAL_CALL2_NORND (bid32_quiet_less, less, a32, b32);
+ 	if (less) ulp *= -1.0;
+-//printf("ulp %f +add %f max %f\n", ulp, ulp+ulp_add, mre_max[rnd_mode]);
++//testlogprintf("ulp %f +add %f max %f\n", ulp, ulp+ulp_add, mre_max[rnd_mode]);
+ 	if (fabs(ulp+ulp_add) > mre_max[rnd_mode]) {
+ 		return 1;
+ 	}
+@@ -960,7 +967,7 @@ get_ops (void) {
+   case OP_NONE:
+     break;
+   default:
+-    printf ("Error: getops unexpected operand 1 type, %d\n", op1type);
++    testlogprintf ("Error: getops unexpected operand 1 type, %d\n", op1type);
+   }
+ 
+   switch (op2type) {
+@@ -993,7 +1000,7 @@ get_ops (void) {
+   case OP_NONE:
+     break;
+   default:
+-    printf ("Error: getops unexpected operand 2 type, %d\n", op2type);
++    testlogprintf ("Error: getops unexpected operand 2 type, %d\n", op2type);
+   }
+ 
+   switch (op3type) {
+@@ -1012,8 +1019,8 @@ get_ops (void) {
+   case OP_NONE:
+     break;
+   default:
+-    printf ("Error: getops unexpected operand 3 type, %d\n", op3type);
+-    exit (-1);
++    testlogprintf ("Error: getops unexpected operand 3 type, %d\n", op3type);
++    longjmp (env, -1);
+   }
+   rnd = rnd_mode = save_rnd;
+ 
+@@ -1100,7 +1107,7 @@ get_test (void) {
+   case OP_NONE:
+     break;
+   default:
+-    printf ("Error: get_test unexpected result type, %d\n", restype);
++    testlogprintf ("Error: get_test unexpected result type, %d\n", restype);
+   }
+ }
+ 
+@@ -1111,86 +1118,86 @@ print_mismatch (enum _CMPTYPE cmp) {
+ 
+   if (answer_opt) {
+     if (*op3)
+-      printf ("test%d %s %s %s %s ", tests, func, op1, op2, op3);
++      testlogprintf ("test%d %s %s %s %s ", tests, func, op1, op2, op3);
+     else if (*op2)
+-      printf ("test%d %s %s %s ", tests, func, op1, op2);
++      testlogprintf ("test%d %s %s %s ", tests, func, op1, op2);
+     else
+-      printf ("test%d %s %s ", tests, func, op1);
++      testlogprintf ("test%d %s %s ", tests, func, op1);
+     switch (restype) {
+ 
+     case OP_STRING:
+-printf("STRING result is not implemented\n");
++testlogprintf("STRING result is not implemented\n");
+ 		break;	
+     case OP_DEC128:
+     case OP_DPD128:
+-      printf ("[" BID_FMT_LLX16 "" BID_FMT_LLX16 "] %02x\n", Q.w[BID_HIGH_128W],
++      testlogprintf ("[" BID_FMT_LLX16 "" BID_FMT_LLX16 "] %02x\n", Q.w[BID_HIGH_128W],
+ 	      Q.w[BID_LOW_128W], *pfpsf);
+       break;
+ 
+     case OP_DEC64:
+     case OP_DPD64:
+-      printf ("[" BID_FMT_LLX16 "] %02x\n", Q64, *pfpsf);
++      testlogprintf ("[" BID_FMT_LLX16 "] %02x\n", Q64, *pfpsf);
+       break;
+ 
+     case OP_DEC32:
+     case OP_DPD32:
+-      printf ("[" BID_FMT_X8 "] %02x\n", Q32, *pfpsf);
++      testlogprintf ("[" BID_FMT_X8 "] %02x\n", Q32, *pfpsf);
+       break;
+ 
+     case OP_INT8:
+     case OP_INT16:
+     case OP_INT32:
+-      printf ("%d %02x\n", i2, *pfpsf);
++      testlogprintf ("%d %02x\n", i2, *pfpsf);
+       break;
+ 
+     case OP_BID_UINT8:
+     case OP_BID_UINT16:
+     case OP_BID_UINT32:
+-      printf ("%u %02x\n", i2, *pfpsf);
++      testlogprintf ("%u %02x\n", i2, *pfpsf);
+       break;
+ 
+     case OP_INT64:
+-      printf (BID_FMT_LLD16 " %02x\n", Qi64, *pfpsf);
++      testlogprintf (BID_FMT_LLD16 " %02x\n", Qi64, *pfpsf);
+       break;
+ 
+     case OP_LINT:
+       if (li_size_run == 64)	
+-	      printf (BID_FMT_LLD16 " %02x\n", *(BID_SINT64*)&li2, *pfpsf);
++	      testlogprintf (BID_FMT_LLD16 " %02x\n", *(BID_SINT64*)&li2, *pfpsf);
+       else
+-	      printf ("%d %02x\n", *(BID_SINT32*)&li2, *pfpsf);
++	      testlogprintf ("%d %02x\n", *(BID_SINT32*)&li2, *pfpsf);
+       break;
+ 
+     case OP_BID_UINT64:
+-      printf (BID_FMT_LLU16 " %02x\n", Qi64, *pfpsf);
++      testlogprintf (BID_FMT_LLU16 " %02x\n", Qi64, *pfpsf);
+       break;
+ 
+     case OP_BIN128:
+-      printf ("[" BID_FMT_LLX16 " " BID_FMT_LLX16 "] %02x\n",
++      testlogprintf ("[" BID_FMT_LLX16 " " BID_FMT_LLX16 "] %02x\n",
+ 	      *((BID_UINT64 *) & Rquad + BID_HIGH_128W),
+ 	      *((BID_UINT64 *) & Rquad + BID_LOW_128W), *pfpsf);
+       break;
+ 
+     case OP_BIN80:
+ #if BID_BIG_ENDIAN
+-      printf ("[" BID_FMT_LLX16 "" BID_FMT_X4 "] %02x\n", *((BID_UINT64 *) & Rldbl),
++      testlogprintf ("[" BID_FMT_LLX16 "" BID_FMT_X4 "] %02x\n", *((BID_UINT64 *) & Rldbl),
+ 	      ((BID_UINT32) (*((BID_UINT64 *) & Rldbl + 1))) & 0xffff, *pfpsf);
+ #else
+-      printf ("[" BID_FMT_X4 "" BID_FMT_LLX16 "] %02x\n",
++      testlogprintf ("[" BID_FMT_X4 "" BID_FMT_LLX16 "] %02x\n",
+ 	      ((BID_UINT32) (*((BID_UINT64 *) & Rldbl + 1))) & 0xffff,
+ 	      *((BID_UINT64 *) & Rldbl), *pfpsf);
+ #endif
+       break;
+ 
+     case OP_BIN64:
+-      printf ("[" BID_FMT_LLX16 "] %02x\n", *((BID_UINT64 *) & Rdbl), *pfpsf);
++      testlogprintf ("[" BID_FMT_LLX16 "] %02x\n", *((BID_UINT64 *) & Rdbl), *pfpsf);
+       break;
+ 
+     case OP_BIN32:
+-      printf ("[" BID_FMT_X8 "] %02x\n", *((BID_UINT32 *) & Rflt), *pfpsf);
++      testlogprintf ("[" BID_FMT_X8 "] %02x\n", *((BID_UINT32 *) & Rflt), *pfpsf);
+       break;
+ 
+     default:
+-      printf ("print_mismatch: unknown result type %d\n", restype);
++      testlogprintf ("print_mismatch: unknown result type %d\n", restype);
+     }
+     return;
+   }
+@@ -1199,12 +1206,12 @@ printf("STRING result is not implemented\n");
+   switch (restype) {
+   case OP_DEC128:
+   case OP_DPD128:
+-    printf ("// BID result: " BID_FMT_LLX16 "" BID_FMT_LLX16
++    testlogprintf ("// BID result: " BID_FMT_LLX16 "" BID_FMT_LLX16
+ 	    ", Expected results: " BID_FMT_LLX16 "" BID_FMT_LLX16 "\n",
+ 	    Q.w[BID_HIGH_128W], Q.w[BID_LOW_128W], R.w[BID_HIGH_128W],
+ 	    R.w[BID_LOW_128W]);
+ 	if (!strcmp(func, "bid128_modf")) {
+-	    printf ("// BID second result: " BID_FMT_LLX16 "" BID_FMT_LLX16
++	    testlogprintf ("// BID second result: " BID_FMT_LLX16 "" BID_FMT_LLX16
+ 		    ", Expected results: " BID_FMT_LLX16 "" BID_FMT_LLX16 "\n",
+ 	    	B.w[BID_HIGH_128W], B.w[BID_LOW_128W], R_1.w[BID_HIGH_128W],
+ 		    R_1.w[BID_LOW_128W]);
+@@ -1212,49 +1219,49 @@ printf("STRING result is not implemented\n");
+     break;
+   case OP_DEC64:
+   case OP_DPD64:
+-    printf ("// BID result: " BID_FMT_LLX16 ", Expected result: " BID_FMT_LLX16
++    testlogprintf ("// BID result: " BID_FMT_LLX16 ", Expected result: " BID_FMT_LLX16
+ 	    "\n", Q64, R64);
+ 	if (!strcmp(func, "bid64_modf")) {
+-	    printf ("// BID second result: " BID_FMT_LLX16 ", Expected result: " BID_FMT_LLX16
++	    testlogprintf ("// BID second result: " BID_FMT_LLX16 ", Expected result: " BID_FMT_LLX16
+ 		    "\n", B64, R64_1);
+ 	}
+     break;
+   case OP_DEC32:
+   case OP_DPD32:
+-    printf ("// BID result: " BID_FMT_X8 ", Expected result: " BID_FMT_X8 "\n",
++    testlogprintf ("// BID result: " BID_FMT_X8 ", Expected result: " BID_FMT_X8 "\n",
+ 	    Q32, R32);
+ 	if (!strcmp(func, "bid32_modf")) {
+-	    printf ("// BID second result: " BID_FMT_X8 ", Expected result: " BID_FMT_X8 "\n",
++	    testlogprintf ("// BID second result: " BID_FMT_X8 ", Expected result: " BID_FMT_X8 "\n",
+ 		    B32, R32_1);
+ 	}
+     break;
+   case OP_INT8:
+   case OP_INT16:
+   case OP_INT32:
+-    printf ("// BID result: %d, Expected result: %d\n", i2, i1);
++    testlogprintf ("// BID result: %d, Expected result: %d\n", i2, i1);
+     break;
+   case OP_BID_UINT8:
+   case OP_BID_UINT16:
+   case OP_BID_UINT32:
+-    printf ("// BID result: %u, Expected result: %u\n", i2, i1);
++    testlogprintf ("// BID result: %u, Expected result: %u\n", i2, i1);
+     break;
+   case OP_INT64:
+-    printf ("// BID result: " BID_FMT_LLD16 ", Expected result: " BID_FMT_LLD16
++    testlogprintf ("// BID result: " BID_FMT_LLD16 ", Expected result: " BID_FMT_LLD16
+ 	    "\n", Qi64, qi64);
+     break;
+   case OP_LINT:
+       if (li_size_run == 64)	
+-	    printf ("// BID result: " BID_FMT_LLD16 ", Expected result: " BID_FMT_LLD16
++	    testlogprintf ("// BID result: " BID_FMT_LLD16 ", Expected result: " BID_FMT_LLD16
+ 	    "\n",*(BID_SINT64*)&li2, *(BID_SINT64*)&li1);
+       else
+-	    printf ("// BID result: %d, Expected result: %d \n",*(BID_SINT32*)&li2, *(BID_SINT32*)&li1);
++	    testlogprintf ("// BID result: %d, Expected result: %d \n",*(BID_SINT32*)&li2, *(BID_SINT32*)&li1);
+       break;
+   case OP_BID_UINT64:
+-    printf ("// BID result: " BID_FMT_LLU16 ", Expected result: " BID_FMT_LLU16
++    testlogprintf ("// BID result: " BID_FMT_LLU16 ", Expected result: " BID_FMT_LLU16
+ 	    "\n", Qi64, qi64);
+     break;
+   case OP_BIN128:
+-    printf ("// BID result: " BID_FMT_LLX16 " " BID_FMT_LLX16
++    testlogprintf ("// BID result: " BID_FMT_LLX16 " " BID_FMT_LLX16
+ 	    ", Expected result: " BID_FMT_LLX16 " " BID_FMT_LLX16 "\n",
+ 	    *((BID_UINT64 *) & Rquad + BID_HIGH_128W),
+ 	    *((BID_UINT64 *) & Rquad + BID_LOW_128W),
+@@ -1263,13 +1270,13 @@ printf("STRING result is not implemented\n");
+     break;
+   case OP_BIN80:
+ #if BID_BIG_ENDIAN
+-    printf ("// BID result: " BID_FMT_LLX16 "" BID_FMT_X4 ", Expected result: "
++    testlogprintf ("// BID result: " BID_FMT_LLX16 "" BID_FMT_X4 ", Expected result: "
+ 	    BID_FMT_LLX16 "" BID_FMT_X4 " \n", *((BID_UINT64 *) & Rldbl + 0),
+ 	    ((BID_UINT32) (*((BID_UINT64 *) & Rldbl + 1))) & 0xffff,
+ 	    *((BID_UINT64 *) & Rtldbl + 0),
+ 	    ((BID_UINT32) (*((BID_UINT64 *) & Rtldbl + 1))) & 0xffff);
+ #else
+-    printf ("// BID result: " BID_FMT_X4 "" BID_FMT_LLX16 ", Expected result: "
++    testlogprintf ("// BID result: " BID_FMT_X4 "" BID_FMT_LLX16 ", Expected result: "
+ 	    BID_FMT_X4 "" BID_FMT_LLX16 " \n",
+ 	    ((BID_UINT32) (*((BID_UINT64 *) & Rldbl + 1))) & 0xffff,
+ 	    *((BID_UINT64 *) & Rldbl + 0),
+@@ -1278,44 +1285,44 @@ printf("STRING result is not implemented\n");
+ #endif
+     break;
+   case OP_BIN64:
+-    printf ("// BID result: " BID_FMT_LLX16 ", Expected result: " BID_FMT_LLX16
++    testlogprintf ("// BID result: " BID_FMT_LLX16 ", Expected result: " BID_FMT_LLX16
+ 	    "\n", *((BID_UINT64 *) & Rdbl), *((BID_UINT64 *) & Rtdbl));
+     break;
+   case OP_BIN32:
+-    printf ("// BID result: " BID_FMT_X8 ", Expected result: " BID_FMT_X8 "\n",
++    testlogprintf ("// BID result: " BID_FMT_X8 ", Expected result: " BID_FMT_X8 "\n",
+ 	    *((BID_UINT32 *) & Rflt), *((BID_UINT32 *) & Rtflt));
+     break;
+   default:
+-    printf ("print_mismatch: unknown result type %d\n", restype);
+-    exit (-1);
++    testlogprintf ("print_mismatch: unknown result type %d\n", restype);
++    longjmp (env, -1);
+   }
+ 
+   if (!strcmp(func, "bid32_frexp") || !strcmp(func, "bid64_frexp") || !strcmp(func, "bid128_frexp") ) {
+-    printf ("// BID second result: %d, Expected result: %d\n", i2, i1);
++    testlogprintf ("// BID second result: %d, Expected result: %d\n", i2, i1);
+   }
+ 	
+   // Print statuses
+-  printf ("// BID status : %03x, Expected status: %03x (PUOZDI Bits)\n",
++  testlogprintf ("// BID status : %03x, Expected status: %03x (PUOZDI Bits)\n",
+ 	  *pfpsf, expected_status);
+ 
+   switch (restype) {
+   case OP_DEC128:
+     BIDECIMAL_CALL1_NORND_RESREF (bid128_to_string, str1, Q);
+     BIDECIMAL_CALL1_NORND_RESREF (bid128_to_string, str2, R);
+-    printf ("// Result BID128 String: %s\n", str1);
+-    printf ("// Expected BID128 String: %s\n", str2);
++    testlogprintf ("// Result BID128 String: %s\n", str1);
++    testlogprintf ("// Expected BID128 String: %s\n", str2);
+     break;
+   case OP_DEC64:
+     BIDECIMAL_CALL1_NORND_RESREF (bid64_to_string, str1, Q64);
+     BIDECIMAL_CALL1_NORND_RESREF (bid64_to_string, str2, R64);
+-    printf ("// Result BID64 String: %s\n", str1);
+-    printf ("// Expected BID64 String: %s\n", str2);
++    testlogprintf ("// Result BID64 String: %s\n", str1);
++    testlogprintf ("// Expected BID64 String: %s\n", str2);
+     break;
+   case OP_DEC32:
+     BIDECIMAL_CALL1_NORND_RESREF (bid32_to_string, str1, Q32);
+     BIDECIMAL_CALL1_NORND_RESREF (bid32_to_string, str2, R32);
+-    printf ("// Result BID32 String: %s\n", str1);
+-    printf ("// Expected BID32 String: %s\n", str2);
++    testlogprintf ("// Result BID32 String: %s\n", str1);
++    testlogprintf ("// Expected BID32 String: %s\n", str2);
+     break;
+   case OP_DPD128:
+     {
+@@ -1324,8 +1331,8 @@ printf("STRING result is not implemented\n");
+       BIDECIMAL_CALL1_NORND_NOSTAT (bid_dpd_to_bid128, Rbid, R);
+       BIDECIMAL_CALL1_NORND_RESREF (bid128_to_string, str2, Qbid);
+       BIDECIMAL_CALL1_NORND_RESREF (bid128_to_string, str2, Rbid);
+-      printf ("// Result BID128 String: %s\n", str1);
+-      printf ("// Expected BID128 String: %s\n", str2);
++      testlogprintf ("// Result BID128 String: %s\n", str1);
++      testlogprintf ("// Expected BID128 String: %s\n", str2);
+     }
+     break;
+   case OP_DPD64:
+@@ -1335,8 +1342,8 @@ printf("STRING result is not implemented\n");
+       BIDECIMAL_CALL1_NORND_NOSTAT (bid_dpd_to_bid64, Rbid, R64);
+       BIDECIMAL_CALL1_NORND_RESREF (bid64_to_string, str1, Qbid);
+       BIDECIMAL_CALL1_NORND_RESREF (bid64_to_string, str2, Rbid);
+-      printf ("// Result BID64 String: %s\n", str1);
+-      printf ("// Expected BID64 String: %s\n", str2);
++      testlogprintf ("// Result BID64 String: %s\n", str1);
++      testlogprintf ("// Expected BID64 String: %s\n", str2);
+     }
+     break;
+   case OP_DPD32:
+@@ -1346,8 +1353,8 @@ printf("STRING result is not implemented\n");
+       BIDECIMAL_CALL1_NORND_NOSTAT (bid_dpd_to_bid32, Rbid, R32);
+       BIDECIMAL_CALL1_NORND_RESREF (bid32_to_string, str1, Qbid);
+       BIDECIMAL_CALL1_NORND_RESREF (bid32_to_string, str2, Rbid);
+-      printf ("// Result BID32 String: %s\n", str1);
+-      printf ("// Expected BID32 String: %s\n", str2);
++      testlogprintf ("// Result BID32 String: %s\n", str1);
++      testlogprintf ("// Expected BID32 String: %s\n", str2);
+     }
+     break;
+   case OP_INT8:
+@@ -1366,39 +1373,39 @@ printf("STRING result is not implemented\n");
+ 
+     strcpy (str1, "unavailable");
+     strcpy (str2, "unavailable");
+-    printf ("// BID128 quad res: %s\n", str1);
+-    printf ("// Expected quad res : %s\n", str2);
++    testlogprintf ("// BID128 quad res: %s\n", str1);
++    testlogprintf ("// Expected quad res : %s\n", str2);
+     break;
+   case OP_BIN80:
+     sprintf (str1, "%.17le", (double) Rldbl);
+     sprintf (str2, "%.17le", (double) Rtldbl);
+-    printf ("// BID80 double res (cast to double): %s\n", str1);
+-    printf ("// Expected double res (cast to double): %s\n", str2);
++    testlogprintf ("// BID80 double res (cast to double): %s\n", str1);
++    testlogprintf ("// Expected double res (cast to double): %s\n", str2);
+     break;
+   case OP_BIN64:
+     sprintf (str1, "%.17le", Rdbl);
+     sprintf (str2, "%.17le", Rtdbl);
+-    printf ("// BID64 double res: %s\n", str1);
+-    printf ("// Expected double res : %s\n", str2);
++    testlogprintf ("// BID64 double res: %s\n", str1);
++    testlogprintf ("// Expected double res : %s\n", str2);
+     break;
+   case OP_BIN32:
+     sprintf (str1, "%.9e", Rflt);
+     sprintf (str2, "%.9e", Rtflt);
+-    printf ("// BID32 double res: %s\n", str1);
+-    printf ("// decimal32 double res : %s\n", str2);
++    testlogprintf ("// BID32 double res: %s\n", str1);
++    testlogprintf ("// decimal32 double res : %s\n", str2);
+     break;
+   default:
+-    printf ("print_mismatch unknown result type %d\n", restype);
+-    exit (-1);
++    testlogprintf ("print_mismatch unknown result type %d\n", restype);
++    longjmp (env, -1);
+   }
+ 
+-  printf ("// Input operand strings: %s %s %s\n", istr1, istr2, istr3);
++  testlogprintf ("// Input operand strings: %s %s %s\n", istr1, istr2, istr3);
+   fail_res++;
+   sprintf (line, "%s %s %s %s\n", func, op1, op2, op3);
+-    printf ("// Ulp error: %e\n", ulp+ulp_add);
+-	printf ("// Full input string: %s\n", full_line);
+-    printf ("// Input string number: %d\n", line_counter);
+-  printf ("// FAILED(%s)\n\n", rounding);
++    testlogprintf ("// Ulp error: %e\n", ulp+ulp_add);
++	testlogprintf ("// Full input string: %s\n", full_line);
++    testlogprintf ("// Input string number: %d\n", line_counter);
++  testlogprintf ("// FAILED(%s)\n\n", rounding);
+ }
+ 
+ void
+@@ -1406,15 +1413,15 @@ check_results (enum _CMPTYPE cmp) {
+   char *p;
+   tests++;
+ 	
+-//printf("frexp i1 i2 %d %d \n", i1, i2);
++//testlogprintf("frexp i1 i2 %d %d \n", i1, i2);
+ 
+-//printf("arg dbl %08X \n", *((int*)&Adbl+BID_HIGH_128W));
++//testlogprintf("arg dbl %08X \n", *((int*)&Adbl+BID_HIGH_128W));
+   if (p = strstr (func, "binary64_to")) {
+-//printf("check fo binary snan\n");
++//testlogprintf("check fo binary snan\n");
+ 		if (SNaN_passed_incorrectly64 && ((*((int*)&Adbl+BID_HIGH_128W) & 0x7ff80000) == 0x7ff00000) &&
+ 		((*((int*)&Adbl+BID_HIGH_128W) & 0x0007ffff) || (*((int*)&Adbl+BID_LOW_128W) & 0xffffffff))
+ 		) {
+-//printf("set invalid for 64\n");
++//testlogprintf("set invalid for 64\n");
+ 			*pfpsf |= BID_INVALID_EXCEPTION;
+ 		}
+   }
+@@ -1422,17 +1429,17 @@ check_results (enum _CMPTYPE cmp) {
+ 		if (SNaN_passed_incorrectly32 && ((*((int*)&Aflt) & 0x7fc00000) == 0x7f800000) &&
+ 		((*((int*)&Aflt) & 0x003fffff))
+ 		) {
+-//printf("set invalid for 32\n");
++//testlogprintf("set invalid for 32\n");
+ 			*pfpsf |= BID_INVALID_EXCEPTION;
+ 		}
+   }
+   if (p = strstr (func, "binary80_to")) {
+-//printf("check fo binary snan\n");
++//testlogprintf("check fo binary snan\n");
+ 		if (SNaN_passed_incorrectly80 && ((*((int*)&Aldbl+2) & 0x7fff) == 0x7fff) &&
+ 		((*((int*)&Aldbl+BID_HIGH_128W) & 0xc0000000) == 0x80000000) &&
+ 		((*((int*)&Aldbl+BID_HIGH_128W) & 0x7fffffff) || (*((int*)&Aldbl+BID_LOW_128W) & 0xffffffff))
+ 		) {
+-//printf("set invalid for 80\n");
++//testlogprintf("set invalid for 80\n");
+ 			*pfpsf |= BID_INVALID_EXCEPTION;
+ 		}
+   }
+@@ -1562,10 +1569,10 @@ check_results (enum _CMPTYPE cmp) {
+ 	|| R.w[BID_HIGH_128W] != Q.w[BID_HIGH_128W])
+       print_mismatch (cmp);
+   } else {
+-    printf
++    testlogprintf
+       ("Unknown combination of result type (%d) and compare type (%d)\n",
+        restype, cmp);
+-    // exit (-1);
++    // longjmp (env, -1);
+   }
+ }
+ 
+@@ -1590,10 +1597,10 @@ status_compare (char *stat1, char *stat2) {
+     while (*p && *++p != ' ');
+     if (*p == ' ') {
+       *p = 0;
+-      // printf("Found 1: %s\n", wp1[wp1n-1]);
++      // testlogprintf("Found 1: %s\n", wp1[wp1n-1]);
+       continue;
+     } else {
+-      // printf("Found 1: %s\n", wp1[wp1n-1]);
++      // testlogprintf("Found 1: %s\n", wp1[wp1n-1]);
+       break;
+     }
+   }
+@@ -1602,10 +1609,10 @@ status_compare (char *stat1, char *stat2) {
+     while (*p && *++p != ' ');
+     if (*p == ' ') {
+       *p = 0;
+-      // printf("Found 2: %s\n", wp2[wp2n-1]);
++      // testlogprintf("Found 2: %s\n", wp2[wp2n-1]);
+       continue;
+     } else {
+-      // printf("Found 2: %s\n", wp2[wp2n-1]);
++      // testlogprintf("Found 2: %s\n", wp2[wp2n-1]);
+       break;
+     }
+   }
+@@ -1621,7 +1628,7 @@ status_compare (char *stat1, char *stat2) {
+ 	 (int (__cdecl *) (const void *, const void *)) st_compare);
+ #endif
+   for (i = 0; i < wp1n; i++) {
+-    // printf("Comparing %s and %s\n", wp1[i], wp2[i]);
++    // testlogprintf("Comparing %s and %s\n", wp1[i], wp2[i]);
+     if (strcmp (wp1[i], wp2[i]))
+       return 1;
+   }
+@@ -1707,12 +1714,16 @@ void check_den_passing80(long double x)
+ 
+ 
+ int
+-main (int argc, char *argv[]) {
++readtest_main (int argc, char *argv[]) {
+   int ch, digit_optind = 0;
+   int skip_test;
+   char **arg;
+   char *end_of_args = (char*)-1;
+ 
++  int retval = setjmp(env);
++  if (retval != 0)
++      return retval;
++
+   strcpy (rounding, "half_even");
+ 
+   if (sizeof(long int) == 8) {
+@@ -1732,8 +1743,8 @@ main (int argc, char *argv[]) {
+     if (strcmp (*arg, "-ua") == 0)
+       underflow_after_opt = 1;
+     if (strcmp (*arg, "-h") == 0) {
+-      printf ("Usage: runtests [-d]\n");
+-      exit (0);
++      testlogprintf ("Usage: runtests [-d]\n");
++      return (0);
+     }
+     if (strcmp (*arg, "-ulp") == 0) {
+         arg++;
+@@ -1757,9 +1768,9 @@ main (int argc, char *argv[]) {
+   }
+ 
+   if (underflow_before_opt && underflow_after_opt) {
+-    printf("Both underflow before and after rounding checking mode set, please specify just one.\n");	
+-    printf ("Usage: runtests [-d]\n");
+-    exit (0);
++    testlogprintf("Both underflow before and after rounding checking mode set, please specify just one.\n");	
++    testlogprintf ("Usage: runtests [-d]\n");
++    return (0);
+   } else if (!underflow_before_opt && !underflow_after_opt) underflow_before_opt = 1;
+ 
+   rnd_mode = 0;
+@@ -1804,15 +1815,15 @@ main (int argc, char *argv[]) {
+   check_den_passing80(snan_check80);
+   feclearexcept (FE_ALL_EXCEPT);
+ #endif
+-//printf("snan32 passed incorr %d\n", SNaN_passed_incorrectly32);
+-//printf("snan64 passed incorr %d\n", SNaN_passed_incorrectly64);
+-//printf("snan80 passed incorr %d\n", SNaN_passed_incorrectly80);
+-//printf("den32 passed incorr %d\n", Den_passed_incorrectly32);
+-//printf("den64 passed incorr %d\n", Den_passed_incorrectly64);
+-//printf("den80 passed incorr %d\n", Den_passed_incorrectly80);
++//testlogprintf("snan32 passed incorr %d\n", SNaN_passed_incorrectly32);
++//testlogprintf("snan64 passed incorr %d\n", SNaN_passed_incorrectly64);
++//testlogprintf("snan80 passed incorr %d\n", SNaN_passed_incorrectly80);
++//testlogprintf("den32 passed incorr %d\n", Den_passed_incorrectly32);
++//testlogprintf("den64 passed incorr %d\n", Den_passed_incorrectly64);
++//testlogprintf("den80 passed incorr %d\n", Den_passed_incorrectly80);
+ 
+   line_counter=0;
+-  while (!feof (stdin)) {
++  while (!tests_eof()) {
+     int st;
+ 
+     op1type = OP_NONE;
+@@ -1820,14 +1831,14 @@ main (int argc, char *argv[]) {
+     op3type = OP_NONE;
+     restype = OP_NONE;
+ 
+-    fgets (line, 1023, stdin);
++    tests_readline(line, 1023);
+     line_counter++;
+     strRemove0D0A(line);
+ 	strcpy(full_line, line);
+-    if (feof (stdin))
++    if (tests_eof())
+       break;
+ 
+-    // printf("Read line: %s", line);
++    // testlogprintf("Read line: %s", line);
+     if (p = strstr (line, "--")) *p = 0; // Remove comment
+     strRemoveTrailingSpaces(line);
+ 
+@@ -1874,7 +1885,7 @@ main (int argc, char *argv[]) {
+         li_size_test=li_size_run;
+     }
+ 
+-//printf();
++//testlogprintf();
+     if (end_of_args != (char*)-1) {	
+ 	    *end_of_args = 0;	
+    	 strRemoveTrailingSpaces(line);
+@@ -1884,20 +1895,20 @@ main (int argc, char *argv[]) {
+     args_set = 0;
+     if (sscanf (line, "%s %d %s %s %s %s %x", funcstr, &rnd_mode,
+ 	     op1, op2, op3, res, &expected_status) == 7) {
+-//printf("read8 %d\n", rnd_mode);
++//testlogprintf("read8 %d\n", rnd_mode);
+         args_set = 1;
+     }
+     if (!args_set) {
+         if (sscanf (line, "%s %d %s %s %s %x", funcstr, &rnd_mode,
+ 	         op1, op2, res, &expected_status) == 6) {
+-//printf("read7 %d\n", rnd_mode);
++//testlogprintf("read7 %d\n", rnd_mode);
+             args_set = 1;
+         }
+ 	 }
+     if (!args_set) {
+         if (sscanf(line, "%s %d %s %s %x", funcstr, &rnd_mode, op1,
+ 	         res, &expected_status) == 5) {
+-//printf("read6 %d\n", rnd_mode);
++//testlogprintf("read6 %d\n", rnd_mode);
+             args_set = 1;
+         }
+ 	 }
+@@ -1906,7 +1917,7 @@ main (int argc, char *argv[]) {
+      pollution_workaround = check_pollution_workaround();
+ 
+ 
+-//printf("str %s op1 %s, skip %d\n", line, op1, skip_test);
++//testlogprintf("str %s op1 %s, skip %d\n", line, op1, skip_test);
+ 	 if (args_set && !skip_test) {
+         rnd = rnd_mode;
+ 	    // set ulp thresholds for transcendentals
+@@ -1938,11 +1949,11 @@ main (int argc, char *argv[]) {
+ #include "readtest.h"
+ 
+     } else {
+-      if (!skip_test) printf ("SKIPPED (line %d): %s\n", line_counter,line);
++      if (!skip_test) testlogprintf ("SKIPPED (line %d): %s\n", line_counter,line);
+     }
+   }
+ 
+-  printf ("Total tests: %d, failed result: %d, failed status: %d\n",
++  testlogprintf ("Total tests: %d, failed result: %d, failed status: %d\n",
+ 	  tests, fail_res, fail_status);
+   return 0;
+ 
+@@ -1975,7 +1986,7 @@ void save_binary_status()
+ int check_restore_binary_status()
+ {
+ 	char *p;
+-//printf("snan arg, passed incor %d %d\n", arg64_snan, SNaN_passed_incorrectly64);
++//testlogprintf("snan arg, passed incor %d %d\n", arg64_snan, SNaN_passed_incorrectly64);
+ 	if (check_binary_flags_opt || debug_opt) {
+ #if !defined _MSC_VER && !defined __INTEL_COMPILER
+ 		fegetexceptflag(&test_binary_flags, FE_ALL_EXCEPT);
+@@ -1996,8 +2007,8 @@ int check_restore_binary_status()
+ 		saved_binary_flags |= (test_binary_flags & FE_UNNORMAL);
+ // !!!! Workaround, do not favor non-standard denormal flag for now
+ 		if (test_binary_flags != saved_binary_flags && !pollution_workaround ) {
+-			printf("// ERROR: BINARY Exception flags polluted!\n");
+-			printf("//        Saved value %X, value after BID call %X\n", *(int*)&saved_binary_flags, *(int*)&test_binary_flags );
++			testlogprintf("// ERROR: BINARY Exception flags polluted!\n");
++			testlogprintf("//        Saved value %X, value after BID call %X\n", *(int*)&saved_binary_flags, *(int*)&test_binary_flags );
+ 			return 1;
+ 		}
+ #endif
+@@ -2026,3 +2037,4 @@ int check_pollution_workaround(void)
+ 	
+ }
+ 
++#endif /* FREE42_FPTEST */
+diff --git a/TESTS/test_bid_functions.h b/TESTS/test_bid_functions.h
+index 32fe7b8..2990360 100755
+--- a/TESTS/test_bid_functions.h
++++ b/TESTS/test_bid_functions.h
+@@ -156,7 +156,7 @@ typedef BID_UINT128 _Quad;
+ ///////////////////////////////////////////////////////
+ //  This section may move to fenv_support.h
+ 
+-#if !defined(__FENV_H_INCLUDED) && !defined (_FENV_H) && !defined(_FENV_INCLUDED)          /* Otherwise we already defined fexcept_t type */
++#if !defined(__FENV_H_INCLUDED) && !defined (_FENV_H_) && !defined(_FENV_INCLUDED)          /* Otherwise we already defined fexcept_t type */
+ #if defined(__ECL) || defined(__ECC)            /* Intel(R) Itanium(R) architecture */
+ /* Default 64-bit Floating Point Status Register   */
+ #if defined(__linux__)
