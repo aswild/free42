@@ -1488,7 +1488,7 @@ public class Free42Activity extends Activity {
             playSound(11, 0);
         if (keyVibrationEnabled) {
             Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
-            v.vibrate(50);
+            v.vibrate(20);
         }
     }
     
