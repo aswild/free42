@@ -12,15 +12,19 @@ index 30ff38b..b337d4c 100755
  
  #else
 diff --git a/LIBRARY/makefile b/LIBRARY/makefile
-index ffaa2cf..7042f3b 100755
+index ffaa2cf..e539388 100755
 --- a/LIBRARY/makefile
 +++ b/LIBRARY/makefile
-@@ -109,7 +109,7 @@ _CFLAGS_CONFIG :=
+@@ -109,7 +109,11 @@ _CFLAGS_CONFIG :=
  _CFLAGS_OS     := $(call HostOsTypeSelect, -DLINUX, -DWINDOWS)
  _CFLAGS_ARCH   := $(call HostArchTypeSelect,-Dia32,-DITANIUM -Dia64, -Defi2)
  _CFLAGS_CC     :=
 -_CFLAGS_OPT    := 
 +_CFLAGS_OPT    := -fPIC
++
++ifeq ($(ANDROIDARCH),armv7)
++    _CFLAGS_OPT += -mfpu=vfp
++endif
      
  ifeq ($(BID_BIG_ENDIAN),true)
      _CFLAGS_CONFIG += -DBID_BIG_ENDIAN=1

@@ -42,7 +42,7 @@ build_arch () {
     cd IntelRDFPMathLib20U1
     patch -p1 <../intel-lib-android.patch
     cd LIBRARY
-    make CC=gcc CALL_BY_REF=1 GLOBAL_RND=1 GLOBAL_FLAGS=1 UNCHANGED_BINARY_FLAGS=0 _HOST_OS=Linux lib
+    make ANDROIDARCH=$ARCH CC=gcc CALL_BY_REF=1 GLOBAL_RND=1 GLOBAL_FLAGS=1 UNCHANGED_BINARY_FLAGS=0 _HOST_OS=Linux lib
     mv libbid.a ../../$ARCH_LIB
     cd ../..
     BUILT=1
