@@ -35,7 +35,7 @@ CXXFLAGS = $(CFLAGS) \
 	 -D_WCHAR_T_DEFINED
 
 LDFLAGS = -L/usr/X11R6/lib
-LIBS = gcc111libbid.a -lXmu $(shell pkg-config --libs gtk+-2.0)
+LIBS = gcc111libbid.a -lXmu $(shell pkg-config --libs gtk+-2.0) -lX11
 
 ifeq "$(shell uname -s)" "Linux"
 LDFLAGS += -Wl,--hash-style=both
