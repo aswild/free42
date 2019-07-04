@@ -16,6 +16,7 @@
  *****************************************************************************/
 
 #include <stdlib.h>
+#include <stdio.h>
 
 #include "core_helpers.h"
 #include "core_commands2.h"
@@ -498,8 +499,9 @@ phloat base2phloat(int8 n) {
 bool phloat2base(phloat p, int8 *res) {
     int wsize = effective_wsize();
     if (flags.f.base_wrap) {
+        phloat ip = p < 0 ? -floor(-p) : floor(p);
         phloat d = pow(phloat(2), wsize);
-        phloat r = fmod(p, d);
+        phloat r = fmod(ip, d);
         if (r < 0)
             r += d;
         int8 n = (int8) to_uint8(r);
