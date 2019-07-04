@@ -437,29 +437,104 @@ int get_base_param(const vartype *v, int8 *n) {
     else if (v->type != TYPE_REAL)
         return ERR_INVALID_TYPE;
     phloat x = ((vartype_real *) v)->x;
-    if (x > 34359738367.0 || x < -34359738368.0)
-        return ERR_INVALID_DATA;
-    int8 t = to_int8(x);
-    if ((t & LL(0x800000000)) != 0)
-        *n = t | LL(0xfffffff000000000);
-    else
-        *n = t;
+    return phloat2base(x, n) ? ERR_NONE : ERR_INVALID_DATA;
+}
+
+int base_range_check(int8 *n, bool force_wrap) {
+    int wsize = effective_wsize();
+    if (force_wrap || flags.f.base_wrap) {
+        if (flags.f.base_signed) {
+            if ((*n & (1LL << (wsize - 1))) != 0)
+                *n |= -1LL << (wsize - 1);
+            else
+                *n &= (1LL << (wsize - 1)) - 1;
+        } else {
+            if (wsize < 64)
+                *n &= (1ULL << wsize) - 1;
+        }
+    } else if (flags.f.base_signed) {
+        int8 high = 1LL << (wsize - 1);
+        int8 low = -high;
+        high--;
+        if (*n < low) {
+            if (flags.f.range_error_ignore)
+                *n = low;
+            else
+                return ERR_OUT_OF_RANGE;
+        } else if (*n > high) {
+            if (flags.f.range_error_ignore)
+                *n = high;
+            else
+                return ERR_OUT_OF_RANGE;
+        }
+    } else {
+        uint8 *un = (uint8 *) n;
+        uint8 high = wsize == 64 ? ~0ULL : (1ULL << wsize) - 1;
+        if (*un > high) {
+            if (flags.f.range_error_ignore)
+                *un = high;
+            else
+                return ERR_OUT_OF_RANGE;
+        }
+    }
     return ERR_NONE;
 }
 
-int base_range_check(int8 *n) {
-    if (*n < LL(-34359738368)) {
-        if (flags.f.range_error_ignore)
-            *n = LL(-34359738368);
+int effective_wsize() {
+#ifdef BCD_MATH
+    return mode_wsize;
+#else
+    return mode_wsize > 52 ? 52 : mode_wsize;
+#endif
+}
+
+phloat base2phloat(int8 n) {
+    if (flags.f.base_signed)
+        return phloat(n);
+    else
+        return phloat((uint8) n);
+}
+
+bool phloat2base(phloat p, int8 *res) {
+    int wsize = effective_wsize();
+    if (flags.f.base_wrap) {
+        phloat d = pow(phloat(2), wsize);
+        phloat r = fmod(p, d);
+        if (r < 0)
+            r += d;
+        int8 n = (int8) to_uint8(r);
+        if (flags.f.base_signed) {
+            int8 m = 1LL << (wsize - 1);
+            if ((n & m) != 0)
+                n |= -1LL << (wsize - 1);
+            else
+                n &= (1LL << (wsize - 1)) - 1;
+        } else {
+            if (wsize < 64)
+                n &= (1ULL << wsize) - 1;
+        }
+        *res = n;
+    } else if (flags.f.base_signed) {
+        phloat high = pow(phloat(2), wsize - 1);
+        phloat low = -high;
+        high--;
+        if (p > high || p < low)
+            return false;
+        int8 t = to_int8(p);
+        if ((t & (1LL << (wsize - 1))) != 0)
+            t |= -1LL << (wsize - 1);
         else
-            return ERR_OUT_OF_RANGE;
-    } else if (*n > LL(34359738367)) {
-        if (flags.f.range_error_ignore)
-            *n = LL(34359738367);
-        else
-            return ERR_OUT_OF_RANGE;
+            t &= (1LL << (wsize - 1)) - 1;
+        *res = t;
+    } else {
+        if (p < 0)
+            return false;
+        phloat high = pow(phloat(2), wsize) - 1;
+        if (p > high)
+            return false;
+        *res = (int8) to_uint8(p);
     }
-    return ERR_NONE;
+    return true;
 }
 
 void print_text(const char *text, int length, int left_justified) {
