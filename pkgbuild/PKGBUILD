@@ -1,0 +1,53 @@
+# PKGBUILD for my fork of Free42
+# Maintainer: Allen Wild <allenwild93@gmail.com>
+#
+# Differences from free42 in the AUR:
+#   * No system theme dir support
+#   * Decimal version only
+#   * Includes a desktop launcher file
+pkgname=free42-wild-git
+_pkgver=2.4
+pkgver=2.4.r18.6ca236d
+pkgrel=1
+pkgdesc="A complete re-implementation of the HP-42S calculator and the HP-82240 printer"
+arch=('i686' 'x86_64')
+url="https://thomasokken.com/free42"
+license=('GPL')
+depends=('libxmu' 'gtk2')
+makedepends=('git')
+provides=('free42')
+conflicts=('free42')
+source=('git://github.com/aswild/free42.git'
+        'free42.desktop')
+sha256sums=('SKIP'
+            'fe25cffb0c46040ac2f6fac494ee12f0ba46bd7143fcc3696eb0c0cb8fff0aef')
+
+pkgver() {
+    cd "$srcdir/free42"
+    printf "${_pkgver}.r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+build() {
+    cd "$srcdir/free42/gtk"
+    make cleaner
+    make BCD_MATH=1
+}
+
+package() {
+    cd "$srcdir/free42/gtk"
+    install -Dm755 free42dec "$pkgdir/usr/bin/free42dec"
+    ln -s /usr/bin/free42dec "$pkgdir/usr/bin/free42"
+
+    install -Dm644 README "$pkgdir/usr/share/doc/$pkgname/README_GTK"
+    install -Dm644 ../README "$pkgdir/usr/share/doc/$pkgname/README"
+
+    install -Dm644 "$srcdir/free42.desktop" "$pkgdir/usr/share/applications/free42.desktop"
+
+    # GTK version only has low-res icons that are compiled into the source,
+    # so use the mac icon files
+    cd ../mac/icon.iconset
+    local _res
+    for _res in 16x16 32x32 128x128 256x256 512x512; do
+        install -Dm644 icon_${_res}.png "${pkgdir}/usr/share/icons/hicolor/${_res}/apps/free42.png"
+    done
+}
