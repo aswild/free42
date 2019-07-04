@@ -9,4 +9,4 @@ pushd app/src/main/cpp
 ./build-intel-lib.sh
 popd
 
-./gradlew assembleRelease
+./gradlew assemble
