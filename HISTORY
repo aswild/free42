@@ -1,3 +1,7 @@
+2019-07-03: release 2.4.1
+
+* Fixed several bugs in BWRAP mode.
+
 2019-07-01: release 2.4
 
 * Implemented configurable word size for BASE functions (up to 64 bits, or 52
