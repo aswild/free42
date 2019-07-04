@@ -107,7 +107,7 @@ keymap.cc: keymap2cc keymap.txt
 
 symlinks:
 	for fn in `cd ../common; /bin/ls`; do ln -s ../common/$$fn; done
-	sh ./build-intel-lib.sh
+	+sh ./build-intel-lib.sh
 	ln -s IntelRDFPMathLib20U1/TESTS/readtest.c
 	touch symlinks
 
