@@ -9,4 +9,8 @@ pushd app/src/main/cpp
 ./build-intel-lib.sh
 popd
 
+sed -e "s/versionCode .*/versionCode $(<version.code)/" \
+    -e "s/versionName .*/versionName \"$(<../VERSION)\"/" \
+    -i app/build.gradle
+
 ./gradlew assemble
