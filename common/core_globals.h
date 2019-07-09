@@ -309,7 +309,8 @@ typedef union {
         char thousands_separators;
         char stack_lift_disable;
         char dmy; /* Time Module DMY mode */
-        char f32; char f33;
+        char fix_float; /* WILD: When in FIX mode, hide trailing zeros like in ALL mode */
+        char f33;
         char agraph_control1; /* 0 (default): dst = dst | src, 1: dst = src, */
         char agraph_control0; /* 2: dst = dst & ~src, 3: dst = dst ^ src */
         char digits_bit3;

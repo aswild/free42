@@ -2983,7 +2983,8 @@ void hard_reset(int bad_state_file) {
     flags.f.thousands_separators = 1;
     flags.f.stack_lift_disable = 0;
     flags.f.dmy = 0;
-    flags.f.f32 = flags.f.f33 = 0;
+    flags.f.fix_float = 0; /* WILD: When in FIX mode, hide trailing zeros like in ALL mode */
+    flags.f.f33 = 0;
     flags.f.agraph_control1 = 0;
     flags.f.agraph_control0 = 0;
     flags.f.digits_bit3 = 0;

@@ -1214,7 +1214,25 @@ int phloat2string(phloat pd, char *buf, int buflen, int base_mode, int digits,
              * and we have to use SCI mode instead.
              */
             goto do_sci;
-            done_rounding:;
+            done_rounding:
+            /* WILD START: remove trailing zeros when in fix_float mode so that it behaves like
+             * ALL mode until we hit the configured number of digits.
+             * We can re-use max_frac_digits here, since it's never checked again for FIX mode */
+            if (dispmode == 0 && flags.f.fix_float) {
+                for (i = max_frac_digits-1; i >= 0; i--) {
+                    if (norm_fp[i] == 0) {
+                        max_frac_digits--;
+                    } else {
+                        break;
+                    }
+                }
+                if (max_frac_digits > digits) {
+                    /* I don't think this ever happens, but don't let us accidentally display
+                     * more digits than requested. */
+                    max_frac_digits = digits;
+                }
+            }
+            /* WILD END */
         } else if (max_int_digits < MAX_MANT_DIGITS) {
             /* ALL mode: for HP-42S compatibility, round to max_int_digits
              * digits before proceeding.
@@ -1301,9 +1319,10 @@ int phloat2string(phloat pd, char *buf, int buflen, int base_mode, int digits,
             char2buf(buf, buflen, &chars_so_far, (char)('0' + norm_ip[max_int_digits - 1 - i]));
         }
 
-        if (dispmode == 0)
-            frac_digits = digits;
-        else {
+        if (dispmode == 0) {
+            /* WILD: use updated digit count in fix_float mode */
+            frac_digits = flags.f.fix_float ? max_frac_digits : digits;
+        } else {
             frac_digits = 0;
             for (i = 0; i < max_frac_digits; i++)
                 if (norm_fp[i] != 0)
