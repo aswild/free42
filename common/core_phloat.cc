@@ -1331,7 +1331,7 @@ int phloat2string(phloat pd, char *buf, int buflen, int base_mode, int digits,
         if (frac_digits + int_digits > max_int_digits)
             frac_digits = max_int_digits - int_digits;
 
-        if (frac_digits > 0 || (dispmode == 0 && thousandssep)) {
+        if (frac_digits > 0 || (dispmode == 0 && thousandssep && !flags.f.fix_float)) {
             char2buf(buf, buflen, &chars_so_far,
                                 (char) (flags.f.decimal_point ? '.' : ','));
             for (i = 0; i < frac_digits; i++)
