@@ -33,6 +33,7 @@ import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
@@ -96,7 +97,7 @@ public class Free42Activity extends Activity {
 
     public static final String[] builtinSkinNames = new String[] { "Standard", "Landscape" };
     
-    private static final int SHELL_VERSION = 13;
+    private static final int SHELL_VERSION = 14;
     
     private static final int PRINT_BACKGROUND_COLOR = Color.LTGRAY;
     
@@ -153,6 +154,7 @@ public class Free42Activity extends Activity {
     private boolean alwaysRepaintFullDisplay = false;
     private boolean keyClicksEnabled = true;
     private boolean keyVibrationEnabled = false;
+    private int keyVibrationLen = 50;
     private int preferredOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
     private int style = 0;
     
@@ -744,6 +746,7 @@ public class Free42Activity extends Activity {
         preferencesDialog.setAlwaysOn(shell_always_on(-1) != 0);
         preferencesDialog.setKeyClicks(keyClicksEnabled);
         preferencesDialog.setKeyVibration(keyVibrationEnabled);
+        preferencesDialog.setKeyVibrationLen(String.format(Locale.US, "%d", keyVibrationLen));
         preferencesDialog.setOrientation(preferredOrientation);
         preferencesDialog.setStyle(style);
         preferencesDialog.setDisplayFullRepaint(alwaysRepaintFullDisplay);
@@ -767,6 +770,12 @@ public class Free42Activity extends Activity {
         shell_always_on(preferencesDialog.getAlwaysOn() ? 1 : 0);
         keyClicksEnabled = preferencesDialog.getKeyClicks();
         keyVibrationEnabled = preferencesDialog.getKeyVibration();
+        try {
+            keyVibrationLen = Integer.parseInt(preferencesDialog.getKeyVibrationLen());
+        }
+        catch (NumberFormatException e) {
+            keyVibrationLen = 50;
+        }
         int oldOrientation = preferredOrientation;
         preferredOrientation = preferencesDialog.getOrientation();
         style = preferencesDialog.getStyle();
@@ -1451,6 +1460,8 @@ public class Free42Activity extends Activity {
                 maintainSkinAspect[0] = state_read_boolean();
                 maintainSkinAspect[1] = state_read_boolean();
             }
+            if (shell_version >= 14)
+                keyVibrationLen = state_read_int();
             init_shell_state(shell_version);
         } catch (IllegalArgumentException e) {
             return false;
@@ -1510,7 +1521,10 @@ public class Free42Activity extends Activity {
             maintainSkinAspect[1] = false;
             // fall through
         case 13:
-            // current version (SHELL_VERSION = 13),
+            keyVibrationLen = 50;
+            // fall through
+        case 14:
+            // current version (SHELL_VERSION = 14),
             // so nothing to do here since everything
             // was initialized from the state file.
             ;
@@ -1543,6 +1557,7 @@ public class Free42Activity extends Activity {
             state_write_boolean(alwaysOn);
             state_write_boolean(maintainSkinAspect[0]);
             state_write_boolean(maintainSkinAspect[1]);
+            state_write_int(keyVibrationLen);
         } catch (IllegalArgumentException e) {}
     }
     
@@ -1666,7 +1681,7 @@ public class Free42Activity extends Activity {
             playSound(11, 0);
         if (keyVibrationEnabled) {
             Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
-            v.vibrate(20);
+            v.vibrate(keyVibrationLen);
         }
     }
     
