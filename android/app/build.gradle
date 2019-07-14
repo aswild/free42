@@ -5,6 +5,20 @@ def keystorePropertiesFile = rootProject.file("keystore.properties")
 def keystoreProperties = new Properties()
 keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 
+def getGitRev = { ->
+    def sha = new ByteArrayOutputStream()
+    def dirty = new ByteArrayOutputStream()
+    exec {
+        commandLine 'git', 'rev-parse', '--short', 'HEAD'
+        standardOutput = sha
+    }
+    exec {
+        commandLine 'sh', '-c', 'if test -n "`git status --porcelain --untracked=no`"; then echo "+"; fi'
+        standardOutput = dirty
+    }
+    return sha.toString().trim() + dirty.toString().trim()
+}
+
 android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -25,6 +39,7 @@ android {
         targetSdkVersion 28
         versionCode 102
         versionName "2.4.2"
+        buildConfigField "String", "GitRev", "\"${getGitRev()}\""
     }
     buildTypes {
         debug {

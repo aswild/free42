@@ -863,6 +863,7 @@ public class Free42Activity extends Activity {
                 } catch (NameNotFoundException e) {}
                 if (BuildConfig.DEBUG)
                     version += " debug";
+                version += " (" + BuildConfig.GitRev + ")";
                 label1.setText("Free42" + version);
                 LayoutParams lp = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
                 lp.addRule(RelativeLayout.ALIGN_TOP, icon.getId());
