@@ -2,7 +2,7 @@
 
 set -xe
 
-NDK="/opt/android-ndk"
+NDK="${ANDROID_NDK_ROOT:-/opt/android-ndk}"
 export PATH="$PWD/bin:$NDK/prebuilt/linux-x86_64/bin:$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
 BUILT=0
 
