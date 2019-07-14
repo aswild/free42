@@ -861,6 +861,8 @@ public class Free42Activity extends Activity {
                 try {
                     version = " " + getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
                 } catch (NameNotFoundException e) {}
+                if (BuildConfig.DEBUG)
+                    version += " debug";
                 label1.setText("Free42" + version);
                 LayoutParams lp = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
                 lp.addRule(RelativeLayout.ALIGN_TOP, icon.getId());

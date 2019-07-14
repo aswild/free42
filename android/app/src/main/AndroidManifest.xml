@@ -13,7 +13,7 @@
                     android:normalScreens="true"
                     android:largeScreens="true"/>
   
-  <application android:label="Free42"
+  <application android:label="${appLabel}"
                android:icon="@drawable/icon"
                android:allowBackup="true">
     <activity android:name="Free42Activity"
