@@ -68,7 +68,10 @@
  * For the Palm build, we don't even need the declaration, since sincos() is
  * provided by MathLib.
  */
-extern "C" void sincos(double x, double *sinx, double *cosx);
+#ifdef __cplusplus
+extern "C"
+#endif
+void sincos(double x, double *sinx, double *cosx);
 //#define NO_SINCOS 1
 
 #endif
