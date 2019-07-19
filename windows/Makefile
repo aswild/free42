@@ -1,8 +1,11 @@
+# Free42 MinGW Makefile
+# by Allen Wild <allenwild93@gmail.com>
+
 CC       ?= x86_64-w64-mingw32-gcc
 CXX      ?= x86_64-w64-mingw32-g++
 CFLAGS   ?= -g -O2 -Wall
-CXXFLAGS ?= -g -O2 -Wall
-LDFLAGS   = -L.
+CXXFLAGS ?= -g -O2 -Wall -fno-exceptions
+LDFLAGS   = -L. -static-libgcc -static-libstdc++
 
 CPPFLAGS = \
  -DWIN32 -DNDEBUG -D_WINDOWS -DWINDOWS -D_CRT_SECURE_NO_WARNINGS \
@@ -30,13 +33,23 @@ LINK_CXX = $(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $^
 all: free42dec$(EXE)
 
 free42dec$(EXE): $(OBJECTS) $(LIBBID)
-	$(LINK_CXX) -lbid-mingw
+	$(LINK_CXX) -lbid-mingw -lwinmm -lgdi32 -lcomdlg32
 
 keymap2cc$(EXE): keymap2cc.o
 	$(LINK_CXX)
 
-skin2cpp$(EXE): skin2cc.o
+skin2cc$(EXE): skin2cc.o
 	$(LINK_CXX)
+
+keymap.cc: keymap2cc$(EXE)
+	./$<
+
+skins.cc: skin2cc$(EXE)
+	./$<
+
+.PHONY: clean
+clean:
+	rm -f *.o *.d keymap2cc$(EXE) skin2cc$(EXE) keymap.cc skins.cc
 
 %.o: %.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c -o $@ $<

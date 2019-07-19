@@ -19,7 +19,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifdef WINDOWS
+#if defined(WINDOWS) && !defined(__MINGW32__)
 #define KEYMAP_CC "keymap.cpp"
 #define KEYMAP2CC "keymap2cpp"
 #else

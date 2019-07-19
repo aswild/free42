@@ -19,7 +19,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifdef WINDOWS
+#if defined(WINDOWS) && !defined(__MINGW32__)
 #define SKINS_CC "skins.cpp"
 #define SKIN2CC_CONF "skin2cpp.conf"
 #define SKIN2CC "skin2cpp"
