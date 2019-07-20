@@ -4,7 +4,7 @@
 .NOTPARALLEL:
 
 # wrapper batch file for msbuild
-BUILD_VCXPROJ = cmd //c build-project.bat $(patsubst Release/%.exe,%,$@)
+BUILD_VCXPROJ = cmd //c build-project.bat $(basename $(notdir $@))
 
 # convenience targets
 all: bin dec
@@ -12,21 +12,19 @@ bin: Free42Binary.exe
 dec: Free42Decimal.exe
 .PHONY: all bin dec
 
-# move output out of Release/ dir for convenience
-Free42%.exe: Release/Free42%.exe
-	cp $< $@
-
 # VCX Project wrappers (built with msbuild)
-Release/Free42Binary.exe: free42.h cl111libbid.lib skins.cpp keymap.cpp VERSION.rc
+Free42Binary.exe: free42.h cl111libbid.lib skins.cpp keymap.cpp VERSION.rc
+	$(BUILD_VCXPROJ)
+	cp build/$(basename $@)/$@ $@
+
+Free42Decimal.exe: free42.h cl111libbid.lib skins.cpp keymap.cpp VERSION.rc
+	$(BUILD_VCXPROJ)
+	cp build/$(basename $@)/$@ $@
+
+build/skin2cpp/skin2cpp.exe: skin2cpp.cpp skin2cpp.conf
 	$(BUILD_VCXPROJ)
 
-Release/Free42Decimal.exe: free42.h cl111libbid.lib skins.cpp keymap.cpp VERSION.rc
-	$(BUILD_VCXPROJ)
-
-Release/skin2cpp.exe: skin2cpp.cpp skin2cpp.conf
-	$(BUILD_VCXPROJ)
-
-Release/keymap2cpp.exe: keymap2cpp.cpp
+build/keymap2cpp/keymap2cpp.exe: keymap2cpp.cpp
 	$(BUILD_VCXPROJ)
 
 # git rev in version
@@ -42,10 +40,10 @@ cl111libbid.lib:
 	./build-intel-lib.sh
 
 # generated code
-skins.cpp: Release/skin2cpp.exe
+skins.cpp: build/skin2cpp/skin2cpp.exe
 	$<
 
-keymap.cpp: Release/keymap2cpp.exe
+keymap.cpp: build/keymap2cpp/keymap2cpp.exe
 	$<
 
 dist: Free42Binary.exe Free42Decimal.exe README.txt
@@ -53,7 +51,7 @@ dist: Free42Binary.exe Free42Decimal.exe README.txt
 		bsdtar -a -cvf Free42Windows-$${version}.zip -s "#^#Free42Windows-$${version}/#p" $^
 
 clean:
-	rm -rf Release Free42Binary.exe Free42Decimal.exe keymap.cpp skins.cpp VERSION.rc
+	rm -rf build Free42Binary.exe Free42Decimal.exe keymap.cpp skins.cpp VERSION.rc
 
 distclean: clean
 	rm -rf IntelRDFPMathLib20U1 cl111libbid.lib readtest.c readtest_lines.cpp $(shell awk '/^mklink \/h/{print $$3}' link-files.bat)

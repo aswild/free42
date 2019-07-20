@@ -1,5 +1,7 @@
+@echo off
 set PATH=C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build;%PATH%
 call vcvars32
+@echo on
 call link-files
 msbuild keymap2cpp.vcxproj -p:Configuration=Release
 Release\keymap2cpp

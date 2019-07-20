@@ -8,7 +8,7 @@
 .vs
 
 # build output
-Release/
+build/
 keymap.cpp
 skins.cpp
 VERSION.rc
