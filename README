@@ -1,4 +1,44 @@
 -------------------------------------------------------------------------------
+Allen Wild's fork of Free42
+
+I wanted to make a few tweaks to Free42's functionality, which meant I had to
+figure out how to build Free42 on Android/Linux/Windows cleanly. There's no
+official Free42 git repo (only a tarball of the latest version's source), so
+the import branch here contains the contents of those tarballs with no
+modifications for easily merging into master.
+
+Common Changes:
+  * Add a "floating-fixed" display precision mode, used when DISP mode is "all"
+    and Flag 32 (previously reserved/unused) is set. This display mode is
+    a hybrid of "all" and "fix" modes, inspired by the "float" mode on the
+    TI-89. It works like fix mode, but trailing zeros are hidden to reduce
+    screen clutter.
+  * Add appropriate .gitignore files
+  * Include git revision in version number of about screens
+
+Android Changes:
+  * Make the haptic feedback vibration duration configurable in preferences
+  * Include the high-resolution Nova skins by default
+  * Build system improvements
+    - Remove hard-coded toolchain paths
+    - Use a (gitignored) keystore.properties file to get the APK signing key
+      path so that builds don't have to make build.gradle dirty
+    - Add debug suffixes to the app ID and name so that debug and release
+      builds can be installed simultaneously
+    - Unify Intel Library patches so I don't have to make every change to
+      Intel's insane makefiles 4 times
+    - Update gradle from 5.1.1 to 5.5.1
+
+Windows Changes:
+  * Build system improvements: just run "make" in a MSYS2 terminal
+  * Update Visual Studio projects to VS 2019 Community edition (and hard-code
+    vcvars32.bat path for VS2019 Community, since Microsoft doens't put them in
+    an easy to find location)
+  * Wrap everything in a makefile for convenience
+  * Free42 doesn't seem to build correctly with MinGW GCC toolchains, so all
+    the actual compilation is done with batch files that call msbuild.
+
+-------------------------------------------------------------------------------
 Free42 is a software clone of the Hewlett-Packard 42S calculator. If you know
 how to use an HP-42S, you know how to use Free42.
 If you're new to the HP-42S and its clones, you may want to take a peek at the
