@@ -44,15 +44,17 @@
 #ifdef __cplusplus
         extern "C" {
 #endif
+                void sincos(double x, double *sinx, double *cosx);
+#if defined(_MSC_VER) && (_MSC_VER < 1920)
                 int isnan(double x);
                 int finite(double x);
                 int isinf(double x);
-                void sincos(double x, double *sinx, double *cosx);
                 double asinh(double x);
                 double acosh(double x);
                 double atanh(double x);
                 double expm1(double x);
                 double log1p(double x);
+#endif // defined(_MSC_VER) && (_MSC_VER < 1920)
 #ifdef _WIN32_WCE
                 double hypot(double x, double y);
 #endif

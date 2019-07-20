@@ -19,6 +19,13 @@
 #include <float.h>
 #include "free42.h"
 
+void sincos(double x, double *sinx, double *cosx) {
+    *sinx = sin(x);
+    *cosx = cos(x);
+}
+
+#if defined(_MSC_VER) && (_MSC_VER < 1920)
+
 int isnan(double x) {
     return _isnan(x);
 }
@@ -30,12 +37,6 @@ int finite(double x) {
 int isinf(double x) {
     return _finite(x) || _isnan(x) ? 0 : x < 0 ? -1 : 1;
 }
-
-void sincos(double x, double *sinx, double *cosx) {
-    *sinx = sin(x);
-    *cosx = cos(x);
-}
-
 
 /******************************************************************************
  * The remainder of this file consists of definitions of the functions        *
@@ -752,5 +753,7 @@ double expm1(double x)
     }
     return y;
 }
+
+#endif // defined(_MSC_VER) && (_MSC_VER < 1920)
 
 /*---------------------------------------------------------------------------*/

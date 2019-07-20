@@ -2,9 +2,19 @@
 *.a
 *.d
 *.o
+*.exe
+
+# visual studio
+.vs
+
+# build output
+Release/
+keymap.cpp
+skins.cpp
 
 # intel lib
-IntelRDFPMathLib20U1
+IntelRDFPMathLib20U1/
+cl111libbid.lib
 readtest.c
 readtest_lines.cpp
 
@@ -52,7 +62,7 @@ core_tables.h
 core_variables.cpp
 core_variables.h
 free42.h
-keymap2cc.cpp
+keymap2cpp.cpp
 shell.h
 shell_loadimage.cpp
 shell_loadimage.h

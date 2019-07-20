@@ -1,10 +1,10 @@
-#!/bin/sh -e
+#!/bin/sh -xe
 if [ -f cl111libbid.lib ]; then exit 0; fi
-tar xvfz ../inteldecimal/IntelRDFPMathLib20U1.tar.gz
+tar xzf ../inteldecimal/IntelRDFPMathLib20U1.tar.gz
 cd IntelRDFPMathLib20U1
-patch -p0 <../intel-lib-windows-32bit.patch
+patch -p0 --binary <../intel-lib-windows-32bit.patch
 cd LIBRARY
-cmd /c ..\\..\\build-intel-lib.bat
+cmd //c ..\\..\\build-intel-lib.bat
 mv libbid.lib ../../cl111libbid.lib
 cd ../..
 ( echo '#ifdef FREE42_FPTEST'; echo 'const char *readtest_lines[] = {'; tr -d '\r' < IntelRDFPMathLib20U1/TESTS/readtest.in | sed 's/^\(.*\)$/"\1",/'; echo '0 };'; echo '#endif' ) > readtest_lines.cpp
