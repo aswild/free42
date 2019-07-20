@@ -29,7 +29,7 @@ build/keymap2cpp/keymap2cpp.exe: keymap2cpp.cpp
 
 # git rev in version
 VERSION.rc: VERSION.rc.in
-	sed 's/@GITREV@/$(shell ./gitversion.sh)/' $< >$@
+	sed 's/@GITREV@/$(shell ../gitversion.sh)/' $< >$@
 
 # rather than a "links" sentinel file, just look for free42.h
 free42.h:
@@ -47,7 +47,7 @@ keymap.cpp: build/keymap2cpp/keymap2cpp.exe
 	$<
 
 dist: Free42Binary.exe Free42Decimal.exe README.txt
-	version="$(shell cat ../VERSION)-$(shell ./gitversion.sh)"; \
+	version="$(shell ./gitversion.sh --full)"; \
 		bsdtar -a -cvf Free42Windows-$${version}.zip -s "#^#Free42Windows-$${version}/#p" $^
 
 clean:
