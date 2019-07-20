@@ -11,6 +11,7 @@
 Release/
 keymap.cpp
 skins.cpp
+VERSION.rc
 
 # intel lib
 IntelRDFPMathLib20U1/
