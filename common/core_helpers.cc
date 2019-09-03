@@ -567,9 +567,8 @@ void print_text(const char *text, int length, int left_justified) {
     for (i = 0; i < 162; i++)
         bitmap[i] = 0;
     for (i = 0; i < bufptr; i++) {
-        char charbits[5];
         int j;
-        get_char(charbits, buf[i]);
+        const char *charbits = get_char(buf[i]);
         for (j = 0; j < 5; j++) {
             int x1 = i * 6 + j;
             int x2 = x1 + 1;
@@ -764,7 +763,7 @@ void generic_r2p(phloat re, phloat im, phloat *r, phloat *phi) {
 void generic_p2r(phloat r, phloat phi, phloat *re, phloat *im) {
     phloat tre, tim;
     if (flags.f.rad) {
-        sincos(phi, &tim, &tre);
+        p_sincos(phi, &tim, &tre);
     } else if (flags.f.grad) {
         phi = fmod(phi, 400);
         if (phi < 0)
@@ -1091,15 +1090,6 @@ phloat fix_hms(phloat x) {
     #endif
     return neg ? -x : x;
 }
-
-#if defined(NO_SINCOS) && !defined(BCD_MATH)
-
-void sincos(double x, double *sinx, double *cosx) {
-    *sinx = sin(x);
-    *cosx = cos(x);
-}
-
-#endif
 
 void char2buf(char *buf, int buflen, int *bufptr, char c) {
     if (*bufptr < buflen)

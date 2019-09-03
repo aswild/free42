@@ -1,3 +1,43 @@
+2019-09-02: release 2.5.4 (iPhone only)
+
+* Fixed a crash when the States window was opened the very first time the app
+  was run after a new install.
+* Fixed a bug that could cause the hostname lookup for the HTTP Server window
+  to fail.
+
+2019-09-01: release 2.5.3
+
+* Invalid state files (corrupt, or created by an incompatible newer version of
+  Free42) are now renamed, so they are not lost when a new state is written,
+  and can be retrieved for post-mortem analysis.
+
+2019-08-31: release 2.5.2
+
+* In the States window, renamed Reload to Revert, and added a confirmation
+  dialog, since that is a potentially destructive action.
+* When programs were imported from raw files, empty programs were sometimes
+  being created unnecessarily. Harmless but slightly annoying. Fixed.
+* Android and iOS versions: Added "share" option for Print-Out view.
+* Android and iOS versions: Added "share" option for programs in raw format.
+* Android and iOS versions: Now import raw files directly from email
+  attachments and web links.
+
+2019-08-28: release 2.5.1
+
+* Fixed bug in 2.5 that caused string elements in real matrices (including the
+  numbered registers) to be written incorrectly in the state file, leading to
+  memory corruption and crashes when the state file was read back in.
+* iPhone version: Now makes sure that the current state shows up in the list in
+  the States view, even if it is opened right after a fresh install or right
+  after upgrading from a version before 2.5.
+
+2019-08-25: release 2.5
+
+* Added state file manager, for loading, saving, and switching between,
+  calculator states. The state files are in a platform-neutral format, so they
+  can be exchanged between Free42 instances running on different devices.
+* Fixed crash in RTN when a local variable was hiding the indexed matrix.
+
 2019-07-12: release 2.4.2
 
 * Windows version: The new Ctrl-A, Ctrl-I, and Ctrl-T shortcuts (Paper Advance,

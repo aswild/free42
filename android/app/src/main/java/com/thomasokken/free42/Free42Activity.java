@@ -19,7 +19,6 @@ package com.thomasokken.free42;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -64,6 +63,7 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.media.AudioManager;
 import android.media.SoundPool;
+import android.net.Uri;
 import android.os.BatteryManager;
 import android.os.Bundle;
 import android.os.Environment;
@@ -72,6 +72,7 @@ import android.os.Looper;
 import android.os.Vibrator;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
+import android.support.v4.content.FileProvider;
 import android.text.SpannableString;
 import android.text.method.LinkMovementMethod;
 import android.text.util.Linkify;
@@ -119,6 +120,7 @@ public class Free42Activity extends Activity {
     private boolean printViewShowing;
     private PreferencesDialog preferencesDialog;
     private AlertDialog mainMenuDialog;
+    private AlertDialog programImportExportMenuDialog;
     private Handler mainHandler;
     private boolean alwaysOn;
     
@@ -126,16 +128,23 @@ public class Free42Activity extends Activity {
     private int[] soundIds;
     
     // Streams for reading and writing the state file
-    private InputStream stateFileInputStream;
+    private PositionTrackingInputStream stateFileInputStream;
     private OutputStream stateFileOutputStream;
-    
-    // Streams for program import and export
-    private InputStream programsInputStream;
-    private OutputStream programsOutputStream;
     
     // Stuff to run core_keydown() on a background thread
     private CoreThread coreThread;
     private boolean coreWantsCpu;
+
+    // Show "States" dialog if invoked after state import; this
+    // will have the name of the most recently imported state.
+    // If this is null, don't do anything.
+    public String importedState;
+
+    // FileImportActivity can't import programs on its own,
+    // since that requires Free42Activity to be loaded. This
+    // is where the former communicates the name of the file
+    // to import to the latter.
+    public String importedProgram;
     
     private int ckey;
     private boolean timeout3_active;
@@ -150,6 +159,7 @@ public class Free42Activity extends Activity {
     private boolean[] skinSmoothing = new boolean[2];
     private boolean[] displaySmoothing = new boolean[2];
     private boolean[] maintainSkinAspect = new boolean[2];
+    private String coreName;
 
     private boolean alwaysRepaintFullDisplay = false;
     private boolean keyClicksEnabled = true;
@@ -162,6 +172,78 @@ public class Free42Activity extends Activity {
     private final Runnable timeout1Caller = new Runnable() { public void run() { timeout1(); } };
     private final Runnable timeout2Caller = new Runnable() { public void run() { timeout2(); } };
     private final Runnable timeout3Caller = new Runnable() { public void run() { timeout3(); } };
+
+    private static class PositionTrackingInputStream extends InputStream {
+        private InputStream stream;
+        private int pos;
+        public PositionTrackingInputStream(InputStream stream) {
+            this.stream = stream;
+            pos = 0;
+        }
+        public int getPosition() {
+            return pos;
+        }
+        @Override
+        public int read() throws IOException {
+            if (pos == -1)
+                throw new IOException();
+            try {
+                pos++;
+                return stream.read();
+            } catch (IOException e) {
+                pos = -1;
+                throw e;
+            }
+        }
+        @Override
+        public int read(byte[] buf) throws IOException {
+            if (pos == -1)
+                throw new IOException();
+            try {
+                pos += buf.length;
+                return stream.read(buf);
+            } catch (IOException e) {
+                pos = -1;
+                throw e;
+            }
+        }
+        @Override
+        public int read(byte[] buf, int offset, int length) throws IOException {
+            if (pos == -1)
+                throw new IOException();
+            try {
+                pos += buf.length;
+                return stream.read(buf, offset, length);
+            } catch (IOException e) {
+                pos = -1;
+                throw e;
+            }
+        }
+        @Override
+        public boolean markSupported() {
+            return false;
+        }
+        @Override
+        public int available() throws IOException {
+            return stream.available();
+        }
+        @Override
+        public void close() throws IOException {
+            stream.close();
+        }
+        @Override
+        public void mark(int readlimit) {
+            throw new UnsupportedOperationException();
+        }
+        @Override
+        public void reset() {
+            throw new UnsupportedOperationException();
+        }
+        @Override
+        public long skip(long n) throws IOException {
+            return stream.skip(n);
+        }
+    }
     
     ///////////////////////////////////////////////////////
     ///// Top-level code to interface with Android UI /////
@@ -171,11 +253,17 @@ public class Free42Activity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         instance = this;
+
+        Intent intent = getIntent();
+        importedState = intent.getStringExtra("importedState");
+        importedProgram = intent.getStringExtra("importedProgram");
         
         int init_mode;
         IntHolder version = new IntHolder();
+        String coreFileName = null;
+        int coreFileOffset = 0;
         try {
-            stateFileInputStream = openFileInput("state");
+            stateFileInputStream = new PositionTrackingInputStream(openFileInput("state"));
         } catch (FileNotFoundException e) {
             stateFileInputStream = null;
         }
@@ -190,6 +278,29 @@ public class Free42Activity extends Activity {
             init_shell_state(-1);
             init_mode = 0;
         }
+        if (init_mode == 1) {
+            if (version.value > 25) {
+                coreFileName = getFilesDir() + "/" + coreName + ".f42";
+                coreFileOffset = 0;
+            } else {
+                coreFileName = getFilesDir() + "/state";
+                coreFileOffset = stateFileInputStream.getPosition();
+            }
+            try {
+                stateFileInputStream.close();
+            } catch (IOException e) {}
+        }  else {
+            // The shell state was missing or corrupt, but there
+            // may still be a valid core state...
+            coreFileName = getFilesDir() + "/" + coreName + ".f42";
+            if (new File(coreFileName).isFile()) {
+                // Core state "Untitled.f42" exists; let's try to read it
+                coreFileOffset = 0;
+                init_mode = 1;
+                version.value = 26;
+            }
+        }
+
         setAlwaysRepaintFullDisplay(alwaysRepaintFullDisplay);
         if (alwaysOn)
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -232,6 +343,12 @@ public class Free42Activity extends Activity {
             }
         });
         */
+        button = (Button) printView.findViewById(R.id.shareB);
+        button.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View view) {
+                printPaperView.share();
+            }
+        });
         button = (Button) printView.findViewById(R.id.clearB);
         button.setOnClickListener(new View.OnClickListener() {
             public void onClick(View view) {
@@ -270,14 +387,8 @@ public class Free42Activity extends Activity {
         calcView.updateScale();
 
         nativeInit();
-        core_init(init_mode, version.value);
-        if (stateFileInputStream != null) {
-            try {
-                stateFileInputStream.close();
-            } catch (IOException e) {}
-            stateFileInputStream = null;
-        }
-        
+        core_init(init_mode, version.value, coreFileName, coreFileOffset);
+
         lowBatteryReceiver = new BroadcastReceiver() {
             public void onReceive(Context ctx, Intent intent) {
                 low_battery = intent.getAction().equals(Intent.ACTION_BATTERY_LOW);
@@ -323,6 +434,17 @@ public class Free42Activity extends Activity {
             start_core_keydown();
         
         super.onStart();
+
+        String impTemp = importedState;
+        importedState = null;
+        if (impTemp != null)
+            doStates(impTemp);
+        impTemp = importedProgram;
+        importedProgram = null;
+        if (impTemp != null) {
+            doImport2(impTemp);
+            new File(impTemp).delete();
+        }
     }
     
     @Override
@@ -339,35 +461,24 @@ public class Free42Activity extends Activity {
     @Override
     protected void onStop() {
         end_core_keydown();
-        // Write state file
         File filesDir = getFilesDir();
-        File stateFile = null;
+
+        // Write shell state
+        stateFileOutputStream = null;
         try {
-            stateFile = File.createTempFile("state.", ".new", filesDir);
-            stateFileOutputStream = new FileOutputStream(stateFile, true);
-        } catch (IOException e) {
-            stateFileOutputStream = null;
-        }
-        if (stateFileOutputStream != null) {
+            stateFileOutputStream = openFileOutput("state", Context.MODE_PRIVATE);
             write_shell_state();
-            core_enter_background();
+            stateFileOutputStream.close();
+        } catch (Exception e) {
+            if (stateFileOutputStream != null)
+                try {
+                    stateFileOutputStream.close();
+                } catch (IOException e2) {}
         }
-        if (stateFileOutputStream != null) {
-            try {
-                stateFileOutputStream.close();
-            } catch (IOException e) {
-                stateFileOutputStream = null;
-            }
-        }
-        if (stateFileOutputStream != null) {
-            // Writing state file succeeded; rename state.new to state
-            stateFile.renameTo(new File(filesDir, "state"));
-            stateFileOutputStream = null;
-        } else {
-            // Writing state file failed; delete state.new, if it even exists
-            if (stateFile != null)
-                stateFile.delete();
-        }
+
+        // Write core state
+        core_save_state(getFilesDir() + "/" + coreName + ".f42");
+
         printPaperView.dump();
         if (printTxtStream != null) {
             try {
@@ -389,16 +500,7 @@ public class Free42Activity extends Activity {
     
     @Override
     protected void onDestroy() {
-        // N.B. In the Android build, core_quit() does not write the
-        // core state; we assume that onStop() has been called previously,
-        // and its core_enter_background() call takes care of saving state.
-        // All this core_quit() call does it free up memory.
-        // TODO -- In Android builds, core_quit() currently doesn't even
-        // free up memory. If we ever do want that to happen, i.e. in order
-        // to debug memory leaks in the native code, this should be handled
-        // by breaking the memory deallocation code into a separate function.
-        // The whole life-cycle thing, as it is right now, is too confusing.
-        core_quit();
+        // core_cleanup();
         if (lowBatteryReceiver != null) {
             unregisterReceiver(lowBatteryReceiver);
             lowBatteryReceiver = null;
@@ -475,15 +577,15 @@ public class Free42Activity extends Activity {
         mainHandler.removeCallbacks(timeout3Caller);
         timeout3_active = false;
     }
-    
+
     private void postMainMenu() {
         if (mainMenuDialog == null) {
             AlertDialog.Builder builder = new AlertDialog.Builder(this);
             builder.setTitle("Main Menu");
             List<String> itemsList = new ArrayList<String>();
             itemsList.add("Show Print-Out");
-            itemsList.add("Import Programs");
-            itemsList.add("Export Programs");
+            itemsList.add("Program Import & Export");
+            itemsList.add("States");
             itemsList.add("Preferences");
             itemsList.add("Select Skin");
             itemsList.add("Skin: Other...");
@@ -501,17 +603,17 @@ public class Free42Activity extends Activity {
         }
         mainMenuDialog.show();
     }
-    
+
     private void mainMenuItemSelected(int which) {
         switch (which) {
             case 0:
                 doFlipCalcPrintout();
                 return;
             case 1:
-                doImport();
+                postProgramImportExportMenu();
                 return;
             case 2:
-                doExport();
+                doStates(null);
                 return;
             case 3:
                 doPreferences();
@@ -535,6 +637,45 @@ public class Free42Activity extends Activity {
         }
     }
 
+    private void postProgramImportExportMenu() {
+        if (programImportExportMenuDialog == null) {
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("Import & Export Menu");
+            List<String> itemsList = new ArrayList<String>();
+            itemsList.add("Import Programs");
+            itemsList.add("Export Programs");
+            itemsList.add("Share Programs");
+            itemsList.add("Back");
+            itemsList.add("Cancel");
+            builder.setItems(itemsList.toArray(new String[itemsList.size()]),
+                    new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialog, int which) {
+                            programImportExportMenuItemSelected(which);
+                        }
+                    });
+            programImportExportMenuDialog = builder.create();
+        }
+        programImportExportMenuDialog.show();
+    }
+
+    private void programImportExportMenuItemSelected(int which) {
+        switch (which) {
+            case 0:
+                doImport();
+                return;
+            case 1:
+                doExport(false);
+                return;
+            case 2:
+                doExport(true);
+                return;
+            case 3:
+                postMainMenu();
+                return;
+            // default: Cancel; do nothing
+        }
+    }
+    
     private void doSelectSkin() {
         SkinSelectDialog ssd = new SkinSelectDialog(this);
         ssd.setListener(new SkinSelectDialog.Listener() {
@@ -569,6 +710,31 @@ public class Free42Activity extends Activity {
         return instance.skinName;
     }
 
+    public static String getSelectedState() {
+        return instance.coreName;
+    }
+
+    public static void switchToState(String stateName) {
+        instance.switchToState2(stateName);
+    }
+
+    private void switchToState2(String stateName) {
+        if (!stateName.equals(coreName)) {
+            String oldFileName = getFilesDir() + "/" + coreName + ".f42";
+            core_save_state(oldFileName);
+        }
+        core_cleanup();
+        coreName = stateName;
+        String newFileName = getFilesDir() + "/" + coreName + ".f42";
+        core_init(1, 26, newFileName, 0);
+        if (core_powercycle())
+            start_core_keydown();
+    }
+
+    public static void saveStateAs(String fileName) {
+        instance.core_save_state(fileName);
+    }
+
     private void doCopy() {
         android.text.ClipboardManager clip = (android.text.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
         clip.setText(core_copy());
@@ -598,23 +764,13 @@ public class Free42Activity extends Activity {
     }
     
     private void doImport2(String path) {
-        try {
-            programsInputStream = new FileInputStream(path);
-        } catch (IOException e) {
-            alert("Import failed: " + e.getMessage());
-            return;
-        }
-        core_import_programs();
+        core_import_programs(path);
         redisplay();
-        if (programsInputStream != null) {
-            try {
-                programsInputStream.close();
-            } catch (IOException e) {}
-            programsInputStream = null;
-        }
     }
     
     private boolean[] selectedProgramIndexes;
+    private String[] programNames;
+    private boolean exportShare;
 
     public static void showAlert(String message) {
         instance.alert(message);
@@ -637,15 +793,16 @@ public class Free42Activity extends Activity {
         }
     }
 
-    private void doExport() {
-        if (!checkStorageAccess())
+    private void doExport(boolean share) {
+        if (!share && !checkStorageAccess())
             return;
-        String[] names = core_list_programs();
-        selectedProgramIndexes = new boolean[names.length];
+        exportShare = share;
+        programNames = core_list_programs();
+        selectedProgramIndexes = new boolean[programNames.length];
         
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Select Programs");
-        builder.setMultiChoiceItems(names, selectedProgramIndexes, new DialogInterface.OnMultiChoiceClickListener() {
+        builder.setMultiChoiceItems(programNames, selectedProgramIndexes, new DialogInterface.OnMultiChoiceClickListener() {
             public void onClick(DialogInterface dialog, int which, boolean isChecked) {
                 // I don't have to do anything here; the only reason why
                 // I create this listener is because if I pass 'null'
@@ -662,6 +819,11 @@ public class Free42Activity extends Activity {
         builder.setNegativeButton("Cancel", null);
         builder.create().show();
     }
+
+    private void doStates(String selectedState) {
+        StatesDialog sd = new StatesDialog(this, selectedState);
+        sd.show();
+    }
     
     private void doProgramSelectionClick(DialogInterface dialog, int which) {
         if (which == DialogInterface.BUTTON_POSITIVE) {
@@ -672,26 +834,23 @@ public class Free42Activity extends Activity {
                     break;
                 }
             if (!none) {
-                FileSelectionDialog fsd = new FileSelectionDialog(this, new String[] { "raw", "*" });
-                fsd.setOkListener(new FileSelectionDialog.OkListener() {
-                    public void okPressed(String path) {
-                        doExport2(path);
-                    }
-                });
-                fsd.show();
+                if (exportShare) {
+                    doShare();
+                } else {
+                    FileSelectionDialog fsd = new FileSelectionDialog(this, new String[]{"raw", "*"});
+                    fsd.setOkListener(new FileSelectionDialog.OkListener() {
+                        public void okPressed(String path) {
+                            doExport2(path);
+                        }
+                    });
+                    fsd.show();
+                }
             }
         }
         dialog.dismiss();
     }
     
     private void doExport2(String path) {
-        try {
-            programsOutputStream = new FileOutputStream(path);
-        } catch (IOException e) {
-            alert("Export failed: " + e.getMessage());
-            return;
-        }
-        
         int n = 0;
         for (int i = 0; i < selectedProgramIndexes.length; i++)
             if (selectedProgramIndexes[i])
@@ -701,16 +860,52 @@ public class Free42Activity extends Activity {
         for (int i = 0; i < selectedProgramIndexes.length; i++)
             if (selectedProgramIndexes[i])
                 selection[n++] = i;
-        core_export_programs(selection);
-        
-        if (programsOutputStream != null) {
-            try {
-                programsOutputStream.close();
-            } catch (IOException e) {}
-            programsOutputStream = null;
-        }
+        core_export_programs(selection, path);
     }
-    
+
+    private void doShare() {
+        int n = -1;
+        int m = 0;
+        for (int i = 0; i < selectedProgramIndexes.length; i++) {
+            if (selectedProgramIndexes[i]) {
+                m++;
+                if (m == 1)
+                    n = i;
+                else if (m == 2)
+                    break;
+            }
+        }
+        if (n == -1)
+            // Should never happen
+            return;
+        String name = programNames[n];
+        if (name.charAt(0) == '"') {
+            int q = name.indexOf('"', 1);
+            name = name.substring(1, q);
+        } else
+            name = "Untitled";
+        File cacheDir = new File(getFilesDir(), "cache");
+        cacheDir.mkdir();
+        // Remove old *.raw files, so we don't use an ever-growing
+        // chunk of space for these files that really should be
+        // temporary
+        File[] cacheFiles = cacheDir.listFiles();
+        for (File f : cacheFiles) {
+            if (f.getName().endsWith(".raw"))
+                f.delete();
+        }
+        // OK, now write the selected programs to a new raw file
+        String path = cacheDir + "/" + name + ".raw";
+        doExport2(path);
+        // And now share that file
+        Intent intent = new Intent(Intent.ACTION_SEND);
+        File file = new File(path);
+        Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", file);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_STREAM, uri);
+        startActivity(Intent.createChooser(intent, "Share Free42 Program" + (m == 1 ? "" : "s") + " Using"));
+    }
+
     private void doSelectSkin(String skinName) {
         try {
             boolean[] annunciators = skin.getAnnunciators();
@@ -891,7 +1086,7 @@ public class Free42Activity extends Activity {
 
                 TextView label4 = new TextView(context);
                 label4.setId(5);
-                s = new SpannableString("https://thomasokken.com/free42/42s.pdf");
+                s = new SpannableString("https://thomasokken.com/free42/#doc");
                 Linkify.addLinks(s, Linkify.WEB_URLS);
                 label4.setText(s);
                 label4.setMovementMethod(LinkMovementMethod.getInstance());
@@ -1281,7 +1476,7 @@ public class Free42Activity extends Activity {
             }
         }
 
-        public void copyAsText() {
+        private String printOutAsText() {
             try {
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
 
@@ -1330,14 +1525,74 @@ public class Free42Activity extends Activity {
                     len--;
                 }
 
-                String txt = new String(bos.toByteArray(), "UTF-8").replace("\r", "");
-                android.text.ClipboardManager clip = (android.text.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                clip.setText(txt);
-            } catch (IOException e) {}
+                return new String(bos.toByteArray(), "UTF-8").replace("\r", "");
+            } catch (IOException e) {
+                return null;
+            }
+        }
+
+        public void copyAsText() {
+            String txt = printOutAsText();
+            android.text.ClipboardManager clip = (android.text.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            clip.setText(txt);
+        }
+
+        private String printOutAsImage() {
+            // Construct a temporary bitmap
+            int src_height = (bottom - top) / BYTESPERLINE;
+            if (src_height < 0)
+                src_height += LINES;
+            Bitmap tmpBitmap = Bitmap.createBitmap(358, 2 * src_height, Bitmap.Config.ARGB_8888);
+            IntBuffer tmpBuffer = IntBuffer.allocate(716 * src_height);
+            int[] tmpArray = tmpBuffer.array();
+            for (int y = 0; y < src_height; y++) {
+                int yy = y + (top / BYTESPERLINE);
+                if (yy >= LINES)
+                    yy -= LINES;
+                for (int x = 0; x < 179; x++) {
+                    int xx = x - 18;
+                    int color;
+                    if (xx >= 0 && xx < 143) {
+                        boolean set = (buffer[yy * BYTESPERLINE + (xx >> 3)] & (1 << (xx & 7))) != 0;
+                        color = set ? Color.BLACK : Color.WHITE;
+                    } else
+                        color = Color.WHITE;
+                    int pos = 716 * y + 2 * x;
+                    tmpArray[pos] = tmpArray[pos + 1] = tmpArray[pos + 358] = tmpArray[pos + 359] = color;
+                }
+            }
+            tmpBitmap.copyPixelsFromBuffer(tmpBuffer);
+            String cacheDir = getFilesDir() + "/cache";
+            new File(cacheDir).mkdir();
+            String imageFileName = cacheDir + "/PrintOut.png";
+            OutputStream os = null;
+            try {
+                os = new FileOutputStream(imageFileName);
+                tmpBitmap.compress(Bitmap.CompressFormat.PNG, 0, os);
+            } catch (IOException e) {
+                // Ignore
+            } finally {
+                if (os != null)
+                    try {
+                        os.close();
+                    } catch (IOException e) {}
+            }
+            return imageFileName;
         }
 
         public void copyAsImage() {
             // Not supported by Android?!?
+        }
+
+        public void share() {
+            String text = printOutAsText();
+            String pngFileName = printOutAsImage();
+            Intent intent = new Intent(Intent.ACTION_SEND);
+            intent.putExtra(Intent.EXTRA_TEXT, text);
+            Uri uri = FileProvider.getUriForFile(Free42Activity.this, Free42Activity.this.getPackageName() + ".fileprovider", new File(pngFileName));
+            intent.setType("*/*");
+            intent.putExtra(Intent.EXTRA_STREAM, uri);
+            getContext().startActivity(Intent.createChooser(intent, "Share Free42 Print-Out Using"));
         }
 
         public void clear() {
@@ -1412,7 +1667,7 @@ public class Free42Activity extends Activity {
             if (state_read_int() != FREE42_MAGIC())
                 return false;
             version.value = state_read_int();
-            if (version.value < 0 || version.value > FREE42_VERSION())
+            if (version.value < 0)
                 return false;
             int shell_version = state_read_int();
             ShellSpool.printToGif = state_read_boolean();
@@ -1463,8 +1718,10 @@ public class Free42Activity extends Activity {
                 maintainSkinAspect[0] = state_read_boolean();
                 maintainSkinAspect[1] = state_read_boolean();
             }
-            if (shell_version >= 14)
+            if (shell_version >= 14) {
                 keyVibrationLen = state_read_int();
+                coreName = state_read_string();
+            }
             init_shell_state(shell_version);
         } catch (IllegalArgumentException e) {
             return false;
@@ -1525,6 +1782,7 @@ public class Free42Activity extends Activity {
             // fall through
         case 13:
             keyVibrationLen = 50;
+            coreName = "Untitled";
             // fall through
         case 14:
             // current version (SHELL_VERSION = 14),
@@ -1537,7 +1795,7 @@ public class Free42Activity extends Activity {
     private void write_shell_state() {
         try {
             state_write_int(FREE42_MAGIC());
-            state_write_int(FREE42_VERSION());
+            state_write_int(27);
             state_write_int(SHELL_VERSION);
             state_write_boolean(ShellSpool.printToGif);
             state_write_string(ShellSpool.printToGifFileName);
@@ -1561,13 +1819,18 @@ public class Free42Activity extends Activity {
             state_write_boolean(maintainSkinAspect[0]);
             state_write_boolean(maintainSkinAspect[1]);
             state_write_int(keyVibrationLen);
+            state_write_string(coreName);
         } catch (IllegalArgumentException e) {}
     }
     
     private byte[] int_buf = new byte[4];
     private int state_read_int() throws IllegalArgumentException {
-        if (shell_read_saved_state(int_buf) != 4)
+        try {
+            if (stateFileInputStream.read(int_buf) != 4)
+                throw new IllegalArgumentException();
+        } catch (IOException e) {
             throw new IllegalArgumentException();
+        }
         return (int_buf[0] << 24) | ((int_buf[1] & 255) << 16) | ((int_buf[2] & 255) << 8) | (int_buf[3] & 255);
     }
     private void state_write_int(int i) throws IllegalArgumentException {
@@ -1575,44 +1838,58 @@ public class Free42Activity extends Activity {
         int_buf[1] = (byte) (i >> 16);
         int_buf[2] = (byte) (i >> 8);
         int_buf[3] = (byte) i;
-        if (!shell_write_saved_state(int_buf))
+        try {
+            stateFileOutputStream.write(int_buf);
+        } catch (IOException e) {
             throw new IllegalArgumentException();
+        }
     }
     
     private byte[] boolean_buf = new byte[1];
     private boolean state_read_boolean() throws IllegalArgumentException {
-        if (shell_read_saved_state(boolean_buf) != 1)
+        try {
+            if (stateFileInputStream.read(boolean_buf) != 1)
+                throw new IllegalArgumentException();
+        } catch (IOException e) {
             throw new IllegalArgumentException();
+        }
         return boolean_buf[0] != 0;
     }
     private void state_write_boolean(boolean b) throws IllegalArgumentException {
         boolean_buf[0] = (byte) (b ? 1 : 0);
-        if (!shell_write_saved_state(boolean_buf))
+        try {
+            stateFileOutputStream.write(boolean_buf);
+        } catch (IOException e) {
             throw new IllegalArgumentException();
+        }
     }
     
     private String state_read_string() throws IllegalArgumentException {
         int length = state_read_int();
         byte[] buf = new byte[length];
-        if (length > 0 && shell_read_saved_state(buf) != length)
-            throw new IllegalArgumentException();
         try {
+            if (length > 0 && stateFileInputStream.read(buf) != length)
+                throw new IllegalArgumentException();
             return new String(buf, "UTF-8");
         } catch (UnsupportedEncodingException e) {
             // Won't happen; UTF-8 is always supported.
             return null;
+        } catch (IOException e) {
+            throw new IllegalArgumentException();
         }
     }
     private void state_write_string(String s) throws IllegalArgumentException {
         byte[] buf;
         try {
             buf = s.getBytes("UTF-8");
+            state_write_int(buf.length);
+            stateFileOutputStream.write(buf);
         } catch (UnsupportedEncodingException e) {
             // Won't happen; UTF-8 is always supported.
             throw new IllegalArgumentException();
+        } catch (IOException e) {
+            throw new IllegalArgumentException();
         }
-        state_write_int(buf.length);
-        shell_write_saved_state(buf);
     }
 
     private class CoreThread extends Thread {
@@ -1698,12 +1975,12 @@ public class Free42Activity extends Activity {
     }
     
 
-    //////////////////////////////////////////////////////////////////////////
-    ///// Stubs for accessing the FREE42_MAGIC and FREE42_VERSION macros /////
-    //////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////
+    ///// Stubs for accessing the FREE42_MAGIC and FREE42_MAGIC_STR macros /////
+    ////////////////////////////////////////////////////////////////////////////
     
-    private native int FREE42_MAGIC();
-    private native int FREE42_VERSION();
+    private static native int FREE42_MAGIC();
+    public static native String FREE42_MAGIC_STR();
     
     ///////////////////////////////////////////
     ///// Stubs for shell->core interface /////
@@ -1712,9 +1989,9 @@ public class Free42Activity extends Activity {
     private native void nativeInit();
     private native void core_keydown_finish();
     
-    private native void core_init(int read_state, int version);
-    private native void core_enter_background();
-    private native void core_quit();
+    private native void core_init(int read_state, int version, String state_file_name, int state_file_offset);
+    private native void core_save_state(String state_file_name);
+    private native void core_cleanup();
     private native void core_repaint_display();
     private native boolean core_menu();
     //private native boolean core_alpha_menu();
@@ -1729,8 +2006,8 @@ public class Free42Activity extends Activity {
     private native boolean core_powercycle();
     private native String[] core_list_programs();
     //private native int core_program_size(int prgm_index);
-    private native void core_export_programs(int[] indexes);
-    private native void core_import_programs();
+    private native void core_export_programs(int[] indexes, String raw_file_name);
+    private native void core_import_programs(String raw_file_name);
     private native String core_copy();
     private native void core_paste(String s);
     private native void getCoreSettings(CoreSettings settings);
@@ -1762,12 +2039,10 @@ public class Free42Activity extends Activity {
      * 'bits' is a pointer to a 1 bpp (monochrome) bitmap. The bits within a byte
      * are laid out with left corresponding to least significant, right
      * corresponding to most significant; this corresponds to the convention for
-     * X11 images, but it is the reverse of the convention for MacOS and its
-     * derivatives (Microsoft Windows and PalmOS).
+     * X11 images, but it is the reverse of the convention for MacOS and Windows.
      * The bytes are laid out sequentially, that is, bits[0] is at the top
      * left corner, bits[1] is to the right of bits[0], bits[2] is to the right of
-     * bits[1], and so on; this corresponds to X11, MacOS, Windows, and PalmOS
-     * usage.
+     * bits[1], and so on; this corresponds to X11, MacOS, and Windows usage.
      * 'bytesperline' is the number of bytes per line of the bitmap; this means
      * that the bits just below bits[0] are at bits[bytesperline].
      * 'x', 'y', 'width', and 'height' define the part of the bitmap that needs to
@@ -1873,62 +2148,19 @@ public class Free42Activity extends Activity {
         mainHandler.postDelayed(timeout3Caller, delay);
         timeout3_active = true;
     }
-    
+
     /**
-     * shell_read_saved_state()
-     *
-     * Callback to read from the saved state. The function will read up to n
-     * bytes into the buffer pointed to by buf, and return the number of bytes
-     * actually read. The function returns -1 if an error was encountered; a return
-     * value of 0 signifies the end of input.
-     * The emulator core should only call this function from core_init(), and only
-     * if core_init() was called with an argument of 1. (Nothing horrible will
-     * happen if you try to call this function during other contexts, but you will
-     * always get an error then.)
+     * shell_platform()
+     * Callback to get the application version and platform.
      */
-    public int shell_read_saved_state(byte[] buf) {
-        if (stateFileInputStream == null)
-            return -1;
-        if (buf.length == 0)
-            return 0;
+    public String shell_platform() {
+        String version;
         try {
-            int n = stateFileInputStream.read(buf);
-            if (n <= 0) {
-                stateFileInputStream.close();
-                stateFileInputStream = null;
-                return 0;
-            } else
-                return n;
-        } catch (IOException e) {
-            try {
-                stateFileInputStream.close();
-            } catch (IOException e2) {}
-            stateFileInputStream = null;
-            return -1;
+            version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (NameNotFoundException e) {
+            version = "(Unknown)";
         }
-    }
-    
-    /**
-     * shell_write_saved_state()
-     * Callback to dump the saved state to persistent storage.
-     * Returns 'true' on success, 'false' on error.
-     * The emulator core should only call this function from core_quit(). (Nothing
-     * horrible will happen if you try to call this function during other contexts,
-     * but you will always get an error then.)
-     */
-    public boolean shell_write_saved_state(byte[] buf) {
-        if (stateFileOutputStream == null)
-            return false;
-        try {
-            stateFileOutputStream.write(buf);
-            return true;
-        } catch (IOException e) {
-            try {
-                stateFileOutputStream.close();
-            } catch (IOException e2) {}
-            stateFileOutputStream = null;
-            return false;
-        }
+        return version + " Android";
     }
     
     /**
@@ -2017,12 +2249,10 @@ public class Free42Activity extends Activity {
         if (ShellSpool.printToTxt) {
             try {
                 if (printTxtStream == null)
-                    if (new File(ShellSpool.printToTxtFileName).exists()) {
+                    if (new File(ShellSpool.printToTxtFileName).exists())
                         printTxtStream = new FileOutputStream(ShellSpool.printToTxtFileName, true);
-                    } else {
+                    else
                         printTxtStream = new FileOutputStream(ShellSpool.printToTxtFileName);
-                        printTxtStream.write(new byte[] { (byte) 0xEF, (byte) 0xBB, (byte) 0xBF });
-                    }
                 if (text != null)
                     ShellSpool.shell_spool_txt(text, printTxtStream);
                 else
@@ -2116,53 +2346,13 @@ public class Free42Activity extends Activity {
             }
         }
     }
-    
+
     /**
-     * shell_write()
-     *
-     * Callback for core_export_programs(). Returns 0 if a problem occurred;
-     * core_export_programs() should abort in that case.
+     * shell_message()
+     * Shows a message box on behalf of the core.
      */
-    public int shell_write(byte[] buf) {
-        if (programsOutputStream == null)
-            return 0;
-        try {
-            programsOutputStream.write(buf);
-            return 1;
-        } catch (IOException e) {
-            try {
-                programsOutputStream.close();
-            } catch (IOException e2) {}
-            programsOutputStream = null;
-            return 0;
-        }
-    }
-    
-    /**
-     * shell_read()
-     *
-     * Callback for core_import_programs(). Returns the number of bytes actually
-     * read. Returns -1 if an error occurred; a return value of 0 signifies end of
-     * input.
-     */
-    public int shell_read(byte[] buf) {
-        if (programsInputStream == null)
-            return -1;
-        try {
-            int n = programsInputStream.read(buf);
-            if (n <= 0) {
-                programsInputStream.close();
-                programsInputStream = null;
-                return 0;
-            } else
-                return n;
-        } catch (IOException e) {
-            try {
-                programsInputStream.close();
-            } catch (IOException e2) {}
-            programsInputStream = null;
-            return -1;
-        }
+    public void shell_message(String message) {
+        alert(message);
     }
     
     private boolean accel_inited, accel_exists;

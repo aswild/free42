@@ -58,7 +58,7 @@
     selected = (bool *) malloc(count * sizeof(bool));
     const char *p = newNames + 4;
     for (int i = 0; i < count; i++) {
-        names[i] = [[NSString stringWithCString:p encoding:NSUTF8StringEncoding] retain];
+        names[i] = [[NSString stringWithUTF8String:p] retain];
         selected[i] = false;
         p += strlen(p) + 1;
     }
@@ -66,6 +66,10 @@
 
 - (bool *) getSelection {
     return selected;
+}
+
+- (NSString *) getItemAtIndex:(int)i {
+    return names[i];
 }
 
 @end

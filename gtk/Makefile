@@ -19,10 +19,17 @@ CFLAGS = -MMD \
 	 -Wall \
 	 -Wno-parentheses \
 	 -Wno-write-strings \
+	 -Wno-sign-compare \
+	 -Wno-narrowing \
+	 -Wno-constant-conversion \
+	 -Wno-sometimes-uninitialized \
+	 -Wno-format-truncation \
+	 -Wno-unknown-warning-option \
 	 -g \
 	 -I/usr/X11R6/include \
 	 $(shell pkg-config --cflags gtk+-2.0) \
 	 -DVERSION="\"$(shell cat ../VERSION)\"" \
+         -DVERSION_PLATFORM="\"$(shell uname -s)\"" \
 	 -DDECIMAL_CALL_BY_REFERENCE=1 \
 	 -DDECIMAL_GLOBAL_ROUNDING=1 \
 	 -DDECIMAL_GLOBAL_ROUNDING_ACCESS_FUNCTIONS=1 \
@@ -35,11 +42,16 @@ CXXFLAGS = $(CFLAGS) \
 	 -D_WCHAR_T_DEFINED
 
 LDFLAGS = -L/usr/X11R6/lib
-LIBS = gcc111libbid.a -lXmu $(shell pkg-config --libs gtk+-2.0) -lX11
+LIBS = gcc111libbid.a $(shell pkg-config --libs gtk+-2.0) -lXmu -lX11
 
-ifeq "$(shell uname -s)" "Linux"
-LDFLAGS += -Wl,--hash-style=both
-LIBS += -lpthread
+ifeq "$(shell uname -s)" "FreeBSD"
+ifdef AUDIO_ALSA
+LIBS += -ldl
+endif
+endif
+
+ifneq "$(findstring 6162,$(shell echo ab | od -x))" ""
+CFLAGS += -DF42_BIG_ENDIAN -DBID_BIG_ENDIAN
 endif
 
 SRCS = shell_main.cc shell_skin.cc skins.cc keymap.cc shell_loadimage.cc \
@@ -115,8 +127,8 @@ clean: FORCE
 	rm -f `find . -type l` \
 		skin2cc skin2cc.exe skins.cc \
 		keymap2cc keymap2cc.exe keymap.cc \
-	        readtest_lines.cc \
-	        gcc111libbid.a \
+		readtest_lines.cc \
+		gcc111libbid.a \
 		*.o *.d *.i *.ii *.s symlinks core.*
 	rm -rf IntelRDFPMathLib20U1
 
@@ -125,11 +137,11 @@ cleaner: FORCE
 		free42bin free42bin.exe free42dec free42dec.exe \
 		skin2cc skin2cc.exe skins.cc \
 		keymap2cc keymap2cc.exe keymap.cc \
-	        readtest_lines.cc \
-	        gcc111libbid.a \
+		readtest_lines.cc \
+		gcc111libbid.a \
 		*.o *.d *.i *.ii *.s symlinks core.*
 	rm -rf IntelRDFPMathLib20U1
 
 FORCE:
 
--include $(SRCS:.cc=.d)
+-include $(OBJS:.o=.d)

@@ -27,6 +27,7 @@
 @class SelectFileView;
 @class DeleteSkinView;
 @class LoadSkinView;
+@class StatesView;
 
 @interface RootViewController : UIViewController {
     UIWindow *window;
@@ -40,6 +41,7 @@
     SelectFileView *selectFileView;
     DeleteSkinView *deleteSkinView;
     LoadSkinView *loadSkinView;
+    StatesView *statesView;
 }
 
 @property (nonatomic, retain) IBOutlet UIWindow *window;
@@ -53,11 +55,13 @@
 @property (nonatomic, retain) IBOutlet SelectFileView *selectFileView;
 @property (nonatomic, retain) IBOutlet DeleteSkinView *deleteSkinView;
 @property (nonatomic, retain) IBOutlet LoadSkinView *loadSkinView;
+@property (nonatomic, retain) IBOutlet StatesView *statesView;
 
 - (void) enterBackground;
 - (void) leaveBackground;
 - (void) quit;
 - (void) batteryLevelChanged;
+- (void) layoutSubViews;
 
 + (void) showMessage:(NSString *) message;
 + (void) playSound: (int) which;
@@ -69,9 +73,10 @@
 + (void) showAbout;
 + (void) showSelectFile;
 + (void) doImport;
-+ (void) doExport;
++ (void) doExport:(BOOL)share;
 + (void) showLoadSkin;
 + (void) showDeleteSkin;
++ (void) showStates:(NSString *)stateName;
 
 @end
 

@@ -60,9 +60,10 @@ static int port;
 static pthread_t getHostNameThread;
 static struct sockaddr_in *sa;
 
-static void *getHostName(void *dummy) {
+static void *getHostName(void *iflist) {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
     
+    struct ifaddrs *list = (struct ifaddrs *) iflist;
     struct hostent *h = gethostbyaddr(&sa->sin_addr, sizeof(sa->sin_addr), AF_INET);
     if (h == NULL) {
         int err = h_errno;
@@ -78,8 +79,9 @@ static void *getHostName(void *dummy) {
         
     } else {
         NSLog(@"My DNS hostname appears to be %s", h->h_name);
-        hostname = [[NSString stringWithCString:h->h_name encoding:NSUTF8StringEncoding] retain];
+        hostname = [[NSString stringWithUTF8String:h->h_name] retain];
     }
+    freeifaddrs(list);
     
     [pool release];
     static int result = 0;
@@ -112,7 +114,7 @@ static void *getHostName(void *dummy) {
                     NSString *ipStr2 = [[NSString stringWithString:hostname2] retain];
                     NSLog(@"interface: %s (%@)", item->ifa_name, ipStr2);
                 }
-                if (strcmp(item->ifa_name, "en0") == 0 || strcmp(item->ifa_name, "en1") == 0) {
+                if (strncmp(item->ifa_name, "en", 2) == 0) {
                     sa = (struct sockaddr_in *) item->ifa_addr;
                     ip_addr = sa->sin_addr.s_addr;
                     hostname = [[NSString stringWithFormat:@"%d.%d.%d.%d",
@@ -122,12 +124,17 @@ static void *getHostName(void *dummy) {
                                  (ip_addr >> 24) & 255] retain];
                     ipStr = [[NSString stringWithString:hostname] retain];
                     NSLog(@"My IP address appears to be %@", hostname);
-                    pthread_create(&getHostNameThread, NULL, getHostName, NULL);
-                    //break;
+                    pthread_create(&getHostNameThread, NULL, getHostName, list);
+                    // The list of interfaces should not be deleted until the
+                    // getHostNameThread has had the chance to run; we leave
+                    // deleting it to that thread.
+                    list = NULL;
+                    break;
                 }
             }
         }
-        freeifaddrs(list);
+        if (list != NULL)
+            freeifaddrs(list);
     }
 }
 
@@ -159,7 +166,7 @@ static void *getHostName(void *dummy) {
 - (void) touchesBegan: (NSSet *) touches withEvent: (UIEvent *) event {
     if ([touches count] == 1 && CGRectContainsPoint([urlLabel frame], [((UITouch *) [touches anyObject]) locationInView:self])) {
         NSString *temp = [urlLabel text];
-        if (alternateUrl != nil && ![temp isEqualToString:@"(not running"]) {
+        if (alternateUrl != nil && ![temp isEqualToString:@"(not running)"]) {
             [urlLabel setText:alternateUrl];
             alternateUrl = [temp retain];
         }
@@ -278,7 +285,7 @@ void errprintf(const char *fmt, ...) {
     char text[1024];
     va_start(ap, fmt);
     vsprintf(text, fmt, ap);
-    [instance performSelectorOnMainThread:@selector(appendToLog:) withObject:[NSString stringWithCString:text encoding:NSUTF8StringEncoding] waitUntilDone:NO];
+    [instance performSelectorOnMainThread:@selector(appendToLog:) withObject:[NSString stringWithUTF8String:text] waitUntilDone:NO];
     va_end(ap);
     
     [pool release];

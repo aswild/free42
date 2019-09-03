@@ -19,10 +19,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <errno.h>
 
 #include "core_main.h"
 #include "core_commands2.h"
 #include "core_commands4.h"
+#include "core_display.h"
 #include "core_display.h"
 #include "core_helpers.h"
 #include "core_keydown.h"
@@ -59,7 +61,7 @@ static int4 oldpc;
 
 core_settings_struct core_settings;
 
-void core_init(int read_saved_state, int4 version) {
+void core_init(int read_saved_state, int4 version, const char *state_file_name, int offset) {
 
     /* Possible values for read_saved_state:
      * 0: state file not present (Memory Clear)
@@ -68,8 +70,32 @@ void core_init(int read_saved_state, int4 version) {
      */
 
     phloat_init();
-    if (read_saved_state != 1 || !load_state(version))
-        hard_reset(read_saved_state != 0);
+    if (read_saved_state == 1) {
+        gfile = fopen(state_file_name, "rb");
+        if (gfile == NULL)
+            read_saved_state = 0;
+        else if (offset > 0)
+            fseek(gfile, offset, SEEK_SET);
+    } else
+        gfile = NULL;
+
+    bool clear, too_new = false;
+    int reason = 0;
+    if (read_saved_state != 1 || !load_state(version, &clear, &too_new)) {
+        reason = too_new ? 2 : (read_saved_state != 0 && !clear) ? 1 : 0;
+        hard_reset(reason);
+    }
+    if (gfile != NULL)
+        fclose(gfile);
+    if (reason != 0 && state_file_name != NULL) {
+        char *tmp = (char *) malloc(strlen(state_file_name) + 9);
+        if (tmp != NULL) {
+            strcpy(tmp, state_file_name);
+            strcat(tmp, reason == 1 ? ".corrupt" : ".too_new");
+            rename(state_file_name, tmp);
+            free(tmp);
+        }
+    }
 
     repaint_display();
     shell_annunciators(mode_updown,
@@ -80,38 +106,36 @@ void core_init(int read_saved_state, int4 version) {
                        flags.f.rad || flags.f.grad);
 }
 
-#if defined(IPHONE) || defined(ANDROID)
-void core_enter_background() {
+void core_save_state(const char *state_file_name) {
     if (mode_interruptible != NULL)
         stop_interruptible();
     set_running(false);
-    save_state();
+    gfile = fopen(state_file_name, "wb");
+    if (gfile != NULL) {
+        save_state();
+        fclose(gfile);
+    }
 }
-#endif
 
-void core_quit() {
-#ifndef ANDROID
-    // In Android, core_enter_background() is always called
-    // before core_quit().
-    // TODO: Does that apply to the iPhone verson as well?
-    if (mode_interruptible != NULL)
-        stop_interruptible();
-    save_state();
+void core_cleanup() {
     free_vartype(reg_x);
+    reg_x = NULL;
     free_vartype(reg_y);
+    reg_y = NULL;
     free_vartype(reg_z);
+    reg_z = NULL;
     free_vartype(reg_t);
+    reg_t = NULL;
     free_vartype(reg_lastx);
+    reg_lastx = NULL;
     purge_all_vars();
     clear_all_prgms();
-    if (vars != NULL)
+    if (vars != NULL) {
         free(vars);
+        vars = NULL;
+        vars_capacity = 0;
+    }
     clean_vartype_pools();
-#endif
-//
-//#ifdef ANDROID
-//    reinitialize_globals();
-//#endif
 }
 
 void core_repaint_display() {
@@ -552,9 +576,9 @@ int core_powercycle() {
          * OFF on the keyboard returns code 70 and stops program execution; and
          * when the auto-poweroff timeout expires, code 70 is returned but
          * program execution continues.
-         * Since Free42 can be shut down in ways the HP-42S can't (exiting the
-         * application, or turning off power on a Palm), I have to fake it a
-         * bit; I put 70 in X as if the user had done OFF twice on a real 42S.
+         * Since Free42 can be shut down in a way the HP-42S can't, by exiting
+         * the application, I have to fake it a bit; I put 70 in X as if the
+         * user had done OFF twice on a real 42S.
          */
         vartype *seventy = new_real(70);
         if (seventy != NULL) {
@@ -673,6 +697,67 @@ char *core_list_programs() {
     buf[3] = (char) count;
     return buf;
 }
+
+#ifdef IPHONE
+
+// This would have been a lot cleaner using fmemopen(), but that's only supported
+// in iOS 11 and later, and I'm not ready to give up on iOS 8 through 10 yet.
+
+static char *raw_buf;
+static size_t raw_size;
+static size_t raw_pos;
+
+static int raw_getc() {
+    if (raw_buf == NULL)
+        return fgetc(gfile);
+    else {
+        if (raw_pos < raw_size)
+            return raw_buf[raw_pos++] & 255;
+        else
+            return EOF;
+    }
+}
+
+static int raw_ungetc(int c) {
+    if (raw_buf == NULL)
+        return ungetc(c, gfile);
+    else {
+        raw_buf[--raw_pos] = (char) c;
+        return c;
+    }
+}
+
+static size_t raw_write(const char *buf, size_t size) {
+    if (raw_buf == NULL)
+        return fwrite(buf, 1, size, gfile);
+    else {
+        if (raw_pos + size > raw_size)
+            size = raw_size - raw_pos;
+        memcpy(raw_buf + raw_pos, buf, size);
+        raw_pos += size;
+        return size;
+    }
+}
+
+static void raw_close(const char *mode) {
+    if (raw_buf == NULL) {
+	if (ferror(gfile)) {
+	    char msg[50];
+	    sprintf(msg, "An error occurred during program %s.", mode);
+            shell_message(msg);
+	}
+        fclose(gfile);
+    }
+}
+
+#else
+
+#define raw_getc() fgetc(gfile)
+#define raw_ungetc(c) ungetc(c, gfile)
+#define raw_write(buf, size) fwrite(buf, 1, size, gfile)
+#define raw_close(dummy) fclose(gfile)
+
+#endif
 
 static void export_hp42s(int index) {
     int4 pc = 0;
@@ -935,7 +1020,7 @@ static void export_hp42s(int index) {
                 continue;
         }
         if (buflen + cmdlen > 1000) {
-            if (!shell_write(buf, buflen))
+            if (raw_write(buf, buflen) != buflen)
                 goto done;
             buflen = 0;
         }
@@ -943,7 +1028,7 @@ static void export_hp42s(int index) {
             buf[buflen++] = cmdbuf[i];
     } while (cmd != CMD_END && pc < prgms[index].size);
     if (buflen > 0)
-        shell_write(buf, buflen);
+        raw_write(buf, buflen);
     done:
     current_prgm = saved_prgm;
 }
@@ -1066,12 +1151,38 @@ int4 core_program_size(int prgm_index) {
     return size;
 }
 
-void core_export_programs(int count, const int *indexes) {
-    int i;
-    for (i = 0; i < count; i++) {
+void core_export_programs(int count, const int *indexes, const char *raw_file_name) {
+    if (raw_file_name != NULL) {
+#ifdef IPHONE
+        if (strncmp(raw_file_name, "mem:", 4) == 0) {
+            char *buf;
+            ssize_t size;
+            memcpy(&buf, raw_file_name + 5, sizeof(char *));
+            memcpy(&size, raw_file_name + 13, sizeof(ssize_t));
+            raw_buf = buf;
+            raw_size = size;
+            raw_pos = 0;
+        } else {
+            raw_buf = NULL;
+#endif
+            gfile = fopen(raw_file_name, "w");
+            if (gfile == NULL) {
+                char msg[1024];
+                int err = errno;
+                sprintf(msg, "Could not open \"%s\" for writing: %s (%d)", raw_file_name, strerror(err), err);
+                shell_message(msg);
+                return;
+            }
+#ifdef IPHONE
+        }
+#endif
+    }
+    for (int i = 0; i < count; i++) {
         int p = indexes[i];
         export_hp42s(p);
     }
+    if (raw_file_name != NULL)
+        raw_close("export");
 }
 
 static int hp42tofree42[] = {
@@ -1528,16 +1639,6 @@ static int hp42ext[] = {
 };
 
 
-static int getbyte(char *buf, int *bufptr, int *buflen, int maxlen) {
-    if (*bufptr == *buflen) {
-        *buflen = shell_read(buf, maxlen);
-        if (*buflen <= 0)
-            return -1;
-        *bufptr = 0;
-    }
-    return (unsigned char) buf[(*bufptr)++];
-}
-
 static phloat parse_number_line(char *buf) {
     phloat res;
     if (buf[0] == 'E' || buf[0] == '-' && buf[1] == 'E') {
@@ -1549,7 +1650,7 @@ static phloat parse_number_line(char *buf) {
             buf2[0] = '-';
             buf2[1] = '1';
         }
-        int len2 = strlen(buf2);
+        int len2 = (int) strlen(buf2);
         if (buf2[len2 - 1] == 'E')
             buf2[len2 - 1] = 0;
         res = parse_number_line(buf2);
@@ -1591,18 +1692,41 @@ static phloat parse_number_line(char *buf) {
     return res;
 }
 
-void core_import_programs() {
-    char buf[1000];
-    int i, nread = 0;
-    int need_to_rebuild_label_table = 0;
+void core_import_programs(int num_progs, const char *raw_file_name) {
+    int i;
 
-    int pos = 0;
     int byte1, byte2, suffix;
     int cmd, flag, str_len;
     int done_flag = 0;
     arg_struct arg;
     int assign = 0;
-    int at_end = 1;
+    bool pending_end;
+
+    if (raw_file_name != NULL) {
+#ifdef IPHONE
+        if (strncmp(raw_file_name, "mem:", 4) == 0) {
+            char *buf;
+            ssize_t size;
+            memcpy(&buf, raw_file_name + 5, sizeof(char *));
+            memcpy(&size, raw_file_name + 13, sizeof(ssize_t));
+            raw_buf = buf;
+            raw_size = size;
+            raw_pos = 0;
+        } else {
+            raw_buf = NULL;
+#endif
+            gfile = fopen(raw_file_name, "rb");
+            if (gfile == NULL) {
+                char msg[1024];
+                int err = errno;
+                sprintf(msg, "Could not open \"%s\" for reading: %s (%d)", raw_file_name, strerror(err), err);
+                shell_message(msg);
+                return;
+            }
+#ifdef IPHONE
+        }
+#endif
+    }
 
     set_running(false);
 
@@ -1613,11 +1737,20 @@ void core_import_programs() {
     int saved_normal = flags.f.normal_print;
     flags.f.trace_print = 0;
     flags.f.normal_print = 0;
+    
+    if (num_progs > 0) {
+        // Loading state file
+        goto_dot_dot(true);
+        pending_end = false;
+    } else {
+        // No initial END needed if last program is empty
+        pending_end = prgms[prgms_count - 1].size > 2;
+    }
 
     while (!done_flag) {
         skip:
-        byte1 = getbyte(buf, &pos, &nread, 1000);
-        if (byte1 == -1)
+        byte1 = raw_getc();
+        if (byte1 == EOF)
             goto done;
         cmd = hp42tofree42[byte1];
         flag = cmd >> 12;
@@ -1632,8 +1765,8 @@ void core_import_programs() {
                 arg.val.num--;
             goto store;
         } else if (flag == 2) {
-            suffix = getbyte(buf, &pos, &nread, 1000);
-            if (suffix == -1)
+            suffix = raw_getc();
+            if (suffix == EOF)
                 goto done;
             goto do_suffix;
         } else /* flag == 3 */ {
@@ -1654,23 +1787,23 @@ void core_import_programs() {
                     else
                         byte1 += '0' - 0x10;
                     numbuf[numlen++] = byte1;
-                    byte1 = getbyte(buf, &pos, &nread, 1000);
+                    byte1 = raw_getc();
                 } while (byte1 >= 0x10 && byte1 <= 0x1C);
-                if (byte1 == -1)
+                if (byte1 == EOF)
                     done_flag = 1;
                 else if (byte1 != 0x00)
-                    pos--;
+                    raw_ungetc(byte1);
                 numbuf[numlen++] = 0;
                 arg.val_d = parse_number_line(numbuf);
                 cmd = CMD_NUMBER;
                 arg.type = ARGTYPE_DOUBLE;
             } else if (byte1 == 0x1D || byte1 == 0x1E) {
                 cmd = byte1 == 0x1D ? CMD_GTO : CMD_XEQ;
-                str_len = getbyte(buf, &pos, &nread, 1000);
-                if (str_len == -1)
+                str_len = raw_getc();
+                if (str_len == EOF)
                     goto done;
                 else if (str_len < 0x0F1) {
-                    pos--;
+                    raw_ungetc(str_len);
                     goto skip;
                 } else
                     str_len -= 0x0F0;
@@ -1686,8 +1819,8 @@ void core_import_programs() {
                  * on the cmdlist table.
                  */
                 uint4 code;
-                byte2 = getbyte(buf, &pos, &nread, 1000);
-                if (byte2 == -1)
+                byte2 = raw_getc();
+                if (byte2 == EOF)
                     goto done;
                 code = (((unsigned int) byte1) << 8) | byte2;
                 for (i = 0; i < CMD_SENTINEL; i++)
@@ -1705,8 +1838,8 @@ void core_import_programs() {
                 goto store;
             } else if (byte1 == 0x0AE) {
                 /* GTO/XEQ IND */
-                suffix = getbyte(buf, &pos, &nread, 1000);
-                if (suffix == -1)
+                suffix = raw_getc();
+                if (suffix == EOF)
                     goto done;
                 if ((suffix & 0x80) != 0)
                     cmd = CMD_XEQ;
@@ -1720,8 +1853,8 @@ void core_import_programs() {
                 goto skip;
             } else if (byte1 >= 0x0B1 && byte1 <= 0x0BF) {
                 /* 2-byte GTO */
-                byte2 = getbyte(buf, &pos, &nread, 1000);
-                if (byte2 == -1)
+                byte2 = raw_getc();
+                if (byte2 == EOF)
                     goto done;
                 cmd = CMD_GTO;
                 arg.type = ARGTYPE_NUM;
@@ -1729,21 +1862,22 @@ void core_import_programs() {
                 goto store;
             } else if (byte1 >= 0x0C0 && byte1 <= 0x0CD) {
                 /* GLOBAL */
-                byte2 = getbyte(buf, &pos, &nread, 1000);
-                if (byte2 == -1)
+                byte2 = raw_getc();
+                if (byte2 == EOF)
                     goto done;
-                str_len = getbyte(buf, &pos, &nread, 1000);
-                if (str_len == -1)
+                str_len = raw_getc();
+                if (str_len == EOF)
                     goto done;
                 if (str_len < 0x0F1) {
                     /* END */
-                    at_end = 1;
-                    goto skip;
+                    cmd = CMD_END;
+                    arg.type = ARGTYPE_NONE;
+                    goto store;
                 } else {
                     /* LBL "" */
                     str_len -= 0x0F1;
-                    byte2 = getbyte(buf, &pos, &nread, 1000);
-                    if (byte2 == -1)
+                    byte2 = raw_getc();
+                    if (byte2 == EOF)
                         goto done;
                     cmd = CMD_LBL;
                     arg.type = ARGTYPE_STR;
@@ -1751,11 +1885,11 @@ void core_import_programs() {
                 }
             } else if (byte1 >= 0x0D0 && byte1 <= 0x0EF) {
                 /* 3-byte GTO & XEQ */
-                byte2 = getbyte(buf, &pos, &nread, 1000);
-                if (byte2 == -1)
+                byte2 = raw_getc();
+                if (byte2 == EOF)
                     goto done;
-                suffix = getbyte(buf, &pos, &nread, 1000);
-                if (suffix == -1)
+                suffix = raw_getc();
+                if (suffix == EOF)
                     goto done;
                 cmd = byte1 <= 0x0DF ? CMD_GTO : CMD_XEQ;
                 suffix &= 0x7F;
@@ -1777,7 +1911,9 @@ void core_import_programs() {
                     arg.val.text[0] = 127;
                     goto store;
                 }
-                byte2 = getbyte(buf, &pos, &nread, 1000);
+                byte2 = raw_getc();
+                if (byte2 == EOF)
+                    goto done;
                 if (byte1 == 0x0F1) {
                     switch (byte2) {
                         case 0x0D5: cmd = CMD_FIX; arg.val.num = 10; break;
@@ -1796,21 +1932,21 @@ void core_import_programs() {
                     int i;
                     plain_string:
                     str_len = byte1 - 0x0F0;
-                    pos--;
+                    raw_ungetc(byte2);
                     cmd = CMD_STRING;
                     arg.type = ARGTYPE_STR;
                     do_string:
                     for (i = 0; i < str_len; i++) {
-                        suffix = getbyte(buf, &pos, &nread, 1000);
-                        if (suffix == -1)
+                        suffix = raw_getc();
+                        if (suffix == EOF)
                             goto done;
                         arg.val.text[i] = suffix;
                     }
                     arg.length = str_len;
                     if (assign) {
                         assign = 0;
-                        suffix = getbyte(buf, &pos, &nread, 1000);
-                        if (suffix == -1)
+                        suffix = raw_getc();
+                        if (suffix == EOF)
                             goto done;
                         if (suffix > 17) {
                             /* Bad assign... Fix the command to the string
@@ -1841,8 +1977,8 @@ void core_import_programs() {
                         int ind;
                         if (byte1 != 0x0F2)
                             goto plain_string;
-                        suffix = getbyte(buf, &pos, &nread, 1000);
-                        if (suffix == -1)
+                        suffix = raw_getc();
+                        if (suffix == EOF)
                             goto done;
                         do_suffix:
                         ind = (suffix & 0x080) != 0;
@@ -1889,8 +2025,8 @@ void core_import_programs() {
                                 goto plain_string;
                             cmd = byte2 == 0x0C2 || byte2 == 0x0CA
                                     ? CMD_KEY1X : CMD_KEY1G;
-                            suffix = getbyte(buf, &pos, &nread, 1000);
-                            if (suffix == -1)
+                            suffix = raw_getc();
+                            if (suffix == EOF)
                                 goto done;
                             if (suffix < 1 || suffix > 9) {
                                 /* Treat as plain string. Alas, it is
@@ -1905,8 +2041,8 @@ void core_import_programs() {
                                 arg.val.text[0] = byte2;
                                 arg.val.text[1] = suffix;
                                 for (i = 2; i < arg.length; i++) {
-                                    int c = getbyte(buf, &pos, &nread,1000);
-                                    if (c == -1)
+                                    int c = raw_getc();
+                                    if (c == EOF)
                                         goto done;
                                     arg.val.text[i] = c;
                                 }
@@ -1920,15 +2056,15 @@ void core_import_programs() {
                             /* KEYG/KEYX suffix */
                             if (byte1 != 0x0F3)
                                 goto plain_string;
-                            suffix = getbyte(buf, &pos, &nread, 1000);
-                            if (suffix == -1)
+                            suffix = raw_getc();
+                            if (suffix == EOF)
                                 goto done;
                             if (suffix < 1 || suffix > 9)
                                 goto bad_keyg_keyx;
                             cmd = byte2 == 0x0E2 ? CMD_KEY1X : CMD_KEY1G;
                             cmd += suffix - 1;
-                            suffix = getbyte(buf, &pos, &nread, 1000);
-                            if (suffix == -1)
+                            suffix = raw_getc();
+                            if (suffix == EOF)
                                 goto done;
                             goto do_suffix;
                         } else /* byte2 == 0x0F7 */ {
@@ -1936,12 +2072,12 @@ void core_import_programs() {
                             int sz;
                             if (byte1 != 0x0F3)
                                 goto plain_string;
-                            suffix = getbyte(buf, &pos, &nread, 1000);
-                            if (suffix == -1)
+                            suffix = raw_getc();
+                            if (suffix == EOF)
                                 goto done;
                             sz = suffix << 8;
-                            suffix = getbyte(buf, &pos, &nread, 1000);
-                            if (suffix == -1)
+                            suffix = raw_getc();
+                            if (suffix == EOF)
                                 goto done;
                             sz += suffix;
                             cmd = CMD_SIZE;
@@ -1957,22 +2093,28 @@ void core_import_programs() {
             }
         }
         store:
-        if (at_end) {
-            goto_dot_dot();
-            at_end = 0;
+        if (pending_end) {
+            goto_dot_dot(true);
+            pending_end = false;
         }
-        store_command_after(&pc, cmd, &arg);
-        need_to_rebuild_label_table = 1;
+        if (cmd == CMD_END) {
+            if (num_progs > 0 && --num_progs == 0)
+                break;
+            pending_end = true;
+        } else {
+            store_command_after(&pc, cmd, &arg);
+        }
     }
 
     done:
-    if (need_to_rebuild_label_table) {
-        rebuild_label_table();
-        update_catalog();
-    }
+    rebuild_label_table();
+    update_catalog();
 
     flags.f.trace_print = saved_trace;
     flags.f.normal_print = saved_normal;
+
+    if (raw_file_name != NULL)
+        raw_close("import");
 }
 
 static int real2buf(char *buf, phloat x) {
@@ -3161,7 +3303,7 @@ static void paste_programs(const char *buf) {
 
         store:
         if (after_end)
-            goto_dot_dot();
+            goto_dot_dot(false);
         after_end = cmd == CMD_END;
         if (!after_end)
             store_command_after(&pc, cmd, &arg);
@@ -3234,7 +3376,7 @@ void core_paste(const char *buf) {
             return;
         } else if (rows == 1 && cols == 1) {
             // Scalar
-            int len = strlen(buf);
+            int len = (int) strlen(buf);
             char *asciibuf = (char *) malloc(len + 1);
             strcpy(asciibuf, buf);
             if (len > 0 && asciibuf[len - 1] == '\n') {

@@ -19,10 +19,13 @@
 #define CORE_GLOBALS_H 1
 
 
+#include <stdio.h>
+
 #include "free42.h"
 #include "core_phloat.h"
 #include "core_tables.h"
 
+extern FILE *gfile;
 
 /**********/
 /* Errors */
@@ -534,7 +537,7 @@ void clear_all_prgms();
 int clear_prgm(const arg_struct *arg);
 int clear_prgm_by_index(int prgm_index);
 void clear_prgm_lines(int4 count);
-void goto_dot_dot();
+void goto_dot_dot(bool force_new);
 int mvar_prgms_exist();
 int label_has_mvar(int lblindex);
 int get_command_length(int prgm, int4 pc);
@@ -560,18 +563,32 @@ bool solve_active();
 bool integ_active();
 bool unwind_stack_until_solve();
 
-bool load_state(int4 version);
-void save_state();
-void hard_reset(int bad_state_file);
+extern bool state_is_portable;
 
-bool read_arg(arg_struct *arg, bool old);
-bool write_arg(const arg_struct *arg);
+bool read_bool(bool *b);
+bool write_bool(bool b);
+bool read_char(char *c);
+bool write_char(char c);
+bool read_int(int *n);
+bool write_int(int n);
+bool read_int2(int2 *n);
+bool write_int2(int2 n);
+bool read_int4(int4 *n);
+bool write_int4(int4 n);
+bool read_int8(int8 *n);
+bool write_int8(int8 n);
 bool read_phloat(phloat *d);
 bool write_phloat(phloat d);
+bool read_arg(arg_struct *arg, bool old);
+bool write_arg(const arg_struct *arg);
 
-#ifdef ANDROID
-void reinitialize_globals();
-#endif
+bool load_state(int4 version, bool *clear, bool *too_new);
+void save_state();
+// Reason:
+// 0 = Memory Clear
+// 1 = State File Corrupt
+// 2 = State File Too New
+void hard_reset(int reason);
 
 #ifdef IPHONE
 bool off_enabled();

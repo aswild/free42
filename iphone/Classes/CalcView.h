@@ -17,7 +17,7 @@
 
 #import <UIKit/UIKit.h>
 
-#define SHELL_VERSION 5
+#define SHELL_VERSION 7
 #define FILENAMELEN 1024
 
 struct state_type {
@@ -33,9 +33,12 @@ struct state_type {
     int hapticFeedback;
     int orientationMode; // 0=auto 1=portrait 2=landscape
     int maintainSkinAspect[2];
+    bool offEnabled;
+    char coreName[FILENAMELEN];
 };
 
 extern state_type state;
+extern FILE *statefile;
 
 
 @interface CalcView : UIView <UIActionSheetDelegate> {
@@ -52,6 +55,7 @@ extern state_type state;
 - (void) setNeedsDisplayInRectSafely:(CGRect) rect;
 + (void) repaint;
 + (void) quit;
++ (void) loadState:(const char *)name;
 + (void) enterBackground;
 + (void) leaveBackground;
 - (void) doCopy;

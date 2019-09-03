@@ -19,7 +19,7 @@
 #import <WebKit/WebKit.h>
 
 #define FILENAMELEN 256
-#define SHELL_VERSION 0
+#define SHELL_VERSION 1
 
 struct state_type {
     int printerToTxtFile;
@@ -31,6 +31,7 @@ struct state_type {
     int mainWindowX, mainWindowY;
     int printWindowX, printWindowY, printWindowHeight;
     char skinName[FILENAMELEN];
+    char coreName[FILENAMELEN];
 };
 
 extern state_type state;
@@ -55,6 +56,7 @@ void calc_keymodifierschanged(NSUInteger flags);
 @class SkinListDataSource;
 @class CalcView;
 @class PrintView;
+@class StatesWindow;
 
 @interface Free42AppDelegate : NSObject {
     NSWindow *mainWindow;
@@ -89,6 +91,8 @@ void calc_keymodifierschanged(NSUInteger flags);
     NSWindow *deleteSkinsWindow;
     NSTableView *skinListView;
     SkinListDataSource *skinListDataSource;
+    
+    StatesWindow *statesWindow;
 }
 
 @property (nonatomic, retain) IBOutlet NSWindow *mainWindow;
@@ -118,6 +122,7 @@ void calc_keymodifierschanged(NSUInteger flags);
 @property (nonatomic, retain) IBOutlet NSWindow *deleteSkinsWindow;
 @property (nonatomic, retain) IBOutlet NSTableView *skinListView;
 @property (nonatomic, retain) IBOutlet SkinListDataSource *skinListDataSource;
+@property (nonatomic, retain) IBOutlet StatesWindow *statesWindow;
 
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification;
 - (void)applicationWillTerminate:(NSNotification *)aNotification;
@@ -129,6 +134,7 @@ void calc_keymodifierschanged(NSUInteger flags);
 - (void) getPreferences;
 - (IBAction) browsePrintTextFile:(id)sender;
 - (IBAction) browsePrintGIFFile:(id)sender;
+- (IBAction) states:(id)sender;
 - (IBAction) showPrintOut:(id)sender;
 - (IBAction) paperAdvance:(id)sender;
 - (IBAction) importPrograms:(id)sender;
@@ -149,7 +155,10 @@ void calc_keymodifierschanged(NSUInteger flags);
 - (IBAction) deleteSkinsCancel:(id)sender;
 - (IBAction) deleteSkinsOK:(id)sender;
 + (const char *) getVersion;
++ (void) showMessage:(NSString *)message withTitle:(NSString *)title;
++ (void) showCMessage:(const char *)message withTitle:(const char *)title;
 - (IBAction) menuNeedsUpdate:(NSMenu *)menu;
 - (void) selectSkin:(id)sender;
++ (void) loadState:(const char *)name;
 
 @end

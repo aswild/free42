@@ -104,9 +104,6 @@ static GtkWidget *printwindow;
 static GtkWidget *print_widget;
 static GdkGC *print_gc = NULL;
 static GtkAdjustment *print_adj;
-static char export_file_name[FILENAMELEN];
-static FILE *export_file = NULL;
-static FILE *import_file = NULL;
 static GdkPixbuf *icon_128;
 static GdkPixbuf *icon_48;
 
@@ -152,10 +149,11 @@ static void quit();
 static void set_window_property(GtkWidget *window, const char *prop_name, char *props[], int num_props);
 static char *strclone(const char *s);
 static bool is_file(const char *name);
-static void show_message(char *title, char *message);
+static void show_message(const char *title, const char *message, GtkWidget *parent = mainwindow);
 static void no_mwm_resize_borders(GtkWidget *window);
 static void scroll_printout_to_bottom();
 static void quitCB();
+static void statesCB();
 static void showPrintOutCB();
 static void exportProgramCB();
 static GtkWidget *make_file_select_dialog(
@@ -200,19 +198,21 @@ static void gif_writer(const char *text, int length);
 
 static GtkItemFactoryEntry entries[] = {
     { "/File", NULL, NULL, 0, "<Branch>" },
+    { "/File/States...", NULL, statesCB, 0, "<Item>" },
+    { "/File/sep1", NULL, NULL, 0, "<Separator>" },
     { "/File/Show Print-Out", NULL, showPrintOutCB, 0, "<Item>" },
     { "/File/Paper Advance", "<CTRL>A", paperAdvanceCB, 0, "<Item>" },
-    { "/File/sep1", NULL, NULL, 0, "<Separator>" },
+    { "/File/sep2", NULL, NULL, 0, "<Separator>" },
     { "/File/Import Programs...", NULL, importProgramCB, 0, "<Item>" },
     { "/File/Export Programs...", NULL, exportProgramCB, 0, "<Item>" },
-    { "/File/sep2", NULL, NULL, 0, "<Separator>" },
-    { "/File/Preferences...", NULL, preferencesCB, 0, "<Item>" },
     { "/File/sep3", NULL, NULL, 0, "<Separator>" },
+    { "/File/Preferences...", NULL, preferencesCB, 0, "<Item>" },
+    { "/File/sep4", NULL, NULL, 0, "<Separator>" },
     { "/File/Quit", "<CTRL>Q", quitCB, 0, "<Item>" },
     { "/Edit", NULL, NULL, 0, "<Branch>" },
     { "/Edit/Copy", "<CTRL>C", copyCB, 0, "<Item>" },
     { "/Edit/Paste", "<CTRL>V", pasteCB, 0, "<Item>" },
-    { "/Edit/sep4", NULL, NULL, 0, "<Separator>" },
+    { "/Edit/sep5", NULL, NULL, 0, "<Separator>" },
     { "/Edit/Copy Print-Out as Text", "<CTRL>T", copyPrintAsTextCB, 0, "<Item>" },
     { "/Edit/Copy Print-Out as Image", "<CTRL>I", copyPrintAsImageCB, 0, "<Item>" },
     { "/Edit/Clear Print-Out", NULL, clearPrintOutCB, 0, "<Item>" },
@@ -226,19 +226,21 @@ static gint num_entries = sizeof(entries) / sizeof(entries[0]);
 static GtkItemFactoryEntry entries_compactmenu[] = {
     { "/Menu", NULL, NULL, 0, "<Branch>" },
     { "/Menu/File", NULL, NULL, 0, "<Branch>" },
+    { "/Menu/File/States...", NULL, statesCB, 0, "<Item>" },
+    { "/Menu/File/sep1", NULL, NULL, 0, "<Separator>" },
     { "/Menu/File/Show Print-Out", NULL, showPrintOutCB, 0, "<Item>" },
     { "/Menu/File/Paper Advance", "<CTRL>A", paperAdvanceCB, 0, "<Item>" },
-    { "/Menu/File/sep1", NULL, NULL, 0, "<Separator>" },
+    { "/Menu/File/sep2", NULL, NULL, 0, "<Separator>" },
     { "/Menu/File/Import Programs...", NULL, importProgramCB, 0, "<Item>" },
     { "/Menu/File/Export Programs...", NULL, exportProgramCB, 0, "<Item>" },
-    { "/Menu/File/sep2", NULL, NULL, 0, "<Separator>" },
-    { "/Menu/File/Preferences...", NULL, preferencesCB, 0, "<Item>" },
     { "/Menu/File/sep3", NULL, NULL, 0, "<Separator>" },
+    { "/Menu/File/Preferences...", NULL, preferencesCB, 0, "<Item>" },
+    { "/Menu/File/sep4", NULL, NULL, 0, "<Separator>" },
     { "/Menu/File/Quit", "<CTRL>Q", quitCB, 0, "<Item>" },
     { "/Menu/Edit", NULL, NULL, 0, "<Branch>" },
     { "/Menu/Edit/Copy", "<CTRL>C", copyCB, 0, "<Item>" },
     { "/Menu/Edit/Paste", "<CTRL>V", pasteCB, 0, "<Item>" },
-    { "/Menu/Edit/sep4", NULL, NULL, 0, "<Separator>" },
+    { "/Menu/Edit/sep5", NULL, NULL, 0, "<Separator>" },
     { "/Menu/Edit/Copy Print-Out as Text", "<CTRL>T", copyPrintAsTextCB, 0, "<Item>" },
     { "/Menu/Edit/Copy Print-Out as Image", "<CTRL>I", copyPrintAsImageCB, 0, "<Item>" },
     { "/Menu/Edit/Clear Print-Out", NULL, clearPrintOutCB, 0, "<Item>" },
@@ -348,6 +350,8 @@ int main(int argc, char *argv[]) {
 
     int4 version;
     int init_mode;
+    char core_state_file_name[FILENAMELEN];
+    int core_state_file_offset;
 
     statefile = fopen(statefilename, "r");
     if (statefile != NULL) {
@@ -364,6 +368,27 @@ int main(int argc, char *argv[]) {
     } else {
         init_shell_state(-1);
         init_mode = 0;
+    }
+    if (init_mode == 1) {
+        if (version > 25) {
+            snprintf(core_state_file_name, FILENAMELEN, "%s/%s.f42", free42dirname, state.coreName);
+            core_state_file_offset = 0;
+        } else {
+            strcpy(core_state_file_name, statefilename);
+            core_state_file_offset = ftell(statefile);
+        }
+        fclose(statefile);
+    }  else {
+        // The shell state was missing or corrupt, but there
+        // may still be a valid core state...
+        snprintf(core_state_file_name, FILENAMELEN, "%s/%s.f42", free42dirname, state.coreName);
+        struct stat st;
+        if (stat(core_state_file_name, &st) == 0) {
+            // Core state "Untitled.f42" exists; let's try to read it
+            core_state_file_offset = 0;
+            init_mode = 1;
+            version = 26;
+        }
     }
 
 
@@ -604,11 +629,7 @@ int main(int argc, char *argv[]) {
     gtk_widget_show_all(mainwindow);
     gtk_widget_show(mainwindow);
 
-    core_init(init_mode, version);
-    if (statefile != NULL) {
-        fclose(statefile);
-        statefile = NULL;
-    }
+    core_init(init_mode, version, core_state_file_name, core_state_file_offset);
     if (core_powercycle())
         enable_reminder();
 
@@ -812,7 +833,10 @@ static void init_shell_state(int4 version) {
             state.singleInstance = 0;
             /* fall through */
         case 4:
-            /* current version (SHELL_VERSION = 4),
+            strcpy(state.coreName, "Untitled");
+            /* fall through */
+        case 5:
+            /* current version (SHELL_VERSION = 5),
              * so nothing to do here since everything
              * was initialized from the state file.
              */
@@ -826,12 +850,12 @@ static int read_shell_state(int4 *ver) {
     int4 state_size;
     int4 state_version;
 
-    if (shell_read_saved_state(&magic, sizeof(int4)) != sizeof(int4))
+    if (fread(&magic, 1, sizeof(int4), statefile) != sizeof(int4))
         return 0;
     if (magic != FREE42_MAGIC)
         return 0;
 
-    if (shell_read_saved_state(&version, sizeof(int4)) != sizeof(int4))
+    if (fread(&version, 1, sizeof(int4), statefile) != sizeof(int4))
         return 0;
     if (version == 0) {
         /* State file version 0 does not contain shell state,
@@ -840,18 +864,16 @@ static int read_shell_state(int4 *ver) {
         init_shell_state(-1);
         *ver = version;
         return 1;
-    } else if (version > FREE42_VERSION)
-        /* Unknown state file version */
-        return 0;
+    }
     
-    if (shell_read_saved_state(&state_size, sizeof(int4)) != sizeof(int4))
+    if (fread(&state_size, 1, sizeof(int4), statefile) != sizeof(int4))
         return 0;
-    if (shell_read_saved_state(&state_version, sizeof(int4)) != sizeof(int4))
+    if (fread(&state_version, 1, sizeof(int4), statefile) != sizeof(int4))
         return 0;
     if (state_version < 0 || state_version > SHELL_VERSION)
         /* Unknown shell state version */
         return 0;
-    if (shell_read_saved_state(&state, state_size) != state_size)
+    if (fread(&state, 1, state_size, statefile) != (size_t) state_size)
         return 0;
 
     init_shell_state(state_version);
@@ -861,19 +883,19 @@ static int read_shell_state(int4 *ver) {
 
 static int write_shell_state() {
     int4 magic = FREE42_MAGIC;
-    int4 version = FREE42_VERSION;
+    int4 version = 27;
     int4 state_size = sizeof(state_type);
     int4 state_version = SHELL_VERSION;
 
-    if (!shell_write_saved_state(&magic, sizeof(int4)))
+    if (fwrite(&magic, 1, sizeof(int4), statefile) != sizeof(int4))
         return 0;
-    if (!shell_write_saved_state(&version, sizeof(int4)))
+    if (fwrite(&version, 1, sizeof(int4), statefile) != sizeof(int4))
         return 0;
-    if (!shell_write_saved_state(&state_size, sizeof(int4)))
+    if (fwrite(&state_size, 1, sizeof(int4), statefile) != sizeof(int4))
         return 0;
-    if (!shell_write_saved_state(&state_version, sizeof(int4)))
+    if (fwrite(&state_version, 1, sizeof(int4), statefile) != sizeof(int4))
         return 0;
-    if (!shell_write_saved_state(&state, sizeof(state_type)))
+    if (fwrite(&state, 1, sizeof(state_type), statefile) != sizeof(int4))
         return 0;
 
     return 1;
@@ -993,10 +1015,12 @@ static void quit() {
     statefile = fopen(statefilename, "w");
     if (statefile != NULL) {
         write_shell_state();
-    }
-    core_quit();
-    if (statefile != NULL)
         fclose(statefile);
+    }
+    char corefilename[FILENAMELEN];
+    snprintf(corefilename, FILENAMELEN, "%s/%s.f42", free42dirname, state.coreName);
+    core_save_state(corefilename);
+    core_cleanup();
 
     shell_spool_exit();
 
@@ -1027,8 +1051,8 @@ static bool is_file(const char *name) {
     return S_ISREG(st.st_mode);
 }
 
-static void show_message(char *title, char *message) {
-    GtkWidget *msg = gtk_message_dialog_new(GTK_WINDOW(mainwindow),
+static void show_message(const char *title, const char *message, GtkWidget *parent) {
+    GtkWidget *msg = gtk_message_dialog_new(GTK_WINDOW(parent),
                                             GTK_DIALOG_MODAL,
                                             GTK_MESSAGE_ERROR,
                                             GTK_BUTTONS_OK,
@@ -1068,6 +1092,584 @@ static void scroll_printout_to_bottom() {
 static void quitCB() {
     quit();
 }
+
+////////////////////////////////////
+///// States stuff starts here /////
+////////////////////////////////////
+
+static int currentStateIndex;
+static int selectedStateIndex;
+static char **state_names;
+static GtkWidget *statesMenuItems[6];
+
+static void states_changed_cb(GtkWidget *w, gpointer p) {
+    selectedStateIndex = -1;
+    GList *rows = gtk_tree_selection_get_selected_rows(GTK_TREE_SELECTION(w), NULL);
+    if (rows != NULL) {
+        GtkTreePath *path = (GtkTreePath *) rows->data;
+        sscanf(gtk_tree_path_to_string(path), "%d", &selectedStateIndex);
+    }
+    g_list_free(rows);
+    GtkWidget *btn = (GtkWidget *) p;
+    if (selectedStateIndex == -1) {
+        gtk_widget_set_sensitive(btn, false);
+        gtk_button_set_label(GTK_BUTTON(btn), "Switch To");
+        gtk_widget_set_sensitive(statesMenuItems[1], false);
+        gtk_widget_set_sensitive(statesMenuItems[2], false);
+        gtk_widget_set_sensitive(statesMenuItems[3], false);
+        gtk_widget_set_sensitive(statesMenuItems[5], false);
+    } else if (selectedStateIndex == currentStateIndex) {
+        gtk_widget_set_sensitive(btn, true);
+        gtk_button_set_label(GTK_BUTTON(btn), "Revert");
+        gtk_widget_set_sensitive(statesMenuItems[1], true);
+        gtk_widget_set_sensitive(statesMenuItems[2], true);
+        gtk_widget_set_sensitive(statesMenuItems[3], false);
+        gtk_widget_set_sensitive(statesMenuItems[5], true);
+    } else {
+        gtk_widget_set_sensitive(btn, true);
+        gtk_button_set_label(GTK_BUTTON(btn), "Switch To");
+        gtk_widget_set_sensitive(statesMenuItems[1], true);
+        gtk_widget_set_sensitive(statesMenuItems[2], true);
+        gtk_widget_set_sensitive(statesMenuItems[3], true);
+        gtk_widget_set_sensitive(statesMenuItems[5], true);
+    }
+}
+
+static GtkWidget *dlg;
+
+static char *get_state_name(const char *prompt) {
+    static GtkWidget *state_name_dialog = NULL;
+    static GtkWidget *promptLabel;
+    static GtkWidget *name;
+
+    if (state_name_dialog == NULL) {
+        state_name_dialog = gtk_dialog_new_with_buttons(
+                            "State Name",
+                            GTK_WINDOW(dlg),
+                            GTK_DIALOG_MODAL,
+                            GTK_STOCK_OK, GTK_RESPONSE_ACCEPT,
+                            GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,
+                            NULL);
+        gtk_window_set_resizable(GTK_WINDOW(state_name_dialog), FALSE);
+        no_mwm_resize_borders(state_name_dialog);
+        GtkWidget *container = gtk_bin_get_child(GTK_BIN(state_name_dialog));
+        GtkWidget *box = gtk_vbox_new(FALSE, 0);
+        gtk_container_add(GTK_CONTAINER(container), box);
+
+        promptLabel = gtk_label_new("Enter state name:");
+        gtk_box_pack_start(GTK_BOX(box), promptLabel, FALSE, FALSE, 10);
+
+        name = gtk_entry_new();
+        gtk_box_pack_start(GTK_BOX(box), name, FALSE, FALSE, 10);
+
+        gtk_widget_show_all(state_name_dialog);
+    }
+
+    gtk_window_set_role(GTK_WINDOW(state_name_dialog), "Free42 Dialog");
+    gtk_label_set_text(GTK_LABEL(promptLabel), prompt);
+
+    char *result = NULL;
+    while (true) {
+        gtk_window_set_focus(GTK_WINDOW(state_name_dialog), name);
+        int response = gtk_dialog_run(GTK_DIALOG(state_name_dialog));
+        if (response == GTK_RESPONSE_ACCEPT) {
+            const char *tmp = gtk_entry_get_text(GTK_ENTRY(name));
+            if (strchr(tmp, '/') != NULL) {
+                show_message("Message", "That name is not valid.", state_name_dialog);
+                continue;
+            }
+            char path[FILENAMELEN];
+            snprintf(path, FILENAMELEN, "%s/%s.f42", free42dirname, tmp);
+            if (is_file(path)) {
+                show_message("Message", "That name is already in use.", state_name_dialog);
+                continue;
+            }
+            result = (char *) malloc(strlen(tmp) + 1);
+            strcpy(result, tmp);
+        }
+        break;
+    }
+
+    gtk_widget_hide(state_name_dialog);
+    return result;
+}
+
+static bool switchTo(const char *selectedStateName) {
+    char path[FILENAMELEN];
+    if (strcmp(selectedStateName, state.coreName) == 0) {
+        GtkWidget *msg = gtk_message_dialog_new(GTK_WINDOW(dlg),
+                                                GTK_DIALOG_MODAL,
+                                                GTK_MESSAGE_QUESTION,
+                                                GTK_BUTTONS_YES_NO,
+                                                "Are you sure you want to revert the state \"%s\" to the last version saved?",
+                                                selectedStateName);
+        gtk_window_set_title(GTK_WINDOW(msg), "Revert State?");
+        gtk_window_set_role(GTK_WINDOW(msg), "Free42 Dialog");
+        bool cancelled = gtk_dialog_run(GTK_DIALOG(msg)) != GTK_RESPONSE_YES;
+        gtk_widget_destroy(msg);
+        if (cancelled)
+            return false;
+    } else {
+        snprintf(path, FILENAMELEN, "%s/%s.f42", free42dirname, state.coreName);
+        core_save_state(path);
+    }
+    core_cleanup();
+    strncpy(state.coreName, selectedStateName, FILENAMELEN);
+    state.coreName[FILENAMELEN - 1] = 0;
+    snprintf(path, FILENAMELEN, "%s/%s.f42", free42dirname, state.coreName);
+    core_init(1, 26, path, 0);
+    if (core_powercycle())
+        enable_reminder();
+    return true;
+}
+
+static void states_menu_new() {
+    char *name = get_state_name("New state name:");
+    if (name == NULL)
+        return;
+    char path[FILENAMELEN];
+    snprintf(path, FILENAMELEN, "%s/%s.f42", free42dirname, name);
+    FILE *f = fopen(path, "w");
+    fprintf(f, FREE42_MAGIC_STR);
+    fclose(f);
+    free(name);
+    gtk_dialog_response(GTK_DIALOG(dlg), 4);
+}
+
+static bool copy_state(const char *orig_name, const char *copy_name) {
+    FILE *fin = fopen(orig_name, "r");
+    FILE *fout = fopen(copy_name, "w");
+    if (fin != NULL && fout != NULL) {
+        char buf[1024];
+        int n;
+        while ((n = fread(buf, 1, 1024, fin)) > 0)
+            fwrite(buf, 1, n, fout);
+        if (ferror(fin) || ferror(fout))
+            goto duplication_failed;
+        fclose(fin);
+        fclose(fout);
+        return true;
+    } else {
+        duplication_failed:
+        if (fin != NULL)
+            fclose(fin);
+        if (fout != NULL)
+            fclose(fout);
+        remove(copy_name);
+        return false;
+    }
+}
+
+static void states_menu_duplicate() {
+    if (selectedStateIndex == -1)
+        return;
+    char copyName[FILENAMELEN];
+    strcpy(copyName, state_names[selectedStateIndex]);
+    int n = 0;
+
+    // We're naming duplicates by appending " copy" or " copy NNN" to the name
+    // of the original, but if the name of the original already ends with " copy"
+    // or " copy NNN", it seems more elegant to continue the sequence rather than
+    // add another " copy" suffix.
+    int len = strlen(copyName);
+    if (len > 5 && strcmp(copyName + len - 5, " copy") == 0) {
+        copyName[len - 5] = 0;
+        n = 1;
+    } else if (len > 7) {
+        int pos = len - 7;
+        int m = 0;
+        int p = 1;
+        while (pos > 0) {
+            char c = copyName[pos + 6];
+            if (c < '0' || c > '9')
+                goto not_a_copy;
+            m += p * (c - '0');
+            p *= 10;
+            if (strncmp(copyName + pos, " copy ", 6) == 0) {
+                n = m;
+                copyName[pos] = 0;
+                break;
+            } else
+                pos--;
+        }
+        not_a_copy:;
+    }
+
+    char finalName[FILENAMELEN];
+    int flen;
+    while (true) {
+        n++;
+        if (n == 1)
+            flen = snprintf(finalName, FILENAMELEN, "%s/%s copy.f42", free42dirname, copyName);
+        else
+            flen = snprintf(finalName, FILENAMELEN, "%s/%s copy %d.f42", free42dirname, copyName, n);
+        if (flen >= FILENAMELEN) {
+            show_message("Message", "The name of that state is too long to copy.", dlg);
+            return;
+        }
+        if (!is_file(finalName))
+            // File does not exist; that means we have a usable name
+            break;
+    }
+
+    // Once we get here, finalName contains a valid name for creating the duplicate.
+    // What we do next depends on whether the selected state is the currently active
+    // one. If it is, we'll call core_save_state(), to make sure the duplicate
+    // actually matches the most up-to-date state; otherwise, we can simply copy
+    // the existing state file.
+    if (strcmp(state_names[selectedStateIndex], state.coreName) == 0)
+        core_save_state(finalName);
+    else {
+        char origName[FILENAMELEN];
+        snprintf(origName, FILENAMELEN, "%s/%s.f42", free42dirname, state_names[selectedStateIndex]);
+        if (!copy_state(origName, finalName)) {
+            show_message("Message", "State duplication failed.", dlg);
+            return;
+        }
+    }
+    gtk_dialog_response(GTK_DIALOG(dlg), 4);
+}
+
+static void states_menu_rename() {
+    if (selectedStateIndex == -1)
+        return;
+    char prompt[FILENAMELEN];
+    snprintf(prompt, FILENAMELEN, "Rename \"%s\" to:", state_names[selectedStateIndex]);
+    char *newname = get_state_name(prompt);
+    if (newname == NULL)
+        return;
+    char oldpath[FILENAMELEN];
+    snprintf(oldpath, FILENAMELEN, "%s/%s.f42", free42dirname, state_names[selectedStateIndex]);
+    char newpath[FILENAMELEN];
+    snprintf(newpath, FILENAMELEN, "%s/%s.f42", free42dirname, newname);
+    rename(oldpath, newpath);
+    if (strcmp(state_names[selectedStateIndex], state.coreName) == 0)
+        strncpy(state.coreName, newname, FILENAMELEN);
+    gtk_dialog_response(GTK_DIALOG(dlg), 4);
+}
+
+static void states_menu_delete() {
+    if (selectedStateIndex == -1)
+        return;
+    const char *stateName = state_names[selectedStateIndex];
+    if (strcmp(stateName, state.coreName) == 0)
+        return;
+    GtkWidget *msg = gtk_message_dialog_new(GTK_WINDOW(dlg),
+                                            GTK_DIALOG_MODAL,
+                                            GTK_MESSAGE_QUESTION,
+                                            GTK_BUTTONS_YES_NO,
+                                            "Are you sure you want to delete the state \"%s\"?",
+                                            stateName);
+    gtk_window_set_title(GTK_WINDOW(msg), "Delete State?");
+    gtk_window_set_role(GTK_WINDOW(msg), "Free42 Dialog");
+    bool cancelled = gtk_dialog_run(GTK_DIALOG(msg)) != GTK_RESPONSE_YES;
+    gtk_widget_destroy(msg);
+    if (cancelled)
+        return;
+    char statePath[FILENAMELEN];
+    snprintf(statePath, FILENAMELEN, "%s/%s.f42", free42dirname, stateName);
+    remove(statePath);
+    gtk_dialog_response(GTK_DIALOG(dlg), 4);
+}
+
+static void states_menu_import() {
+    static GtkWidget *dialog = NULL;
+
+    if (dialog == NULL)
+        dialog = make_file_select_dialog("Import State",
+                "Free42 State (*.f42)\0*.[Ff]42\0All Files (*.*)\0*\0",
+                false, dlg);
+
+    gtk_window_set_role(GTK_WINDOW(dialog), "Free42 Dialog");
+    bool cancelled = gtk_dialog_run(GTK_DIALOG(dialog)) != GTK_RESPONSE_ACCEPT;
+    gtk_widget_hide(dialog);
+    if (cancelled)
+        return;
+    
+    char *filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+    if (filename == NULL)
+        return;
+
+    char name[FILENAMELEN];
+    char *p = strrchr(filename, '/');
+    if (p == NULL)
+        strncpy(name, filename, FILENAMELEN);
+    else
+        strncpy(name, p + 1, FILENAMELEN);
+    name[FILENAMELEN - 1] = 0;
+    int len = strlen(name);
+    if (len > 4 && strcmp(name + len - 4, ".f42") == 0)
+        name[len - 4] = 0;
+    char destPath[FILENAMELEN];
+    snprintf(destPath, FILENAMELEN, "%s/%s.f42", free42dirname, name);
+    bool success = false;
+    if (is_file(destPath)) {
+        char msg[FILENAMELEN];
+        snprintf(msg, FILENAMELEN, "A state named \"%s\" already exists.", name);
+        show_message("Message", msg, dlg);
+    } else if (!copy_state(filename, destPath)) {
+        show_message("Message", "State import failed.", dlg);
+    } else {
+        success = true;
+    }
+    g_free(filename);
+    if (success)
+        gtk_dialog_response(GTK_DIALOG(dlg), 4);
+}
+
+static void states_menu_export() {
+    if (selectedStateIndex == -1)
+        return;
+
+    static GtkWidget *save_dialog = NULL;
+    if (save_dialog == NULL)
+        save_dialog = make_file_select_dialog("Export State",
+                "Free42 State (*.f42)\0*.[Ff]42\0All Files (*.*)\0*\0",
+                true, dlg);
+
+    char *filename = NULL;
+    gtk_window_set_role(GTK_WINDOW(save_dialog), "Free42 Dialog");
+    if (gtk_dialog_run(GTK_DIALOG(save_dialog)) == GTK_RESPONSE_ACCEPT)
+        filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(save_dialog));
+    gtk_widget_hide(GTK_WIDGET(save_dialog));
+    if (filename == NULL)
+        return;
+
+    char export_file_name[FILENAMELEN];
+    strcpy(export_file_name, filename);
+    g_free(filename);
+    if (strncmp(gtk_file_filter_get_name(
+                    gtk_file_chooser_get_filter(
+                        GTK_FILE_CHOOSER(save_dialog))), "All", 3) != 0)
+        appendSuffix(export_file_name, ".f42");
+
+    if (is_file(export_file_name)) {
+        GtkWidget *msg = gtk_message_dialog_new(GTK_WINDOW(mainwindow),
+                                                GTK_DIALOG_MODAL,
+                                                GTK_MESSAGE_QUESTION,
+                                                GTK_BUTTONS_YES_NO,
+                                                "Replace existing \"%s\"?",
+                                                export_file_name);
+        gtk_window_set_title(GTK_WINDOW(msg), "Replace?");
+        gtk_window_set_role(GTK_WINDOW(msg), "Free42 Dialog");
+        bool cancelled = gtk_dialog_run(GTK_DIALOG(msg)) != GTK_RESPONSE_YES;
+        gtk_widget_destroy(msg);
+        if (cancelled)
+            return;
+    }
+
+    if (selectedStateIndex == currentStateIndex)
+        core_save_state(export_file_name);
+    else {
+        char orig_path[FILENAMELEN];
+        snprintf(orig_path, FILENAMELEN, "%s/%s.f42", free42dirname, state_names[selectedStateIndex]);
+        if (!copy_state(orig_path, export_file_name))
+            show_message("Message", "State export failed.", dlg);
+    }
+}
+
+static void states_menu_cb(GtkWidget *w, gpointer p) {
+    switch ((size_t) p) {
+        case 0:
+            states_menu_new();
+            break;
+        case 1:
+            states_menu_duplicate();
+            break;
+        case 2:
+            states_menu_rename();
+            break;
+        case 3:
+            states_menu_delete();
+            break;
+        case 4:
+            states_menu_import();
+            break;
+        case 5:
+            states_menu_export();
+            break;
+    }
+}
+
+static int case_insens_comparator(const void *a, const void *b) {
+    return strcasecmp(*(const char **) a, *(const char **) b);
+}
+
+static void row_activated_cb(GtkWidget *w, gpointer p) {
+    gtk_dialog_response(GTK_DIALOG(dlg), 1);
+}
+
+static void states_menu_pos_func(GtkMenu *menu, gint *x, gint *y, gboolean *push_in, gpointer data) {
+    GtkWidget *btn = GTK_WIDGET(data);
+    gdk_window_get_origin(btn->window, x, y);
+    *x += btn->allocation.x;
+    *y += btn->allocation.y + btn->allocation.height;
+    *push_in = true;
+}
+
+static void statesCB() {
+    static GtkWidget *states_dialog = NULL;
+    static GtkTreeView *tree;
+    static GtkTreeSelection *select;
+    static GtkWidget *currentLabel;
+    static GtkWidget *menu;
+    char buf[FILENAMELEN];
+
+    if (states_dialog == NULL) {
+        // Pop-up menu for "More" button
+        menu = gtk_menu_new();
+        statesMenuItems[0] = gtk_menu_item_new_with_label("New");
+        statesMenuItems[1] = gtk_menu_item_new_with_label("Duplicate");
+        statesMenuItems[2] = gtk_menu_item_new_with_label("Rename");
+        statesMenuItems[3] = gtk_menu_item_new_with_label("Delete");
+        statesMenuItems[4] = gtk_menu_item_new_with_label("Import");
+        statesMenuItems[5] = gtk_menu_item_new_with_label("Export");
+        for (int i = 0; i < 6; i++) {
+            g_signal_connect(G_OBJECT(statesMenuItems[i]), "activate", G_CALLBACK(states_menu_cb), (gpointer) (size_t) i);
+            gtk_menu_shell_append(GTK_MENU_SHELL(menu), statesMenuItems[i]);
+            gtk_widget_show(statesMenuItems[i]);
+        }
+        gtk_widget_show_all(menu);
+
+        // This is where the actual dialog starts
+        states_dialog = gtk_dialog_new_with_buttons(
+                            "States",
+                            GTK_WINDOW(mainwindow),
+                            GTK_DIALOG_MODAL,
+                            "Switch To", 1,
+                            "More", 2,
+                            "Done", 3,
+                            NULL);
+        for (int i = 1; i <= 3; i++) {
+            GtkWidget *btn = gtk_dialog_get_widget_for_response(GTK_DIALOG(states_dialog), i);
+            gtk_widget_set_can_default(btn, false);
+        }
+        gtk_window_set_resizable(GTK_WINDOW(states_dialog), FALSE);
+        no_mwm_resize_borders(states_dialog);
+        GtkWidget *container = gtk_bin_get_child(GTK_BIN(states_dialog));
+        GtkWidget *box = gtk_vbox_new(FALSE, 0);
+        gtk_container_add(GTK_CONTAINER(container), box);
+
+        currentLabel = gtk_label_new("Current:");
+        gtk_box_pack_start(GTK_BOX(box), currentLabel, FALSE, FALSE, 10);
+
+        GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
+        gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+        tree = (GtkTreeView *) gtk_tree_view_new();
+        select = gtk_tree_view_get_selection(tree);
+        gtk_tree_selection_set_mode(select, GTK_SELECTION_SINGLE);
+        GtkWidget *switchToBtn = gtk_dialog_get_widget_for_response(GTK_DIALOG(states_dialog), 1);
+        g_signal_connect(G_OBJECT(select), "changed", G_CALLBACK(states_changed_cb), (gpointer) switchToBtn);
+        // When I try to pass the dialog pointer as closure data, it gets mangled?!?
+        // Most be a casting issue, but I don't get it... So just passing it in a global.
+        dlg = states_dialog;
+        g_signal_connect(G_OBJECT(tree), "row-activated", G_CALLBACK(row_activated_cb), NULL);
+        GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
+        //gtk_cell_renderer_text_set_fixed_height_from_font((GtkCellRendererText *) renderer, 12);
+        GtkTreeViewColumn *column = gtk_tree_view_column_new_with_attributes("Foo", renderer, "text", 0, NULL);
+        gtk_tree_view_append_column(tree, column);
+        gtk_tree_view_set_headers_visible(tree, FALSE);
+        gtk_container_add(GTK_CONTAINER(scroll), GTK_WIDGET(tree));
+        gtk_widget_set_size_request(scroll, -1, 200);
+        gtk_box_pack_start(GTK_BOX(box), GTK_WIDGET(scroll), FALSE, FALSE, 10);
+
+        gtk_widget_show_all(states_dialog);
+    }
+
+    load_state_names:
+
+    // Make sure a file exists for the current state. This isn't necessarily
+    // the case, specifically, right after starting up with a version <= 25
+    // state file.
+    snprintf(buf, FILENAMELEN, "%s/%s.f42", free42dirname, state.coreName);
+    struct stat st;
+    if (stat(buf, &st) != 0) {
+        FILE *f = fopen(buf, "w");
+        fwrite(FREE42_MAGIC_STR, 1, 4, f);
+        fclose(f);
+    }
+
+    snprintf(buf, FILENAMELEN, "Current: %s", state.coreName);
+    gtk_label_set_text(GTK_LABEL(currentLabel), buf);
+
+    state_names = (char **) malloc(16 * sizeof(char *));
+    int state_size = 0, state_capacity = 16;
+    DIR *dir = opendir(free42dirname);
+    if (dir != NULL) {
+        struct dirent *dent;
+        while ((dent = readdir(dir)) != NULL) {
+            int namelen = strlen(dent->d_name);
+            if (namelen < 4)
+                continue;
+            if (strcmp(dent->d_name + namelen - 4, ".f42") != 0)
+                continue;
+            char *stn = (char *) malloc(namelen - 3);
+            memcpy(stn, dent->d_name, namelen - 4);
+            stn[namelen - 4] = 0;
+            if (state_size == state_capacity) {
+                state_capacity += 16;
+                state_names = (char **) realloc(state_names, state_capacity * sizeof(char *));
+            }
+            state_names[state_size++] = stn;
+        }
+        closedir(dir);
+        qsort(state_names, state_size, sizeof(char *), case_insens_comparator);
+    }
+
+    currentStateIndex = -1;
+    GtkListStore *model = gtk_list_store_new(1, G_TYPE_STRING);
+    GtkTreeIter iter;
+    for (int i = 0; i < state_size; i++) {
+        gtk_list_store_append(model, &iter);
+        gtk_list_store_set(model, &iter, 0, state_names[i], -1);
+        if (strcmp(state_names[i], state.coreName) == 0)
+            currentStateIndex = i;
+    }
+    gtk_tree_view_set_model(tree, GTK_TREE_MODEL(model));
+
+    // TODO: does this leak list-stores? Or is everything taken case of by the
+    // GObject reference-counting stuff?
+
+    gtk_window_set_role(GTK_WINDOW(states_dialog), "Free42 Dialog");
+    while (true) {
+        int response = gtk_dialog_run(GTK_DIALOG(states_dialog));
+        if (response == 3 || response == GTK_RESPONSE_DELETE_EVENT)
+            break;
+        else if (response == 1) {
+            GtkWidget *btn = gtk_dialog_get_widget_for_response(GTK_DIALOG(states_dialog), 1);
+            if (!gtk_widget_get_sensitive(btn))
+                // User double-clicked on a row, but the Switch To button is disabled
+                continue;
+            GList *rows = gtk_tree_selection_get_selected_rows(select, NULL);
+            if (rows != NULL) {
+                GtkTreePath *path = (GtkTreePath *) rows->data;
+                int sel;
+                sscanf(gtk_tree_path_to_string(path), "%d", &sel);
+                g_list_free(rows);
+                if (switchTo(state_names[sel]))
+                    break;
+            }
+        } else if (response == 2) {
+            GtkWidget *btn = gtk_dialog_get_widget_for_response(GTK_DIALOG(states_dialog), 2);
+            gtk_menu_popup(GTK_MENU(menu), NULL, NULL, states_menu_pos_func, btn, 0, GDK_CURRENT_TIME);
+        } else if (response == 4) {
+            for (int i = 0; i < state_size; i++)
+                free(state_names[i]);
+            free(state_names);
+            goto load_state_names;
+        }
+    }
+
+    gtk_widget_hide(states_dialog);
+
+    for (int i = 0; i < state_size; i++)
+        free(state_names[i]);
+    free(state_names);
+}
+
+//////////////////////////////////
+///// States stuff ends here /////
+//////////////////////////////////
 
 static void showPrintOutCB() {
     //gtk_widget_show(printwindow);
@@ -1159,6 +1761,7 @@ static void exportProgramCB() {
     if (filename == NULL)
         return;
 
+    char export_file_name[FILENAMELEN];
     strcpy(export_file_name, filename);
     g_free(filename);
     if (strncmp(gtk_file_filter_get_name(
@@ -1181,35 +1784,21 @@ static void exportProgramCB() {
             return;
     }
 
-    export_file = fopen(export_file_name, "w");
-
-    if (export_file == NULL) {
-        char buf[1000];
-        int err = errno;
-        snprintf(buf, 1000, "Could not open \"%s\" for writing:\n%s (%d)",
-                export_file_name, strerror(err), err);
-        show_message("Message", buf);
-    } else {
-        int *p2 = (int *) malloc(count * sizeof(int));
-        // TODO - handle memory allocation failure
-        GList *rows = gtk_tree_selection_get_selected_rows(select, NULL);
-        GList *item = rows;
-        int i = 0;
-        while (item != NULL) {
-            GtkTreePath *path = (GtkTreePath *) item->data;
-            char *pathstring = gtk_tree_path_to_string(path);
-            sscanf(pathstring, "%d", p2 + i);
-            item = item->next;
-            i++;
-        }
-        g_list_free(rows);
-        core_export_programs(count, p2);
-        free(p2);
-        if (export_file != NULL) {
-            fclose(export_file);
-            export_file = NULL;
-        }
+    int *p2 = (int *) malloc(count * sizeof(int));
+    // TODO - handle memory allocation failure
+    GList *rows = gtk_tree_selection_get_selected_rows(select, NULL);
+    GList *item = rows;
+    int i = 0;
+    while (item != NULL) {
+        GtkTreePath *path = (GtkTreePath *) item->data;
+        char *pathstring = gtk_tree_path_to_string(path);
+        sscanf(pathstring, "%d", p2 + i);
+        item = item->next;
+        i++;
     }
+    g_list_free(rows);
+    core_export_programs(count, p2, export_file_name);
+    free(p2);
 }
 
 static GtkWidget *make_file_select_dialog(const char *title,
@@ -1262,10 +1851,8 @@ static void importProgramCB() {
         return;
     
     char *filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
-    if (filename == NULL) {
-        import_file = NULL;
+    if (filename == NULL)
         return;
-    }
 
     char filenamebuf[FILENAMELEN];
     strncpy(filenamebuf, filename, FILENAMELEN);
@@ -1277,21 +1864,8 @@ static void importProgramCB() {
                         GTK_FILE_CHOOSER(dialog))), "All", 3) != 0)
         appendSuffix(filenamebuf, ".raw");
 
-    import_file = fopen(filenamebuf, "r");
-    if (import_file == NULL) {
-        char buf[1000];
-        int err = errno;
-        snprintf(buf, 1000, "Could not open \"%s\" for reading:\n%s (%d)",
-                    filenamebuf, strerror(err), err);
-        show_message("Message", buf);
-    } else {
-        core_import_programs();
-        redisplay();
-        if (import_file != NULL) {
-            fclose(import_file);
-            import_file = NULL;
-        }
-    }
+    core_import_programs(0, filenamebuf);
+    redisplay();
 }
 
 static void paperAdvanceCB() {
@@ -1677,7 +2251,7 @@ static void aboutCB() {
         GtkWidget *websitebox = gtk_hbox_new(FALSE, 0);
         gtk_box_pack_start(GTK_BOX(websitebox), websitelink, FALSE, FALSE, 0);
         gtk_box_pack_start(GTK_BOX(box2), websitebox, FALSE, FALSE, 0);
-        GtkWidget *forumlink = gtk_link_button_new("https://thomasokken.com/free42/42s.pdf");
+        GtkWidget *forumlink = gtk_link_button_new("https://thomasokken.com/free42/#doc");
         GtkWidget *forumbox = gtk_hbox_new(FALSE, 0);
         gtk_box_pack_start(GTK_BOX(forumbox), forumlink, FALSE, FALSE, 0);
         gtk_box_pack_start(GTK_BOX(box2), forumbox, FALSE, FALSE, 0);
@@ -2199,6 +2773,10 @@ static gboolean ann_print_timeout(gpointer cd) {
     return FALSE;
 }
 
+const char *shell_platform() {
+    return VERSION " " VERSION_PLATFORM;
+}
+
 void shell_annunciators(int updn, int shf, int prt, int run, int g, int rad) {
     if (updn != -1 && ann_updown != updn) {
         ann_updown = updn;
@@ -2248,35 +2826,6 @@ void shell_request_timeout3(int delay) {
     if (timeout3_id != 0)
         g_source_remove(timeout3_id);
     timeout3_id = g_timeout_add(delay, timeout3, NULL);
-}
-
-int4 shell_read_saved_state(void *buf, int4 bufsize) {
-    if (statefile == NULL)
-        return -1;
-    else {
-        int4 n = fread(buf, 1, bufsize, statefile);
-        if (n != bufsize && ferror(statefile)) {
-            fclose(statefile);
-            statefile = NULL;
-            return -1;
-        } else
-            return n;
-    }
-}
-
-bool shell_write_saved_state(const void *buf, int4 nbytes) {
-    if (statefile == NULL)
-        return false;
-    else {
-        int4 n = fwrite(buf, 1, nbytes, statefile);
-        if (n != nbytes) {
-            fclose(statefile);
-            remove(statefilename);
-            statefile = NULL;
-            return false;
-        } else
-            return true;
-    }
 }
 
 uint4 shell_get_mem() { 
@@ -2373,6 +2922,10 @@ void shell_powerdown() {
      * executing the OFF instruction...
      */
     quit_flag = true;
+}
+
+void shell_message(const char *message) {
+    show_message("Core", message);
 }
 
 int8 shell_random_seed() {
@@ -2476,8 +3029,6 @@ void shell_print(const char *text, int length,
                 show_message("Message", buf);
                 goto done_print_txt;
             }
-            if (ftell(print_txt) == 0)
-                fwrite("\357\273\277", 1, 3, print_txt);
         }
 
         if (text != NULL)
@@ -2590,37 +3141,6 @@ void shell_log(const char *message) {
         logfile = fopen("free42.log", "w");
     fprintf(logfile, "%s\n", message);
     fflush(logfile);
-}
-
-int shell_write(const char *buf, int4 buflen) {
-    int4 written;
-    if (export_file == NULL)
-        return 0;
-    written = fwrite(buf, 1, buflen, export_file);
-    if (written != buflen) {
-        char buf[1000];
-        fclose(export_file);
-        export_file = NULL;
-        snprintf(buf, 1000, "Writing \"%s\" failed.", export_file_name);
-        show_message("Message", buf);
-        return 0;
-    } else
-        return 1;
-}
-
-int shell_read(char *buf, int4 buflen) {
-    int4 nread;
-    if (import_file == NULL)
-        return -1;
-    nread = fread(buf, 1, buflen, import_file);
-    if (nread != buflen && ferror(import_file)) {
-        fclose(import_file);
-        import_file = NULL;
-        show_message("Message",
-                "An error occurred; import was terminated prematurely.");
-        return -1;
-    } else
-        return nread;
 }
 
 void shell_get_time_date(uint4 *time, uint4 *date, int *weekday) {

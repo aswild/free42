@@ -120,7 +120,6 @@
     <ClCompile Include="core_tables.cpp" />
     <ClCompile Include="core_variables.cpp" />
     <ClCompile Include="keymap.cpp" />
-    <ClCompile Include="mathfudge.c" />
     <ClCompile Include="msg2string.cpp" />
     <ClCompile Include="readtest.c">
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">-I IntelRDFPMathLib20U1/TESTS %(AdditionalOptions)</AdditionalOptions>
@@ -129,11 +128,12 @@
     <ClCompile Include="readtest_lines.cpp">
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
-    <ClCompile Include="shell.cpp" />
     <ClCompile Include="shell_loadimage.cpp" />
+    <ClCompile Include="shell_main.cpp" />
     <ClCompile Include="shell_skin.cpp" />
     <ClCompile Include="shell_spool.cpp" />
     <ClCompile Include="skins.cpp" />
+    <ClCompile Include="StatesWindow.cpp" />
     <ClCompile Include="StdAfx.cpp" />
   </ItemGroup>
   <ItemGroup>

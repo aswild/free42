@@ -83,19 +83,19 @@ static JNIEnv *getJniEnv() {
 }
 
 
-/*******************************************************************/
-/* A couple of functions to enable the Java code to get the values */
-/* of the FREE42_MAGIC and FREE42_VERSION macros.                  */
-/*******************************************************************/
+/*******************************************************/
+/* Functions to enable the Java code to get the values */
+/* of the FREE42_MAGIC and FREE42_MAGIC_STR macros.    */
+/*******************************************************/
 
 extern "C" jint
 Java_com_thomasokken_free42_Free42Activity_FREE42_1MAGIC(JNIEnv *env, jobject thiz) {
     return FREE42_MAGIC;
 }
 
-extern "C" jint
-Java_com_thomasokken_free42_Free42Activity_FREE42_1VERSION(JNIEnv *env, jobject thiz) {
-    return FREE42_VERSION;
+extern "C" jstring
+Java_com_thomasokken_free42_Free42Activity_FREE42_1MAGIC_1STR(JNIEnv *env, jobject thiz) {
+    return env->NewStringUTF(FREE42_MAGIC_STR);
 }
 
 
@@ -119,21 +119,26 @@ Java_com_thomasokken_free42_Free42Activity_core_1keydown_1finish(JNIEnv *env, jo
 /**********************************************************/
 
 extern "C" void
-Java_com_thomasokken_free42_Free42Activity_core_1init(JNIEnv *env, jobject thiz, jint read_state, jint version) {
+Java_com_thomasokken_free42_Free42Activity_core_1init(JNIEnv *env, jobject thiz, jint read_state, jint version,
+            jstring state_file_name, jint offset) {
     Tracer T("core_init");
-    core_init(read_state, version);
+    const char *buf = env->GetStringUTFChars(state_file_name, NULL);
+    core_init(read_state, version, buf, offset);
+    env->ReleaseStringUTFChars(state_file_name, buf);
 }
 
 extern "C" void
-Java_com_thomasokken_free42_Free42Activity_core_1enter_1background(JNIEnv *env, jobject thiz) {
-    Tracer T("core_enter_background");
-    core_enter_background();
+Java_com_thomasokken_free42_Free42Activity_core_1save_1state(JNIEnv *env, jobject thiz, jstring state_file_name) {
+    Tracer T("core_save_state");
+    const char *buf = env->GetStringUTFChars(state_file_name, NULL);
+    core_save_state(buf);
+    env->ReleaseStringUTFChars(state_file_name, buf);
 }
 
 extern "C" void
-Java_com_thomasokken_free42_Free42Activity_core_1quit(JNIEnv *env, jobject thiz) {
-    Tracer T("core_quit");
-    core_quit();
+Java_com_thomasokken_free42_Free42Activity_core_1cleanup(JNIEnv *env, jobject thiz) {
+    Tracer T("core_cleanup");
+    core_cleanup();
 }
 
 extern "C" void
@@ -180,7 +185,7 @@ Java_com_thomasokken_free42_Free42Activity_core_1keydown(JNIEnv *env, jobject th
 }
 
 extern "C" jboolean
-Java_com_thomasokken_free42_Free42Activity_core_1keydown_1command(JNIEnv *env, jobject *thiz,
+Java_com_thomasokken_free42_Free42Activity_core_1keydown_1command(JNIEnv *env, jobject thiz,
                             jstring cmd, jobject enqueued, jobject repeat, jboolean immediate_return) {
     Tracer T("core_keydown_command");
     finish_flag = immediate_return;
@@ -238,7 +243,7 @@ Java_com_thomasokken_free42_Free42Activity_core_1powercycle(JNIEnv *env, jobject
 }
 
 extern "C" jobjectArray
-Java_com_thomasokken_free42_Free42Activity_core_1list_1programs(JNIEnv *env) {
+Java_com_thomasokken_free42_Free42Activity_core_1list_1programs(JNIEnv *env, jobject thiz) {
     Tracer T("core_list_programs");
     char *buf = core_list_programs();
     jclass stringClass = env->FindClass("java/lang/String");
@@ -263,19 +268,24 @@ Java_com_thomasokken_free42_Free42Activity_core_1program_1size(JNIEnv *env, jobj
 }
 
 extern "C" void
-Java_com_thomasokken_free42_Free42Activity_core_1export_1programs(JNIEnv *env, jobject thiz, jintArray indexes) {
+Java_com_thomasokken_free42_Free42Activity_core_1export_1programs(JNIEnv *env, jobject thiz, jintArray indexes,
+            jstring raw_file_name) {
     Tracer T("core_export_programs");
     int count = env->GetArrayLength(indexes);
     int *indexes2 = (int *) malloc(count * sizeof(int));
     env->GetIntArrayRegion(indexes, 0, count, indexes2);
-    core_export_programs(count, indexes2);
+    const char *buf = env->GetStringUTFChars(raw_file_name, NULL);
+    core_export_programs(count, indexes2, buf);
     free(indexes2);
+    env->ReleaseStringUTFChars(raw_file_name, buf);
 }
 
 extern "C" void
-Java_com_thomasokken_free42_Free42Activity_core_1import_1programs(JNIEnv *env, jobject thiz) {
+Java_com_thomasokken_free42_Free42Activity_core_1import_1programs(JNIEnv *env, jobject thiz, jstring raw_file_name) {
     Tracer T("core_import_programs");
-    core_import_programs();
+    const char *buf = env->GetStringUTFChars(raw_file_name, NULL);
+    core_import_programs(0, buf);
+    env->ReleaseStringUTFChars(raw_file_name, buf);
 }
 
 extern "C" jstring
@@ -364,6 +374,22 @@ Java_com_thomasokken_free42_Free42Activity_setAlwaysRepaintFullDisplay(JNIEnv *e
 // one core_keydown() invocation), so not releasing local references will lead
 // to a "ReferenceTable overflow" eventually while running programs.
 
+const char *shell_platform() {
+    Tracer T("shell_platform");
+    JNIEnv *env = getJniEnv();
+    jclass klass = env->GetObjectClass(g_activity);
+    jmethodID mid = env->GetMethodID(klass, "shell_platform", "()Ljava/lang/String;");
+    jstring jp = (jstring) env->CallObjectMethod(g_activity, mid);
+    const char *cp = env->GetStringUTFChars(jp, 0);
+    static char p[16];
+    strncpy(p, cp, 16);
+    p[15] = 0;
+    env->ReleaseStringUTFChars(jp, cp);
+    // Delete local references
+    env->DeleteLocalRef(klass);
+    return p;
+}
+
 void shell_blitter(const char *bits, int bytesperline, int x, int y,
                          int width, int height) {
     Tracer T("shell_blitter");
@@ -428,35 +454,6 @@ void shell_request_timeout3(int delay) {
     env->DeleteLocalRef(klass);
 }
 
-int shell_read_saved_state(void *buf, int4 bufsize) {
-    Tracer T("shell_read_saved_state");
-    JNIEnv *env = getJniEnv();
-    jclass klass = env->GetObjectClass(g_activity);
-    jmethodID mid = env->GetMethodID(klass, "shell_read_saved_state", "([B)I");
-    jbyteArray buf2 = env->NewByteArray(bufsize);
-    int n = env->CallIntMethod(g_activity, mid, buf2);
-    if (n > 0)
-        env->GetByteArrayRegion(buf2, 0, n, (jbyte *) buf);
-    // Delete local references
-    env->DeleteLocalRef(klass);
-    env->DeleteLocalRef(buf2);
-    return n;
-}
-
-bool shell_write_saved_state(const void *buf, int4 bufsize) {
-    Tracer T("shell_write_saved_state");
-    JNIEnv *env = getJniEnv();
-    jclass klass = env->GetObjectClass(g_activity);
-    jmethodID mid = env->GetMethodID(klass, "shell_write_saved_state", "([B)Z");
-    jbyteArray buf2 = env->NewByteArray(bufsize);
-    env->SetByteArrayRegion(buf2, 0, bufsize, (const jbyte *) buf);
-    bool ret = env->CallBooleanMethod(g_activity, mid, buf2);
-    // Delete local references
-    env->DeleteLocalRef(klass);
-    env->DeleteLocalRef(buf2);
-    return ret;
-}
-
 unsigned int shell_get_mem() {
     Tracer T("shell_get_mem");
     JNIEnv *env = getJniEnv();
@@ -498,6 +495,17 @@ int shell_always_on(int always_on) {
     // Delete local references
     env->DeleteLocalRef(klass);
     return ret;
+}
+
+void shell_message(const char *message) {
+    JNIEnv *env = getJniEnv();
+    jclass klass = env->GetObjectClass(g_activity);
+    jmethodID mid = env->GetMethodID(klass, "shell_message", "(Ljava/lang/String;)V");
+    jstring s = env->NewStringUTF(message);
+    env->CallVoidMethod(g_activity, mid, s);
+    // Delete local references
+    env->DeleteLocalRef(klass);
+    env->DeleteLocalRef(s);
 }
 
 int8 shell_random_seed() {
@@ -546,35 +554,6 @@ void shell_print(const char *text, int length,
     if (text2 != NULL)
         env->DeleteLocalRef(text2);
     env->DeleteLocalRef(bits2);
-}
-
-int shell_write(const char *buf, int4 bufsize) {
-    Tracer T("shell_write");
-    JNIEnv *env = getJniEnv();
-    jclass klass = env->GetObjectClass(g_activity);
-    jmethodID mid = env->GetMethodID(klass, "shell_write", "([B)I");
-    jbyteArray buf2 = env->NewByteArray(bufsize);
-    env->SetByteArrayRegion(buf2, 0, bufsize, (const jbyte *) buf);
-    int ret = env->CallIntMethod(g_activity, mid, buf2);
-    // Delete local references
-    env->DeleteLocalRef(klass);
-    env->DeleteLocalRef(buf2);
-    return ret;
-}
-
-int shell_read(char *buf, int4 bufsize) {
-    Tracer T("shell_read");
-    JNIEnv *env = getJniEnv();
-    jclass klass = env->GetObjectClass(g_activity);
-    jmethodID mid = env->GetMethodID(klass, "shell_read", "([B)I");
-    jbyteArray buf2 = env->NewByteArray(bufsize);
-    int n = env->CallIntMethod(g_activity, mid, buf2);
-    if (n > 0)
-        env->GetByteArrayRegion(buf2, 0, n, (jbyte *) buf);
-    // Delete local references
-    env->DeleteLocalRef(klass);
-    env->DeleteLocalRef(buf2);
-    return n;
 }
 
 int shell_get_acceleration(double *x, double *y, double *z) {

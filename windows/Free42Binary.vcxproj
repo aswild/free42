@@ -129,8 +129,8 @@
     <ClCompile Include="readtest_lines.cpp">
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">/bigobj %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
-    <ClCompile Include="shell.cpp" />
     <ClCompile Include="shell_loadimage.cpp" />
+    <ClCompile Include="shell_main.cpp" />
     <ClCompile Include="shell_skin.cpp" />
     <ClCompile Include="shell_spool.cpp" />
     <ClCompile Include="skins.cpp" />
@@ -162,10 +162,11 @@
     <ClInclude Include="free42.h" />
     <ClInclude Include="msg2string.h" />
     <ClInclude Include="resource.h" />
-    <ClInclude Include="shell.h" />
+    <ClInclude Include="shell_main.h" />
     <ClInclude Include="shell_loadimage.h" />
     <ClInclude Include="shell_skin.h" />
     <ClInclude Include="shell_spool.h" />
+    <ClInclude Include="StatesWindow.h" />
     <ClInclude Include="StdAfx.h" />
   </ItemGroup>
   <ItemGroup>

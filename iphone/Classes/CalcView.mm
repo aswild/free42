@@ -22,10 +22,12 @@
 
 #import <AudioToolbox/AudioServices.h>
 #import <CoreLocation/CoreLocation.h>
+#import <CoreMotion/CoreMotion.h>
 
 #import "CalcView.h"
 #import "PrintView.h"
 #import "RootViewController.h"
+#import "Free42AppDelegate.h"
 #import "free42.h"
 #import "core_main.h"
 #import "core_display.h"
@@ -77,7 +79,7 @@ static void init_shell_state(int version);
 static int write_shell_state();
 
 state_type state;
-static FILE* statefile;
+FILE* statefile;
 
 static int quit_flag = 0;
 static int enqueued;
@@ -130,12 +132,10 @@ static bool is_file(const char *name);
 /////   Accelerometer, Location Services, and Compass support    /////
 //////////////////////////////////////////////////////////////////////
 
-static double accel_x = 0, accel_y = 0, accel_z = 0;
 static double loc_lat = 0, loc_lon = 0, loc_lat_lon_acc = -1, loc_elev = 0, loc_elev_acc = -1;
 static double hdg_mag = 0, hdg_true = 0, hdg_acc = -1, hdg_x = 0, hdg_y = 0, hdg_z = 0;
 
-@interface HardwareDelegate : NSObject <UIAccelerometerDelegate, CLLocationManagerDelegate> {}
-- (void)accelerometer:(UIAccelerometer *)accelerometer didAccelerate:(UIAcceleration *)acceleration;
+@interface HardwareDelegate : NSObject <CLLocationManagerDelegate> {}
 - (void)locationManager:(CLLocationManager *)manager didUpdateToLocation:(CLLocation *)newLocation fromLocation:(CLLocation *)oldLocation;
 - (void)locationManager:(CLLocationManager *)manager didFailWithError:(NSError *)error;
 - (void)locationManager:(CLLocationManager *)manager didUpdateHeading:(CLHeading *)newHeading;
@@ -143,13 +143,6 @@ static double hdg_mag = 0, hdg_true = 0, hdg_acc = -1, hdg_x = 0, hdg_y = 0, hdg
 @end
 
 @implementation HardwareDelegate
-
-- (void)accelerometer:(UIAccelerometer *)accelerometer didAccelerate:(UIAcceleration *)acceleration {
-    accel_x = acceleration.x;
-    accel_y = acceleration.y;
-    accel_z = acceleration.z;
-    NSLog(@"Acceleration received: %g %g %g", accel_x, accel_y, accel_z);
-}
 
 - (void)locationManager:(CLLocationManager *)manager didUpdateToLocation:(CLLocation *)newLocation fromLocation:(CLLocation *)oldLocation {
     loc_lat = newLocation.coordinate.latitude;
@@ -220,7 +213,7 @@ static CalcView *calcView = nil;
     UIActionSheet *menu =
     [[UIActionSheet alloc] initWithTitle:@"Main Menu"
                                 delegate:self cancelButtonTitle:@"Cancel" destructiveButtonTitle:nil
-                       otherButtonTitles:@"Show Print-Out", @"Program Import & Export", @"Preferences", @"Select Skin", @"Copy", @"Paste", @"About Free42", nil];
+                       otherButtonTitles:@"Show Print-Out", @"Program Import & Export", @"States", @"Preferences", @"Select Skin", @"Copy", @"Paste", @"About Free42", nil];
     
     [menu showInView:self];
     [menu release];
@@ -230,7 +223,7 @@ static CalcView *calcView = nil;
     UIActionSheet *menu =
     [[UIActionSheet alloc] initWithTitle:@"Import & Export Menu"
                                 delegate:self cancelButtonTitle:@"Cancel" destructiveButtonTitle:nil
-                       otherButtonTitles:@"HTTP Server", @"Import Programs", @"Export Programs", @"Back", nil];
+                       otherButtonTitles:@"HTTP Server", @"Import Programs", @"Export Programs", @"Share Programs", @"Back", nil];
     
     [menu showInView:self];
     [menu release];
@@ -248,26 +241,30 @@ static CalcView *calcView = nil;
                 [self showImportExportMenu];
                 break;
             case 2:
+                // States
+                [RootViewController showStates:nil];
+                break;
+            case 3:
                 // Preferences
                 [RootViewController showPreferences];
                 break;
-            case 3:
+            case 4:
                 // Select Skin
                 [RootViewController showSelectSkin];
                 break;
-            case 4:
+            case 5:
                 // Copy
                 [self doCopy];
                 break;
-            case 5:
+            case 6:
                 // Paste
                 [self doPaste];
                 break;
-            case 6:
+            case 7:
                 // About Free42
                 [RootViewController showAbout];
                 break;
-            case 7:
+            case 8:
                 // Cancel
                 break;
         }
@@ -283,13 +280,17 @@ static CalcView *calcView = nil;
                 break;
             case 2:
                 // Export Programs
-                [RootViewController doExport];
+                [RootViewController doExport:NO];
                 break;
             case 3:
+                // Share Programs
+                [RootViewController doExport:YES];
+                break;
+            case 4:
                 // Back
                 [self showMainMenu];
                 break;
-            case 4:
+            case 5:
                 // Cancel
                 break;
         }
@@ -464,6 +465,8 @@ static CalcView *calcView = nil;
     calcView = self;
     statefile = fopen("config/state", "r");
     int init_mode, version;
+    char core_state_file_name[FILENAMELEN];
+    int core_state_file_offset;
     if (statefile != NULL) {
         if (read_shell_state(&version)) {
             init_mode = 1;
@@ -475,20 +478,52 @@ static CalcView *calcView = nil;
         init_shell_state(-1);
         init_mode = 0;
     }
+    if (init_mode == 1) {
+        if (version > 25) {
+            snprintf(core_state_file_name, FILENAMELEN, "config/%s.f42", state.coreName);
+            core_state_file_offset = 0;
+        } else {
+            strcpy(core_state_file_name, "config/state");
+            core_state_file_offset = (int) ftell(statefile);
+        }
+        fclose(statefile);
+    }  else {
+        // The shell state was missing or corrupt, but there
+        // may still be a valid core state...
+        snprintf(core_state_file_name, FILENAMELEN, "config/%s.f42", state.coreName);
+        struct stat st;
+        if (stat(core_state_file_name, &st) == 0) {
+            // Core state "Untitled.f42" exists; let's try to read it
+            core_state_file_offset = 0;
+            init_mode = 1;
+            version = 26;
+        }
+    }
 
     long w, h;
     skin_load(&w, &h);
     
-    core_init(init_mode, version);
-    if (statefile != NULL) {
-        fclose(statefile);
-        statefile = NULL;
-    }
+    core_init(init_mode, version, core_state_file_name, core_state_file_offset);
     keep_running = core_powercycle();
     if (keep_running)
         [self startRunner];
     if (shell_always_on(-1))
         [UIApplication sharedApplication].idleTimerDisabled = YES;
+}
+
++ (void) loadState:(const char *)name {
+    if (strcmp(name, state.coreName) != 0) {
+        char corefilename[FILENAMELEN];
+        snprintf(corefilename, FILENAMELEN, "config/%s.f42", state.coreName);
+        core_save_state(corefilename);
+    }
+    core_cleanup();
+    strcpy(state.coreName, name);
+    char corefilename[FILENAMELEN];
+    snprintf(corefilename, FILENAMELEN, "config/%s.f42", state.coreName);
+    core_init(1, 26, corefilename, 0);
+    if (core_powercycle())
+        [calcView startRunner];
 }
 
 - (void) runner {
@@ -603,21 +638,22 @@ static int timeout3_delay;
     }
 }
 
-static HardwareDelegate *hwDel = NULL;
-static CLLocationManager *locMgr = NULL;
+static HardwareDelegate *hwDel = nil;
+static CMMotionManager *motMgr = nil;
+static CLLocationManager *locMgr = nil;
 
 - (void) start_accelerometer {
-    UIAccelerometer *am = [UIAccelerometer sharedAccelerometer];
-    am.updateInterval = 1;
-    if (hwDel == NULL)
-        hwDel = [HardwareDelegate alloc];
-    am.delegate = hwDel;
+    if (motMgr == nil) {
+        motMgr = [[CMMotionManager alloc] init];
+        motMgr.accelerometerUpdateInterval = 1;
+        [motMgr startAccelerometerUpdates];
+    }
 }
 
 - (void) start_location {
-    if (locMgr == NULL) {
+    if (locMgr == nil) {
         locMgr = [[CLLocationManager alloc] init];
-        if (hwDel == NULL)
+        if (hwDel == nil)
             hwDel = [HardwareDelegate alloc];
         locMgr.delegate = hwDel;
     }
@@ -675,6 +711,8 @@ static CLLocationManager *locMgr = NULL;
 /////                   Here beginneth thy olde C code                    /////
 ///////////////////////////////////////////////////////////////////////////////
 
+extern int off_enable_flag;
+
 static int read_shell_state(int *ver) {
     TRACE("read_shell_state");
     int magic;
@@ -682,12 +720,12 @@ static int read_shell_state(int *ver) {
     int state_size;
     int state_version;
     
-    if (shell_read_saved_state(&magic, sizeof(int)) != sizeof(int))
+    if (fread(&magic, 1, sizeof(int), statefile) != sizeof(int))
         return 0;
     if (magic != FREE42_MAGIC)
         return 0;
     
-    if (shell_read_saved_state(&version, sizeof(int)) != sizeof(int))
+    if (fread(&version, 1, sizeof(int), statefile) != sizeof(int))
         return 0;
     if (version == 0) {
         /* State file version 0 does not contain shell state,
@@ -696,18 +734,16 @@ static int read_shell_state(int *ver) {
         init_shell_state(-1);
         *ver = version;
         return 1;
-    } else if (version > FREE42_VERSION)
-        /* Unknown state file version */
-        return 0;
+    }
     
-    if (shell_read_saved_state(&state_size, sizeof(int)) != sizeof(int))
+    if (fread(&state_size, 1, sizeof(int), statefile) != sizeof(int))
         return 0;
-    if (shell_read_saved_state(&state_version, sizeof(int)) != sizeof(int))
+    if (fread(&state_version, 1, sizeof(int), statefile) != sizeof(int))
         return 0;
     if (state_version < 0 || state_version > SHELL_VERSION)
         /* Unknown shell state version */
         return 0;
-    if (shell_read_saved_state(&state, state_size) != state_size)
+    if (fread(&state, 1, state_size, statefile) != state_size)
         return 0;
     
     init_shell_state(state_version);
@@ -744,12 +780,19 @@ static void init_shell_state(int version) {
             state.maintainSkinAspect[1] = 1;
             /* fall through */
         case 5:
-            /* current version (SHELL_VERSION = 5),
+            state.offEnabled = false;
+            /* fall through */
+        case 6:
+            strcpy(state.coreName, "Untitled");
+            /* fall through */
+        case 7:
+            /* current version (SHELL_VERSION = 7),
              * so nothing to do here since everything
              * was initialized from the state file.
              */
             ;
     }
+    off_enable_flag = state.offEnabled ? 1 : 0;
 }
 
 static void quit2(bool really_quit) {
@@ -771,17 +814,15 @@ static void quit2(bool really_quit) {
     shell_spool_exit();
 
     mkdir("config", 0755);
-    statefile = fopen("config/state", "w");
-    if (statefile != NULL)
-        write_shell_state();
-    if (really_quit)
-        core_quit();
-    else
-        core_enter_background();
-    if (statefile != NULL)
-        fclose(statefile);
-    if (really_quit)
+    write_shell_state();
+
+    char corefilename[FILENAMELEN];
+    snprintf(corefilename, FILENAMELEN, "config/%s.f42", state.coreName);
+    core_save_state(corefilename);
+    if (really_quit) {
+        //core_cleanup();
         exit(0);
+    }
 }
 
 static void shell_keydown() {
@@ -879,27 +920,41 @@ static void shell_keyup() {
 static int write_shell_state() {
     TRACE("write_shell_state");
     int magic = FREE42_MAGIC;
-    int version = FREE42_VERSION;
+    int version = 27;
     int state_size = sizeof(state);
     int state_version = SHELL_VERSION;
+
+    state.offEnabled = off_enable_flag != 0;
     
-    if (!shell_write_saved_state(&magic, sizeof(int)))
+    FILE *statefile = fopen("config/state", "w");
+    if (statefile == NULL)
         return 0;
-    if (!shell_write_saved_state(&version, sizeof(int)))
+    if (fwrite(&magic, 1, sizeof(int), statefile) != sizeof(int))
         return 0;
-    if (!shell_write_saved_state(&state_size, sizeof(int)))
+    if (fwrite(&version, 1, sizeof(int), statefile) != sizeof(int))
         return 0;
-    if (!shell_write_saved_state(&state_version, sizeof(int)))
+    if (fwrite(&state_size, 1, sizeof(int), statefile) != sizeof(int))
         return 0;
-    if (!shell_write_saved_state(&state, sizeof(state)))
+    if (fwrite(&state_version, 1, sizeof(int), statefile) != sizeof(int))
+        return 0;
+    if (fwrite(&state, 1, sizeof(state), statefile) != sizeof(state))
         return 0;
     
+    fclose(statefile);
     return 1;
 }
 
 void shell_blitter(const char *bits, int bytesperline, int x, int y, int width, int height) {
     TRACE("shell_blitter");
     skin_display_blitter(bits, bytesperline, x, y, width, height, calcView);
+}
+
+const char *shell_platform() {
+    static char p[16];
+    strncpy(p, [Free42AppDelegate getVersion], 16);
+    strncat(p, " iOS", 16);
+    p[15] = 0;
+    return p;
 }
 
 void shell_beeper(int frequency, int duration) {
@@ -975,37 +1030,6 @@ void shell_request_timeout3(int delay) {
     pthread_mutex_lock(&shell_helper_mutex);
     timeout3_delay = delay;
     [calcView performSelectorOnMainThread:@selector(shell_request_timeout3_helper) withObject:NULL waitUntilDone:NO];
-}
-
-int shell_read_saved_state(void *buf, int bufsize) {
-    TRACE("shell_read_saved_state");
-    if (statefile == NULL)
-        return -1;
-    else {
-        size_t n = fread(buf, 1, bufsize, statefile);
-        if (n != bufsize && ferror(statefile)) {
-            fclose(statefile);
-            statefile = NULL;
-            return -1;
-        } else
-            return (int) n;
-    }
-}
-
-bool shell_write_saved_state(const void *buf, int nbytes) {
-    TRACE("shell_write_saved_state");
-    if (statefile == NULL)
-        return false;
-    else {
-        size_t n = fwrite(buf, 1, nbytes, statefile);
-        if (n != nbytes) {
-            fclose(statefile);
-            remove("config/state");
-            statefile = NULL;
-            return false;
-        } else
-            return true;
-    }
 }
 
 unsigned int shell_get_mem() {
@@ -1112,8 +1136,6 @@ void shell_print(const char *text, int length,
                 show_message("Message", buf);
                 goto done_print_txt;
             }
-            if (ftell(print_txt) == 0)
-                fwrite("\357\273\277", 1, 3, print_txt);
         }
         
         if (text != NULL)
@@ -1219,16 +1241,6 @@ void shell_print(const char *text, int length,
     }
 }
 
-/*
-int shell_write(const char *buf, int buflen) {
-    return 0;
-}
-
-int shell_read(char *buf, int buflen) {
-    return -1;
-}
-*/
-
 //////////////////////////////////////////////////////////////////////
 /////   Accelerometer, Location Services, and Compass support    /////
 //////////////////////////////////////////////////////////////////////
@@ -1239,9 +1251,14 @@ int shell_get_acceleration(double *x, double *y, double *z) {
         accelerometer_active = true;
         [calcView performSelectorOnMainThread:@selector(start_accelerometer) withObject:NULL waitUntilDone:NO];
     }
-    *x = accel_x;
-    *y = accel_y;
-    *z = accel_z;
+    CMAccelerometerData *cmd = [motMgr accelerometerData];
+    if (cmd == nil) {
+        *x = *y = *z = 0;
+    } else {
+        *x = cmd.acceleration.x;
+        *y = cmd.acceleration.y;
+        *z = cmd.acceleration.z;
+    }
     return 1;
 }
 
