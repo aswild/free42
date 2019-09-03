@@ -2,10 +2,13 @@
 Allen Wild's fork of Free42
 
 I wanted to make a few tweaks to Free42's functionality, which meant I had to
-figure out how to build Free42 on Android/Linux/Windows cleanly. There's no
-official Free42 git repo (only a tarball of the latest version's source), so
-the import branch here contains the contents of those tarballs with no
-modifications for easily merging into master.
+figure out how to build Free42 on Android/Linux/Windows cleanly.
+Up to version 2.4.2, there was no official Free42 git repo (only a tarball of
+the latest version's source), so the import branch here contains the contents
+of those tarballs with no modifications for easily merging into master.
+Starting with version 2.5, there's an official git repo at
+https://github.com/thomasokken/free42 which I now merge in here. Some git merge
+trickery was needed to merge in the upstream repo with sane merge bases.
 
 Common Changes:
   * Add a "floating-fixed" display precision mode, used when DISP mode is "all"
