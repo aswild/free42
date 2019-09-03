@@ -5,7 +5,7 @@ set -x
 
 cd $(dirname $0)
 pushd app/src/main/cpp
-./link-files-release.sh
+./link-files.sh
 ./build-intel-lib.sh
 popd
 
