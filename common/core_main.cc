@@ -70,6 +70,24 @@ void core_init(int read_saved_state, int4 version, const char *state_file_name, 
      */
 
     phloat_init();
+
+    #if defined(ANDROID) || defined(IPHONE)
+        core_settings.enable_ext_accel = true;
+        core_settings.enable_ext_locat = true;
+        core_settings.enable_ext_heading = true;
+    #else
+        core_settings.enable_ext_accel = false;
+        core_settings.enable_ext_locat = false;
+        core_settings.enable_ext_heading = false;
+    #endif
+    #ifdef FREE42_FPTEST
+        core_settings.enable_ext_fptest = true;
+    #else
+        core_settings.enable_ext_fptest = false;
+    #endif
+    core_settings.enable_ext_time = true;
+    core_settings.enable_ext_prog = true;
+
     if (read_saved_state == 1) {
         gfile = fopen(state_file_name, "rb");
         if (gfile == NULL)
@@ -1175,6 +1193,8 @@ void core_export_programs(int count, const int *indexes, const char *raw_file_na
             }
 #ifdef IPHONE
         }
+    } else {
+        raw_buf = NULL;
 #endif
     }
     for (int i = 0; i < count; i++) {
@@ -1725,6 +1745,8 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
             }
 #ifdef IPHONE
         }
+    } else {
+        raw_buf = NULL;
 #endif
     }
 

@@ -98,7 +98,7 @@ public class Free42Activity extends Activity {
 
     public static final String[] builtinSkinNames = new String[] { "Standard", "Landscape" };
     
-    private static final int SHELL_VERSION = 14;
+    private static final int SHELL_VERSION = 15;
     
     private static final int PRINT_BACKGROUND_COLOR = Color.LTGRAY;
     
@@ -1722,6 +1722,14 @@ public class Free42Activity extends Activity {
                 keyVibrationLen = state_read_int();
                 coreName = state_read_string();
             }
+            if (shell_version >= 15) {
+                CoreSettings cs = new CoreSettings();
+                getCoreSettings(cs);
+                cs.matrix_singularmatrix = state_read_boolean();
+                cs.matrix_outofrange = state_read_boolean();
+                cs.auto_repeat = state_read_boolean();
+                putCoreSettings(cs);
+            }
             init_shell_state(shell_version);
         } catch (IllegalArgumentException e) {
             return false;
@@ -1785,7 +1793,15 @@ public class Free42Activity extends Activity {
             coreName = "Untitled";
             // fall through
         case 14:
-            // current version (SHELL_VERSION = 14),
+            CoreSettings cs = new CoreSettings();
+            getCoreSettings(cs);
+            cs.matrix_singularmatrix = false;
+            cs.matrix_outofrange = false;
+            cs.auto_repeat = true;
+            putCoreSettings(cs);
+            // fall through
+        case 15:
+            // current version (SHELL_VERSION = 15),
             // so nothing to do here since everything
             // was initialized from the state file.
             ;
@@ -1820,6 +1836,11 @@ public class Free42Activity extends Activity {
             state_write_boolean(maintainSkinAspect[1]);
             state_write_int(keyVibrationLen);
             state_write_string(coreName);
+            CoreSettings cs = new CoreSettings();
+            getCoreSettings(cs);
+            state_write_boolean(cs.matrix_singularmatrix);
+            state_write_boolean(cs.matrix_outofrange);
+            state_write_boolean(cs.auto_repeat);
         } catch (IllegalArgumentException e) {}
     }
     

@@ -43,28 +43,19 @@
 /////                         Ye olde C stuphphe                          /////
 ///////////////////////////////////////////////////////////////////////////////
 
-static int level = 0;
-
+#if 0
 class Tracer {
 private:
     const char *name;
 public:
     Tracer(const char *name) {
         this->name = name;
-        for (int i = 0; i < level; i++)
-            fprintf(stderr, " ");
-        fprintf(stderr, "ENTERING %s\n", name);
-        level++;
+        NSLog(@"%@ : ENTERING %s", [NSThread currentThread], name);
     }
     ~Tracer() {
-        level--;
-        for (int i = 0; i < level; i++)
-            fprintf(stderr, " ");
-        fprintf(stderr, "EXITING %s\n", name);
+        NSLog(@"%@ : EXITING %s", [NSThread currentThread], name);
     }
 };
-
-#if 0
 #define TRACE(x) Tracer T(x)
 #else
 #define TRACE(x)
@@ -190,7 +181,9 @@ static CalcView *calcView = nil;
 
 - (void) setNeedsDisplayInRectSafely2:(id) myrect {
     TRACE("setNeedsDisplayInRectSafely2");
-    CGRect *r = (CGRect *) [((NSValue *) myrect) pointerValue];
+    NSValue *val = (NSValue *) myrect;
+    CGRect *r = (CGRect *) [val pointerValue];
+    [val release];
     [self setNeedsDisplayInRect:*r];
     delete r;
 }
@@ -205,7 +198,7 @@ static CalcView *calcView = nil;
         r->origin.y = rect.origin.y;
         r->size.width = rect.size.width;
         r->size.height = rect.size.height;
-        [self performSelectorOnMainThread:@selector(setNeedsDisplayInRectSafely2:) withObject:[NSValue valueWithPointer:r] waitUntilDone:NO];
+        [self performSelectorOnMainThread:@selector(setNeedsDisplayInRectSafely2:) withObject:[[NSValue valueWithPointer:r] retain] waitUntilDone:NO];
     }
 }
 
@@ -745,6 +738,11 @@ static int read_shell_state(int *ver) {
         return 0;
     if (fread(&state, 1, state_size, statefile) != state_size)
         return 0;
+    if (state_version >= 8) {
+        core_settings.matrix_singularmatrix = state.matrix_singularmatrix;
+        core_settings.matrix_outofrange = state.matrix_outofrange;
+        core_settings.auto_repeat = state.auto_repeat;
+    }
     
     init_shell_state(state_version);
     *ver = version;
@@ -786,7 +784,12 @@ static void init_shell_state(int version) {
             strcpy(state.coreName, "Untitled");
             /* fall through */
         case 7:
-            /* current version (SHELL_VERSION = 7),
+            core_settings.matrix_singularmatrix = false;
+            core_settings.matrix_outofrange = false;
+            core_settings.auto_repeat = true;
+            /* fall through */
+        case 8:
+            /* current version (SHELL_VERSION = 8),
              * so nothing to do here since everything
              * was initialized from the state file.
              */
@@ -937,6 +940,9 @@ static int write_shell_state() {
         return 0;
     if (fwrite(&state_version, 1, sizeof(int), statefile) != sizeof(int))
         return 0;
+    state.matrix_singularmatrix = core_settings.matrix_singularmatrix;
+    state.matrix_outofrange = core_settings.matrix_outofrange;
+    state.auto_repeat = core_settings.auto_repeat;
     if (fwrite(&state, 1, sizeof(state), statefile) != sizeof(state))
         return 0;
     

@@ -35,11 +35,11 @@ android {
     compileSdkVersion 28
     defaultConfig {
         applicationId "com.thomasokken.free42"
+        buildConfigField "String", "GitRev", "\"${getGitRev()}\""
         minSdkVersion 14
         targetSdkVersion 28
-        versionCode 106
-        versionName "2.5.4"
-        buildConfigField "String", "GitRev", "\"${getGitRev()}\""
+        versionCode 107
+        versionName "2.5.5"
     }
     buildTypes {
         debug {
