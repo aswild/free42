@@ -69,7 +69,9 @@ OBJS = shell_main.o shell_skin.o skins.o keymap.o shell_loadimage.o \
 	core_math1.o core_math2.o core_phloat.o core_sto_rcl.o \
 	core_tables.o core_variables.o
 
-ifdef BCD_MATH
+BCD_MATH ?= 1
+
+ifeq ($(BCD_MATH),1)
 CXXFLAGS += -DBCD_MATH
 EXE = free42dec
 else
