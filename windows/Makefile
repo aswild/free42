@@ -29,7 +29,7 @@ build/keymap2cpp/keymap2cpp.exe: keymap2cpp.cpp
 
 # git rev in version
 VERSION.rc: VERSION.rc.in
-	sed 's/@GITREV@/$(shell ../gitversion.sh)/' $< >$@
+	sed 's/\(FREE42_VERSION_1 .*\)"/\1 ($(shell ../gitversion.sh))"/' $< >$@
 
 # rather than a "links" sentinel file, just look for free42.h
 free42.h:
