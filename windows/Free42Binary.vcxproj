@@ -134,6 +134,7 @@
     <ClCompile Include="shell_skin.cpp" />
     <ClCompile Include="shell_spool.cpp" />
     <ClCompile Include="skins.cpp" />
+    <ClCompile Include="StatesWindow.cpp" />
     <ClCompile Include="StdAfx.cpp" />
   </ItemGroup>
   <ItemGroup>

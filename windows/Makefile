@@ -33,7 +33,7 @@ VERSION.rc: VERSION.rc.in
 
 # rather than a "links" sentinel file, just look for free42.h
 free42.h:
-	cmd //c link-files.bat
+	cmd //c copy-files.bat
 
 # Intel library gets its own script
 cl111libbid.lib:
@@ -47,13 +47,15 @@ keymap.cpp: build/keymap2cpp/keymap2cpp.exe
 	$<
 
 dist: Free42Binary.exe Free42Decimal.exe README.txt
-	version="$(shell ./gitversion.sh --full)"; \
+	version="$(shell ../gitversion.sh --full)"; \
 		bsdtar -a -cvf Free42Windows-$${version}.zip -s "#^#Free42Windows-$${version}/#p" $^
 
 clean:
 	rm -rf build Free42Binary.exe Free42Decimal.exe keymap.cpp skins.cpp VERSION.rc
 
 distclean: clean
-	rm -rf IntelRDFPMathLib20U1 cl111libbid.lib readtest.c readtest_lines.cpp $(shell awk '/^mklink \/h/{print $$3}' link-files.bat)
+	rm -rf IntelRDFPMathLib20U1 cl111libbid.lib readtest.c readtest_lines.cpp \
+		$(shell sed -n 's/^copy.*\\\(\S*\) \.$$/\1/p' copy-files.bat) \
+		$(shell sed -n 's/^copy.* \(\S*[^.]\)$$/\1/p' copy-files.bat)
 
 .PHONY: dist clean distclean

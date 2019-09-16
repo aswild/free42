@@ -105,6 +105,9 @@
     <ClCompile Include="skins.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="StatesWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="StdAfx.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
