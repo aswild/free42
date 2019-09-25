@@ -20,7 +20,6 @@ Common Changes:
   * Include git revision in version number of about screens
 
 Android Changes:
-  * Make the haptic feedback vibration duration configurable in preferences
   * Include the high-resolution Nova skins by default
   * Build system improvements
     - Remove hard-coded toolchain paths
@@ -31,6 +30,9 @@ Android Changes:
     - Unify Intel Library patches so I don't have to make every change to
       Intel's insane makefiles 4 times
     - Update gradle from 5.1.1 to 5.5.1
+  * Make the haptic feedback vibration duration configurable in preferences
+    - This has been reverted and made obselete by upstream changes in v2.5.7
+      which made the vibration duration configurable with a slider.
 
 Windows Changes:
   * Build system improvements: just run "make" in a MSYS2 terminal
