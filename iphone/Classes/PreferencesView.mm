@@ -15,6 +15,7 @@
  * along with this program; if not, see http://www.gnu.org/licenses/.
  *****************************************************************************/
 
+#import <AudioToolbox/AudioServices.h>
 #import "PreferencesView.h"
 #import "CalcView.h"
 #import "SelectFileView.h"
@@ -30,8 +31,8 @@
 @synthesize matrixOutOfRangeSwitch;
 @synthesize autoRepeatSwitch;
 @synthesize alwaysOnSwitch;
-@synthesize keyClicksSwitch;
-@synthesize hapticFeedbackSwitch;
+@synthesize keyClicksSlider;
+@synthesize hapticFeedbackSlider;
 @synthesize orientationSelector;
 @synthesize maintainSkinAspectSwitch;
 @synthesize printToTextSwitch;
@@ -59,8 +60,8 @@
     [matrixOutOfRangeSwitch setOn:core_settings.matrix_outofrange];
     [autoRepeatSwitch setOn:core_settings.auto_repeat];
     [alwaysOnSwitch setOn:shell_always_on(-1)];
-    [keyClicksSwitch setOn:state.keyClicks != 0];
-    [hapticFeedbackSwitch setOn:state.hapticFeedback != 0];
+    [keyClicksSlider setValue:state.keyClicks];
+    [hapticFeedbackSlider setValue:state.hapticFeedback];
     [orientationSelector setSelectedSegmentIndex:state.orientationMode];
     [maintainSkinAspectSwitch setOn:state.maintainSkinAspect[[CalcView isPortrait] ? 0 : 1] != 0];
     [printToTextSwitch setOn:(state.printerToTxtFile != 0)];
@@ -142,6 +143,34 @@
     [printToGifField setText:path];
 }
 
+- (IBAction) keyClicksSliderUpdated {
+    int v = (int) ([keyClicksSlider value] + 0.5);
+    [keyClicksSlider setValue:v];
+    if (state.keyClicks != v) {
+        state.keyClicks = v;
+        if (v > 0)
+            [RootViewController playSound:v + 10];
+    }
+}
+
+- (IBAction) hapticFeedbackSliderUpdated {
+    int v = (int) ([hapticFeedbackSlider value] + 0.5);
+    [hapticFeedbackSlider setValue:v];
+    if (state.hapticFeedback != v) {
+        state.hapticFeedback = v;
+        if (v > 0) {
+            UIImpactFeedbackStyle s;
+            switch (v) {
+                case 1: s = UIImpactFeedbackStyleLight; break;
+                case 2: s = UIImpactFeedbackStyleMedium; break;
+                case 3: s = UIImpactFeedbackStyleHeavy; break;
+            }
+            UIImpactFeedbackGenerator *fbgen = [[UIImpactFeedbackGenerator alloc] initWithStyle:s];
+            [fbgen impactOccurred];
+        }
+    }
+}
+
 - (IBAction) done {
     [self endEditing:YES];
     
@@ -154,8 +183,6 @@
     core_settings.matrix_outofrange = matrixOutOfRangeSwitch.on;
     core_settings.auto_repeat = autoRepeatSwitch.on;
     shell_always_on(alwaysOnSwitch.on);
-    state.keyClicks = keyClicksSwitch.on;
-    state.hapticFeedback = hapticFeedbackSwitch.on;
     state.orientationMode = (int) orientationSelector.selectedSegmentIndex;
     int isPortrait = [CalcView isPortrait] ? 0 : 1;
     int maintainSkinAspect = maintainSkinAspectSwitch.on ? 1 : 0;

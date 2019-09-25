@@ -97,7 +97,7 @@ public class Free42Activity extends Activity {
 
     public static final String[] builtinSkinNames = new String[] { "Standard", "Landscape" };
     
-    private static final int SHELL_VERSION = 15;
+    private static final int SHELL_VERSION = 17;
     
     private static final int PRINT_BACKGROUND_COLOR = Color.LTGRAY;
     
@@ -161,8 +161,8 @@ public class Free42Activity extends Activity {
     private String coreName;
 
     private boolean alwaysRepaintFullDisplay = false;
-    private boolean keyClicksEnabled = true;
-    private boolean keyVibrationEnabled = false;
+    private int keyClicksLevel = 3;
+    private int keyVibration = 0;
     private int preferredOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
     private int style = 0;
     
@@ -404,7 +404,12 @@ public class Free42Activity extends Activity {
             setRequestedOrientation(preferredOrientation);
 
         soundPool = new SoundPool(1, AudioManager.STREAM_SYSTEM, 0);
-        int[] soundResourceIds = { R.raw.tone0, R.raw.tone1, R.raw.tone2, R.raw.tone3, R.raw.tone4, R.raw.tone5, R.raw.tone6, R.raw.tone7, R.raw.tone8, R.raw.tone9, R.raw.squeak, R.raw.click };
+        int[] soundResourceIds = {
+                R.raw.tone0, R.raw.tone1, R.raw.tone2, R.raw.tone3, R.raw.tone4,
+                R.raw.tone5, R.raw.tone6, R.raw.tone7, R.raw.tone8, R.raw.tone9,
+                R.raw.squeak,
+                R.raw.click1, R.raw.click2, R.raw.click3, R.raw.click4, R.raw.click5
+            };
         soundIds = new int[soundResourceIds.length];
         for (int i = 0; i < soundResourceIds.length; i++)
             soundIds[i] = soundPool.load(this, soundResourceIds[i], 1);
@@ -937,8 +942,8 @@ public class Free42Activity extends Activity {
         preferencesDialog.setMatrixOutOfRange(cs.matrix_outofrange);
         preferencesDialog.setAutoRepeat(cs.auto_repeat);
         preferencesDialog.setAlwaysOn(shell_always_on(-1) != 0);
-        preferencesDialog.setKeyClicks(keyClicksEnabled);
-        preferencesDialog.setKeyVibration(keyVibrationEnabled);
+        preferencesDialog.setKeyClicks(keyClicksLevel);
+        preferencesDialog.setKeyVibration(keyVibration);
         preferencesDialog.setOrientation(preferredOrientation);
         preferencesDialog.setStyle(style);
         preferencesDialog.setDisplayFullRepaint(alwaysRepaintFullDisplay);
@@ -960,8 +965,8 @@ public class Free42Activity extends Activity {
         cs.matrix_outofrange = preferencesDialog.getMatrixOutOfRange();
         cs.auto_repeat = preferencesDialog.getAutoRepeat();
         shell_always_on(preferencesDialog.getAlwaysOn() ? 1 : 0);
-        keyClicksEnabled = preferencesDialog.getKeyClicks();
-        keyVibrationEnabled = preferencesDialog.getKeyVibration();
+        keyClicksLevel = preferencesDialog.getKeyClicks();
+        keyVibration = preferencesDialog.getKeyVibration();
         int oldOrientation = preferredOrientation;
         preferredOrientation = preferencesDialog.getOrientation();
         style = preferencesDialog.getStyle();
@@ -1576,6 +1581,10 @@ public class Free42Activity extends Activity {
         }
 
         public void share() {
+            if (bottom == top) {
+                alert("The print-out is empty.");
+                return;
+            }
             String text = printOutAsText();
             String pngFileName = printOutAsImage();
             Intent intent = new Intent(Intent.ACTION_SEND);
@@ -1674,11 +1683,14 @@ public class Free42Activity extends Activity {
             if (shell_version >= 4) {
                 skinName[1] = state_read_string();
                 externalSkinName[1] = state_read_string();
-                keyClicksEnabled = state_read_boolean();
+                if (shell_version >= 17)
+                    keyClicksLevel = state_read_int();
+                else
+                    keyClicksLevel = state_read_boolean() ? 3 : 0;
             } else {
                 skinName[1] = skinName[0];
                 externalSkinName[1] = externalSkinName[0];
-                keyClicksEnabled = true;
+                keyClicksLevel = 3;
             }
             if (shell_version >= 5)
                 preferredOrientation = state_read_int();
@@ -1693,7 +1705,10 @@ public class Free42Activity extends Activity {
                 displaySmoothing[1] = state_read_boolean();
             }
             if (shell_version >= 8)
-                keyVibrationEnabled = state_read_boolean();
+                if (shell_version < 16)
+                    keyVibration = state_read_boolean() ? 50 : 0;
+                else
+                    keyVibration = state_read_int();
             if (shell_version >= 9) {
                 style = state_read_int();
                 int maxStyle = PreferencesDialog.immersiveModeSupported ? 2 : 1;
@@ -1746,7 +1761,7 @@ public class Free42Activity extends Activity {
         case 3:
             skinName[1] = "Landscape";
             externalSkinName[1] = topStorageDir() + "/Free42/" + skinName[1];
-            keyClicksEnabled = true;
+            keyClicksLevel = 3;
             // fall through
         case 4:
             preferredOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
@@ -1760,7 +1775,7 @@ public class Free42Activity extends Activity {
             displaySmoothing[1] = displaySmoothing[0];
             // fall through
         case 7:
-            keyVibrationEnabled = false;
+            keyVibration = 0;
             // fall through
         case 8:
             style = 0;
@@ -1789,7 +1804,9 @@ public class Free42Activity extends Activity {
             putCoreSettings(cs);
             // fall through
         case 15:
-            // current version (SHELL_VERSION = 15),
+            // fall through
+        case 16:
+            // current version (SHELL_VERSION = 16),
             // so nothing to do here since everything
             // was initialized from the state file.
             ;
@@ -1810,13 +1827,13 @@ public class Free42Activity extends Activity {
             state_write_string(externalSkinName[0]);
             state_write_string(skinName[1]);
             state_write_string(externalSkinName[1]);
-            state_write_boolean(keyClicksEnabled);
+            state_write_int(keyClicksLevel);
             state_write_int(preferredOrientation);
             state_write_boolean(skinSmoothing[0]);
             state_write_boolean(displaySmoothing[0]);
             state_write_boolean(skinSmoothing[1]);
             state_write_boolean(displaySmoothing[1]);
-            state_write_boolean(keyVibrationEnabled);
+            state_write_int(keyVibration);
             state_write_int(style);
             state_write_boolean(alwaysRepaintFullDisplay);
             state_write_boolean(alwaysOn);
@@ -1965,16 +1982,16 @@ public class Free42Activity extends Activity {
     }
     
     private void click() {
-        if (keyClicksEnabled)
-            playSound(11, 0);
-        if (keyVibrationEnabled) {
+        if (keyClicksLevel > 0)
+            playSound(keyClicksLevel + 10, 0);
+        if (keyVibration > 0) {
             Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
-            v.vibrate(20);
+            v.vibrate(keyVibration);
         }
     }
     
     
-    private void playSound(int index, int duration) {
+    public void playSound(int index, int duration) {
         soundPool.play(soundIds[index], 1f, 1f, 0, 0, 1f);
     }
     
@@ -2441,7 +2458,7 @@ public class Free42Activity extends Activity {
                 }
             };
             try {
-                lm.requestLocationUpdates(provider, 60000, 1, ll, Looper.getMainLooper());
+                lm.requestLocationUpdates(provider, 5000, 1, ll, Looper.getMainLooper());
             } catch (IllegalArgumentException e) {
                 return 0;
             } catch (SecurityException e) {

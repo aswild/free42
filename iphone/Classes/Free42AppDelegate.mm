@@ -70,6 +70,8 @@ static char version[32] = "";
     // We ignore the URL and just handle all files with names
     // ending in .f42 or .F42 that happen to be in our Inbox.
     DIR *dir = opendir("Inbox");
+    if (dir == NULL)
+        return NO;
     struct dirent *d;
     NSMutableArray *fromNames = [NSMutableArray array];
     while ((d = readdir(dir)) != NULL) {
@@ -120,9 +122,19 @@ static char version[32] = "";
         } else {
             // Must be .raw, because in the first loop, we only collect
             // files with extensions .f42 or .raw
-            core_import_programs(0, fromPathC);
+            // Make sure the file ends in Cx xx 0D before importing it.
+            FILE *f = fopen(fromPathC, "r");
+            if (f != NULL) {
+                fseek(f, -3, SEEK_END);
+                char sig[3];
+                size_t n = fread(sig, 1, 3, f);
+                fclose(f);
+                if (n == 3 && (sig[0] & 0x0f0) == 0x0c0 && sig[2] == 0x0d) {
+                    core_import_programs(0, fromPathC);
+                    nProgs++;
+                }
+            }
             remove(fromPathC);
-            nProgs++;
         }
     }
     if (firstState == nil) {

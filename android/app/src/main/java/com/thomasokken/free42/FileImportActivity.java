@@ -28,21 +28,31 @@ public class FileImportActivity extends Activity {
 
         Intent intent = getIntent();
         String action = intent.getAction();
-        System.err.println("FileImportActivity action = " + action);
         Uri uri = intent.getData();
-        System.err.println("FileImportActivity uri = " + uri);
+        if (uri == null) {
+            try {
+                Bundle bundle = intent.getExtras();
+                uri = (Uri) bundle.get(Intent.EXTRA_STREAM);
+            } catch (Exception e) {}
+            if (uri == null) {
+                finish();
+                return;
+            }
+        }
 
         // If attachment, some contortions to try and get the original file name
         String baseName = null;
         String type = "f42";
         String scheme = uri.getScheme();
         if (scheme.equals("content")) {
-            Cursor cursor = getContentResolver().query(uri, new String[]{MediaStore.MediaColumns.DISPLAY_NAME}, null, null, null);
-            cursor.moveToFirst();
-            int nameIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME);
-            if (nameIndex >= 0) {
-                baseName = cursor.getString(nameIndex);
-            }
+            try {
+                Cursor cursor = getContentResolver().query(uri, new String[]{MediaStore.MediaColumns.DISPLAY_NAME}, null, null, null);
+                cursor.moveToFirst();
+                int nameIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME);
+                if (nameIndex >= 0) {
+                    baseName = cursor.getString(nameIndex);
+                }
+            } catch (Exception e) {}
         } else {
             baseName = uri.getLastPathSegment();
         }
@@ -95,9 +105,27 @@ public class FileImportActivity extends Activity {
                 if (n != 4 || buf[0] != '2' || buf[1] != '4' || buf[2] != 'k' || buf[3] != 'F')
                     throw new FormatException();
                 os.write(buf, 0, 4);
+                while ((n = is.read(buf)) >= 0)
+                    os.write(buf, 0, n);
+            } else {
+                byte[] last3 = new byte[3];
+                while ((n = is.read(buf)) >= 0) {
+                    os.write(buf, 0, n);
+                    if (n >= 3) {
+                        System.arraycopy(buf, n - 3, last3, 0, 3);
+                    } else if (n == 2) {
+                        last3[0] = last3[2];
+                        last3[1] = buf[0];
+                        last3[2] = buf[1];
+                    } else if (n == 1) {
+                        last3[0] = last3[1];
+                        last3[1] = last3[2];
+                        last3[2] = buf[0];
+                    }
+                }
+                if ((last3[0] & 0x0f0) != 0x0c0 || last3[2] != 0x0d)
+                    throw new FormatException();
             }
-            while ((n = is.read(buf)) >= 0)
-                os.write(buf, 0, n);
             wrapUp(null);
         } catch (Exception e) {
             importedState = null;
@@ -116,7 +144,6 @@ public class FileImportActivity extends Activity {
 
     private void wrapUp(Exception e) {
         if (e == null) {
-            finish();
             Free42Activity f42instance = Free42Activity.instance;
             Intent i = new Intent(Intent.ACTION_MAIN);
             i.addCategory(Intent.CATEGORY_LAUNCHER);
@@ -126,20 +153,20 @@ public class FileImportActivity extends Activity {
                     f42instance.importedState = importedState;
                 else
                     f42instance.importedProgram = dstFile;
-            } else {
-                if (importIsState)
-                    i.putExtra("importedState", importedState);
-                else
-                    i.putExtra("importedProgram", dstFile);
             }
+            if (importIsState)
+                i.putExtra("importedState", importedState);
+            else
+                i.putExtra("importedProgram", dstFile);
             startActivity(i);
+            finish();
         } else if (e instanceof FormatException) {
             new File(dstFile).delete();
-            runOnUiThread(new Alerter("Invalid state format."));
+            runOnUiThread(new Alerter("Invalid " + (importIsState ? "state" : "program") + " format."));
         } else {
             e.printStackTrace();
             new File(dstFile).delete();
-            runOnUiThread(new Alerter("State import failed."));
+            runOnUiThread(new Alerter((importIsState ? "State" : "Program") + " import failed."));
         }
     }
 
@@ -159,7 +186,18 @@ public class FileImportActivity extends Activity {
                     FileImportActivity.this.finish();
                 }
             });
-            dialog.show();
+            try {
+                dialog.show();
+            } catch (Exception e) {
+                // Should never happen. From what I can find out, when AlertDialog.show()
+                // throws a BadTokenException, it's because it's being called from a
+                // background thread, or because it's being called with an Activity that
+                // has already finished. The FileImportActivity calls this code using
+                // runOnUiThread(), so the former never applies, and it doesn't call
+                // finish() before running this code, so the latter never applies either.
+                // Unfortunately, BadTokenExceptions do, in fact, get thrown here, so
+                // there's nothing to be done but catch and ignore them.
+            }
         }
     }
 
@@ -183,9 +221,27 @@ public class FileImportActivity extends Activity {
                     if (n != 4 || buf[0] != '2' || buf[1] != '4' || buf[2] != 'k' || buf[3] != 'F')
                         throw new FormatException();
                     os.write(buf, 0, 4);
+                    while ((n = is.read(buf)) >= 0)
+                        os.write(buf, 0, n);
+                } else {
+                    byte[] last3 = new byte[3];
+                    while ((n = is.read(buf)) >= 0) {
+                        os.write(buf, 0, n);
+                        if (n >= 3) {
+                            System.arraycopy(buf, n - 3, last3, 0, 3);
+                        } else if (n == 2) {
+                            last3[0] = last3[2];
+                            last3[1] = buf[0];
+                            last3[2] = buf[1];
+                        } else if (n == 1) {
+                            last3[0] = last3[1];
+                            last3[1] = last3[2];
+                            last3[2] = buf[0];
+                        }
+                    }
+                    if ((last3[0] & 0x0f0) != 0x0c0 || last3[2] != 0x0d)
+                        throw new FormatException();
                 }
-                while ((n = is.read(buf)) >= 0)
-                    os.write(buf, 0, n);
             } catch (Exception e) {
                 importedState = null;
                 ex = e;

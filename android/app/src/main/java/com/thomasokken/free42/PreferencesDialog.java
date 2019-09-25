@@ -20,12 +20,14 @@ package com.thomasokken.free42;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.pm.ActivityInfo;
+import android.os.Vibrator;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.SeekBar;
 import android.widget.Spinner;
 
 public class PreferencesDialog extends Dialog {
@@ -65,8 +67,8 @@ public class PreferencesDialog extends Dialog {
     private CheckBox matrixOutOfRangeCB;
     private CheckBox autoRepeatCB;
     private CheckBox alwaysOnCB;
-    private CheckBox keyClicksCB;
-    private CheckBox keyVibrationCB;
+    private SeekBar keyClicksSB;
+    private SeekBar hapticSB;
     private Spinner orientationSP;
     private Spinner styleSP;
     private CheckBox maintainSkinAspectCB;
@@ -89,8 +91,53 @@ public class PreferencesDialog extends Dialog {
         matrixOutOfRangeCB = (CheckBox) findViewById(R.id.matrixOutOfRangeCB);
         autoRepeatCB = (CheckBox) findViewById(R.id.autoRepeatCB);
         alwaysOnCB = (CheckBox) findViewById(R.id.alwaysOnCB);
-        keyClicksCB = (CheckBox) findViewById(R.id.keyClicksCB);
-        keyVibrationCB = (CheckBox) findViewById(R.id.keyVibrationCB);
+        keyClicksSB = (SeekBar) findViewById(R.id.keyClicksSB);
+        keyClicksSB.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            private int prevVal = -1;
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int val, boolean fromUser) {
+                if (fromUser) {
+                    if (val != prevVal) {
+                        if (val > 0)
+                            Free42Activity.instance.playSound(val + 10, 0);
+                        prevVal = val;
+                    }
+                }
+            }
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+                // ignore
+            }
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                // ignore
+            }
+        });
+        hapticSB = (SeekBar) findViewById(R.id.hapticSB);
+        hapticSB.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            private int prevVal = -1;
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int val, boolean fromUser) {
+                if (fromUser) {
+                    val = ((int) (((double) val) / 10 + 0.5)) * 10;
+                    seekBar.setProgress(val);
+                    if (val != prevVal) {
+                        Vibrator v = (Vibrator) PreferencesDialog.this.getContext().getSystemService(Context.VIBRATOR_SERVICE);
+                        v.vibrate(val);
+                        prevVal = val;
+
+                    }
+                }
+            }
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+                // ignore
+            }
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                // ignore
+            }
+        });
         orientationSP = (Spinner) findViewById(R.id.orientationSpinner);
         String[] values;
         if (reversePortraitSupported)
@@ -210,20 +257,20 @@ public class PreferencesDialog extends Dialog {
         return alwaysOnCB.isChecked();
     }
     
-    public void setKeyClicks(boolean b) {
-        keyClicksCB.setChecked(b);
+    public void setKeyClicks(int v) {
+        keyClicksSB.setProgress(v);
     }
     
-    public boolean getKeyClicks() {
-        return keyClicksCB.isChecked();
+    public int getKeyClicks() {
+        return keyClicksSB.getProgress();
     }
     
-    public void setKeyVibration(boolean b) {
-        keyVibrationCB.setChecked(b);
+    public void setKeyVibration(int ms) {
+        hapticSB.setProgress(ms);
     }
-
-    public boolean getKeyVibration() {
-        return keyVibrationCB.isChecked();
+    
+    public int getKeyVibration() {
+        return hapticSB.getProgress();
     }
     
     public void setOrientation(int orientation) {

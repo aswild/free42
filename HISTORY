@@ -1,3 +1,52 @@
+2019-09-21: release 2.5.9
+
+* Importing programs would insert the programs at the current location, instead
+  of at the end of memory. Bug introduced in 2.5 or one of the subsequent
+  revisions. Now fixed.
+* iOS version: Added support for Dark Mode in iOS 13.
+* Android version: Added file extension filtering for file, http, and https URL
+  schemes. This should make Free42 not appear in as many file selection
+  contexts as before, without making it disappear from contexts where it should
+  be offered as an option. N.B. File extension filtering is not supported with
+  the content scheme, which means Free42 will still show up in all contexts
+  where attachments are opened, and depending on the file manager used, also
+  when opening files from file managers.
+
+2019-09-20: release 2.5.8
+
+* When loading a corrupted state file causes a crash, the state file is now
+  renamed so that it won't be read again, and the app will start with Memory
+  Clear the next time it is launched, instead of crashing again and again.
+* Android and iOS versions: Fixed a couple of import-related crashes.
+
+2019-09-16: release 2.5.7
+
+* SOLVE did not always return the second-best guess in Y. Fixed.
+* Android version: Changed haptic feedback preference setting from on/off
+  switch to a four-level slider, for off/light/medium/heavy feedback.
+* Android version: Reduced the GPS update interval for LOCAT from 60 seconds to
+  5 seconds.
+* Android version: Sharing an empty print-out would crash. Fixed; now it pops
+  up a message instead.
+* Android version: Fixed crashes in state file import activity: intents without
+  data, and SecurityException and UnsupportedOperationException while trying to
+  get attachment file names.
+* iOS version: Changed haptic feedback preference setting from on/off switch to
+  a four-level slider, for off/light/medium/heavy feedback. Also, changed key
+  clicks setting from on/off switch to a three-way slider, for off/standard/wav
+  click sounds, where standard is the old system key click sound, and wav is a
+  wav file that sounds a bit louder.
+* iOS version: Making the single-threaded logic permanent. The complexity of
+  the multi-threaded event handling logic makes the code too hard to maintain,
+  while the benefits in terms of performance are marginal. The only noticeable
+  disadvantage of the single-threaded approach was poor performance in display-
+  intensive code, and that was mitigated simply by repainting less
+  aggressively.
+* iOS version: Preferences view now expands to fill the width of the screen.
+* MacOS version: Making the app single-threaded. This is the same change as in
+  the iOS version; the aim is to simplify the code, making it more robust,
+  while sacrificing very little in terms of performance.
+
 2019-09-09: release 2.5.6a (iOS only)
 
 * iOS version: Made the app single-threaded. Interim version, to deal with the

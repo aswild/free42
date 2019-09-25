@@ -75,7 +75,6 @@ static int quit_flag = 0;
 static int enqueued;
 static int keep_running = 0;
 static int we_want_cpu = 0;
-static bool we_want_to_draw = false;
 
 static int ckey = 0;
 static int skey;
@@ -265,7 +264,6 @@ static CalcView *calcView = nil;
 
 - (void) drawRect:(CGRect)rect {
     TRACE("drawRect");
-    we_want_to_draw = false;
     skin_repaint(&rect);
 }
 
@@ -288,10 +286,16 @@ static CalcView *calcView = nil;
             if (skin_in_menu_area(x, y))
                 [self showMainMenu];
         } else {
-            if (state.keyClicks)
-                AudioServicesPlaySystemSound(1105);
-            if (state.hapticFeedback) {
-                UIImpactFeedbackGenerator *fbgen = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
+            if (state.keyClicks > 0)
+                [RootViewController playSound:state.keyClicks + 10];
+            if (state.hapticFeedback > 0) {
+                UIImpactFeedbackStyle s;
+                switch (state.hapticFeedback) {
+                    case 1: s = UIImpactFeedbackStyleLight; break;
+                    case 2: s = UIImpactFeedbackStyleMedium; break;
+                    case 3: s = UIImpactFeedbackStyleHeavy; break;
+                }
+                UIImpactFeedbackGenerator *fbgen = [[UIImpactFeedbackGenerator alloc] initWithStyle:s];
                 [fbgen impactOccurred];
             }
             macro = skin_find_macro(ckey, &macro_is_name);
@@ -608,16 +612,6 @@ static CLLocationManager *locMgr = nil;
             ann_print_timeout_active = TRUE;
         }
     }
-}
-
-- (void) setNeedsDisplay {
-    we_want_to_draw = true;
-    [super setNeedsDisplay];
-}
-
-- (void) setNeedsDisplayInRect:(CGRect)rect {
-    we_want_to_draw = true;
-    [super setNeedsDisplayInRect:rect];
 }
 
 @end
@@ -941,7 +935,7 @@ void shell_log(const char *message) {
 
 int shell_wants_cpu() {
     TRACE("shell_wants_cpu");
-    if (we_want_to_draw || we_want_cpu)
+    if (we_want_cpu)
         return true;
     struct timeval now;
     gettimeofday(&now, NULL);
