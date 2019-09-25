@@ -28,8 +28,6 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.Spinner;
 
-import java.util.Locale;
-
 public class PreferencesDialog extends Dialog {
     private static boolean reversePortraitSupported;
     private static final int reversePortraitConstant;
@@ -69,7 +67,6 @@ public class PreferencesDialog extends Dialog {
     private CheckBox alwaysOnCB;
     private CheckBox keyClicksCB;
     private CheckBox keyVibrationCB;
-    private EditText keyVibrationLen;
     private Spinner orientationSP;
     private Spinner styleSP;
     private CheckBox maintainSkinAspectCB;
@@ -94,7 +91,6 @@ public class PreferencesDialog extends Dialog {
         alwaysOnCB = (CheckBox) findViewById(R.id.alwaysOnCB);
         keyClicksCB = (CheckBox) findViewById(R.id.keyClicksCB);
         keyVibrationCB = (CheckBox) findViewById(R.id.keyVibrationCB);
-        keyVibrationLen = (EditText) findViewById(R.id.keyVibrationLen);
         orientationSP = (Spinner) findViewById(R.id.orientationSpinner);
         String[] values;
         if (reversePortraitSupported)
@@ -228,14 +224,6 @@ public class PreferencesDialog extends Dialog {
 
     public boolean getKeyVibration() {
         return keyVibrationCB.isChecked();
-    }
-
-    public void setKeyVibrationLen(String l) {
-        keyVibrationLen.setText(l);
-    }
-
-    public String getKeyVibrationLen() {
-        return keyVibrationLen.getText().toString();
     }
     
     public void setOrientation(int orientation) {

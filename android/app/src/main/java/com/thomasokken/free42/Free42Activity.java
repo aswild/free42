@@ -32,7 +32,6 @@ import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
@@ -164,7 +163,6 @@ public class Free42Activity extends Activity {
     private boolean alwaysRepaintFullDisplay = false;
     private boolean keyClicksEnabled = true;
     private boolean keyVibrationEnabled = false;
-    private int keyVibrationLen = 50;
     private int preferredOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
     private int style = 0;
     
@@ -941,7 +939,6 @@ public class Free42Activity extends Activity {
         preferencesDialog.setAlwaysOn(shell_always_on(-1) != 0);
         preferencesDialog.setKeyClicks(keyClicksEnabled);
         preferencesDialog.setKeyVibration(keyVibrationEnabled);
-        preferencesDialog.setKeyVibrationLen(String.format(Locale.US, "%d", keyVibrationLen));
         preferencesDialog.setOrientation(preferredOrientation);
         preferencesDialog.setStyle(style);
         preferencesDialog.setDisplayFullRepaint(alwaysRepaintFullDisplay);
@@ -965,12 +962,6 @@ public class Free42Activity extends Activity {
         shell_always_on(preferencesDialog.getAlwaysOn() ? 1 : 0);
         keyClicksEnabled = preferencesDialog.getKeyClicks();
         keyVibrationEnabled = preferencesDialog.getKeyVibration();
-        try {
-            keyVibrationLen = Integer.parseInt(preferencesDialog.getKeyVibrationLen());
-        }
-        catch (NumberFormatException e) {
-            keyVibrationLen = 50;
-        }
         int oldOrientation = preferredOrientation;
         preferredOrientation = preferencesDialog.getOrientation();
         style = preferencesDialog.getStyle();
@@ -1718,10 +1709,8 @@ public class Free42Activity extends Activity {
                 maintainSkinAspect[0] = state_read_boolean();
                 maintainSkinAspect[1] = state_read_boolean();
             }
-            if (shell_version >= 14) {
-                keyVibrationLen = state_read_int();
+            if (shell_version >= 14)
                 coreName = state_read_string();
-            }
             if (shell_version >= 15) {
                 CoreSettings cs = new CoreSettings();
                 getCoreSettings(cs);
@@ -1789,7 +1778,6 @@ public class Free42Activity extends Activity {
             maintainSkinAspect[1] = false;
             // fall through
         case 13:
-            keyVibrationLen = 50;
             coreName = "Untitled";
             // fall through
         case 14:
@@ -1834,7 +1822,6 @@ public class Free42Activity extends Activity {
             state_write_boolean(alwaysOn);
             state_write_boolean(maintainSkinAspect[0]);
             state_write_boolean(maintainSkinAspect[1]);
-            state_write_int(keyVibrationLen);
             state_write_string(coreName);
             CoreSettings cs = new CoreSettings();
             getCoreSettings(cs);
@@ -1982,7 +1969,7 @@ public class Free42Activity extends Activity {
             playSound(11, 0);
         if (keyVibrationEnabled) {
             Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
-            v.vibrate(keyVibrationLen);
+            v.vibrate(20);
         }
     }
     

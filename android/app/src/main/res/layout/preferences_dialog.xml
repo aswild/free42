@@ -69,33 +69,10 @@
 		    		android:text="Haptic feedback"
 		    		android:layout_below="@+id/keyClicksCB"
 		    		android:layout_alignParentLeft="true"/>
-
-			<LinearLayout android:id="@+id/keyVibrationBox"
-				android:layout_width="wrap_content" android:layout_height="wrap_content"
-				android:layout_below="@+id/keyVibrationCB"
-				android:layout_alignParentLeft="true"
-				android:orientation="horizontal">
-
-				<TextView
-					android:layout_width="wrap_content" android:layout_height="wrap_content"
-					android:text="Haptic time"/>
-
-				<EditText
-					android:id="@+id/keyVibrationLen"
-					android:layout_width="50sp" android:layout_height="wrap_content"
-					android:inputType="text"
-					android:gravity="center"
-					android:text="50"/>
-
-				<TextView
-					android:layout_width="wrap_content" android:layout_height="wrap_content"
-					android:text="(default 50ms)"/>
-
-			</LinearLayout>
-
+		        
 		    <LinearLayout android:id="@+id/orientationBox"
 		    		android:layout_width="wrap_content" android:layout_height="wrap_content"
-		    		android:layout_below="@+id/keyVibrationBox"
+		    		android:layout_below="@+id/keyVibrationCB"
 		    		android:layout_alignParentLeft="true"
 		    		android:orientation="horizontal">
 	
@@ -200,7 +177,7 @@
 					android:layout_below="@+id/printToGifFileNameTF"
 					android:layout_toRightOf="@+id/maxGifHeightL"
 					android:inputType="number"/>
-
+			
 		</RelativeLayout>
 	
 	</ScrollView>
