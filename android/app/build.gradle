@@ -38,8 +38,8 @@ android {
         buildConfigField "String", "GitRev", "\"${getGitRev()}\""
         minSdkVersion 14
         targetSdkVersion 28
-        versionCode 112
-        versionName "2.5.9"
+        versionCode 114
+        versionName "2.5.9b"
     }
     buildTypes {
         debug {
@@ -48,6 +48,7 @@ android {
             }
             manifestPlaceholders = [appLabel: "Free42 Debug"]
             applicationIdSuffix ".debug"
+            //signingConfig signingConfigs.release
         }
         release {
             ndk {

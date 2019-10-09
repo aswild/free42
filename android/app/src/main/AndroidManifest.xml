@@ -19,7 +19,6 @@
     <activity android:name="Free42Activity"
               android:launchMode="singleInstance"
               android:theme="@android:style/Theme.NoTitleBar"
-              android:screenOrientation="sensor"
               android:configChanges="orientation">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>
@@ -35,14 +34,6 @@
         <category android:name="android.intent.category.DEFAULT"/>
         <data android:mimeType="image/x-raw"/>
         <data android:mimeType="image/x-panasonic-raw"/>
-      </intent-filter>
-      <intent-filter>
-        <action android:name="android.intent.action.SEND"/>
-        <action android:name="android.intent.action.VIEW"/>
-        <category android:name="android.intent.category.BROWSABLE"/>
-        <category android:name="android.intent.category.DEFAULT"/>
-        <data android:scheme="content"/>
-        <data android:mimeType="*/*"/>
       </intent-filter>
       <intent-filter>
         <action android:name="android.intent.action.SEND"/>

@@ -69,6 +69,7 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Vibrator;
+import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v4.content.FileProvider;
@@ -93,6 +94,7 @@ import android.widget.TextView;
  * based interface to the Free42 'core' functionality (the core is
  * C++ and porting it to Java is not practical, hence the use of JNI).
  */
+@SuppressWarnings("deprecation")
 public class Free42Activity extends Activity {
 
     public static final String[] builtinSkinNames = new String[] { "Standard", "Landscape" };
@@ -130,10 +132,6 @@ public class Free42Activity extends Activity {
     private PositionTrackingInputStream stateFileInputStream;
     private OutputStream stateFileOutputStream;
     
-    // Stuff to run core_keydown() on a background thread
-    private CoreThread coreThread;
-    private boolean coreWantsCpu;
-
     // Show "States" dialog if invoked after state import; this
     // will have the name of the most recently imported state.
     // If this is null, don't do anything.
@@ -147,6 +145,7 @@ public class Free42Activity extends Activity {
     
     private int ckey;
     private boolean timeout3_active;
+    private boolean quit_flag;
     
     private boolean low_battery;
     private BroadcastReceiver lowBatteryReceiver;
@@ -279,7 +278,6 @@ public class Free42Activity extends Activity {
         if (init_mode == 1) {
             if (version.value > 25) {
                 coreFileName = getFilesDir() + "/" + coreName + ".f42";
-                coreFileOffset = 0;
             } else {
                 coreFileName = getFilesDir() + "/state";
                 coreFileOffset = stateFileInputStream.getPosition();
@@ -293,7 +291,6 @@ public class Free42Activity extends Activity {
             coreFileName = getFilesDir() + "/" + coreName + ".f42";
             if (new File(coreFileName).isFile()) {
                 // Core state "Untitled.f42" exists; let's try to read it
-                coreFileOffset = 0;
                 init_mode = 1;
                 version.value = 26;
             }
@@ -389,7 +386,7 @@ public class Free42Activity extends Activity {
 
         lowBatteryReceiver = new BroadcastReceiver() {
             public void onReceive(Context ctx, Intent intent) {
-                low_battery = intent.getAction().equals(Intent.ACTION_BATTERY_LOW);
+                low_battery = Intent.ACTION_BATTERY_LOW.equals(intent.getAction());
                 Rect inval = skin.update_annunciators(-1, -1, -1, -1, low_battery ? 1 : 0, -1, -1);
                 if (inval != null)
                     calcView.postInvalidateScaled(inval.left, inval.top, inval.right, inval.bottom);
@@ -408,7 +405,8 @@ public class Free42Activity extends Activity {
                 R.raw.tone0, R.raw.tone1, R.raw.tone2, R.raw.tone3, R.raw.tone4,
                 R.raw.tone5, R.raw.tone6, R.raw.tone7, R.raw.tone8, R.raw.tone9,
                 R.raw.squeak,
-                R.raw.click1, R.raw.click2, R.raw.click3, R.raw.click4, R.raw.click5
+                R.raw.click1, R.raw.click2, R.raw.click3, R.raw.click4, R.raw.click5,
+                R.raw.click6, R.raw.click7, R.raw.click8, R.raw.click9
             };
         soundIds = new int[soundResourceIds.length];
         for (int i = 0; i < soundResourceIds.length; i++)
@@ -423,6 +421,7 @@ public class Free42Activity extends Activity {
         // of what that status *is* when the app is launched (or resumed?).
         IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
         Intent batteryStatus = registerReceiver(null, ifilter);
+        assert batteryStatus != null;
         int level = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
         int scale = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
         if (low_battery)
@@ -434,7 +433,7 @@ public class Free42Activity extends Activity {
             calcView.postInvalidateScaled(inval.left, inval.top, inval.right, inval.bottom);
 
         if (core_powercycle())
-            start_core_keydown();
+            startRunner();
         
         super.onStart();
 
@@ -463,9 +462,6 @@ public class Free42Activity extends Activity {
 
     @Override
     protected void onStop() {
-        end_core_keydown();
-        File filesDir = getFilesDir();
-
         // Write shell state
         stateFileOutputStream = null;
         try {
@@ -564,12 +560,26 @@ public class Free42Activity extends Activity {
         calcView.invalidate();
         core_repaint_display();
     }
-    
+
     @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         // ignore
     }
-    
+
+    private void startRunner() {
+        boolean keep_running = core_keydown(0, null, null, false);
+        if (keep_running && !quit_flag) {
+            Handler h = new Handler();
+            h.postDelayed(
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        startRunner();
+                    }
+                }, 0);
+        }
+    }
+
     private void cancelRepeaterAndTimeouts1And2() {
         mainHandler.removeCallbacks(repeaterCaller);
         mainHandler.removeCallbacks(timeout1Caller);
@@ -731,7 +741,7 @@ public class Free42Activity extends Activity {
         String newFileName = getFilesDir() + "/" + coreName + ".f42";
         core_init(1, 26, newFileName, 0);
         if (core_powercycle())
-            start_core_keydown();
+            startRunner();
     }
 
     public static void saveStateAs(String fileName) {
@@ -1175,7 +1185,6 @@ public class Free42Activity extends Activity {
                     return true;
                 }
                 click();
-                end_core_keydown();
                 Object macroObj = skin.find_macro(ckey);
                 if (timeout3_active && (macroObj != null || ckey != 28 /* SHIFT */)) {
                     cancelTimeout3();
@@ -1193,7 +1202,7 @@ public class Free42Activity extends Activity {
                 } else if (macroObj instanceof String) {
                     // Direct-mapped command
                     String cmd = (String) macroObj;
-                    running = core_keydown_command((String) macroObj, enqueued, repeat, true);
+                    running = core_keydown_command(cmd, enqueued, repeat, true);
                 } else {
                     byte[] macro = (byte[]) macroObj;
                     boolean one_key_macro = macro.length == 1 || (macro.length == 2 && macro[0] == 28);
@@ -1209,7 +1218,7 @@ public class Free42Activity extends Activity {
                         skin.set_display_enabled(true);
                 }
                 if (running)
-                    start_core_keydown();
+                    startRunner();
                 else {
                     if (repeat.value != 0)
                         mainHandler.postDelayed(repeaterCaller, repeat.value == 1 ? 1000 : 500);
@@ -1228,10 +1237,9 @@ public class Free42Activity extends Activity {
                 Rect inval = skin.set_active_key(-1);
                 if (inval != null)
                     invalidateScaled(inval);
-                end_core_keydown();
-                coreWantsCpu = core_keyup();
-                if (coreWantsCpu)
-                    start_core_keydown();
+                boolean keep_running = core_keyup();
+                if (keep_running)
+                    startRunner();
             }
                 
             return true;
@@ -1705,10 +1713,14 @@ public class Free42Activity extends Activity {
                 displaySmoothing[1] = state_read_boolean();
             }
             if (shell_version >= 8)
-                if (shell_version < 16)
-                    keyVibration = state_read_boolean() ? 50 : 0;
-                else
+                if (shell_version < 16) {
+                    keyVibration = state_read_boolean() ? 12 : 0;
+                } else {
                     keyVibration = state_read_int();
+                    if (keyVibration > 16)
+                        // The older 0, 50, 100, 150 scale
+                        keyVibration = (int) (Math.log(keyVibration) / Math.log(2) * 2 + 0.5);
+                }
             if (shell_version >= 9) {
                 style = state_read_int();
                 int maxStyle = PreferencesDialog.immersiveModeSupported ? 2 : 1;
@@ -1917,33 +1929,6 @@ public class Free42Activity extends Activity {
         }
     }
 
-    private class CoreThread extends Thread {
-        public boolean coreWantsCpu;
-        public void run() {
-            BooleanHolder enqueued = new BooleanHolder();
-            IntHolder repeat = new IntHolder();
-            coreWantsCpu = core_keydown(0, enqueued, repeat, false);
-        }
-    }
-    
-    private void start_core_keydown() {
-        coreThread = new CoreThread();
-        coreThread.start();
-    }
-    
-    private void end_core_keydown() {
-        if (coreThread != null) {
-            core_keydown_finish();
-            try {
-                coreThread.join();
-            } catch (InterruptedException e) {}
-            coreWantsCpu = coreThread.coreWantsCpu;
-            coreThread = null;
-        } else {
-            coreWantsCpu = false;
-        }
-    }
-    
     private void repeater() {
         cancelRepeaterAndTimeouts1And2();
         if (ckey == 0)
@@ -1971,22 +1956,18 @@ public class Free42Activity extends Activity {
 
     private void timeout3() {
         cancelTimeout3();
-        end_core_keydown();
         core_timeout3(1);
         // Resume program after PSE
-        BooleanHolder enqueued = new BooleanHolder();
-        IntHolder repeat = new IntHolder();
-        boolean running = core_keydown(0, enqueued, repeat, true);
-        if (running)
-            start_core_keydown();
+        startRunner();
     }
     
     private void click() {
         if (keyClicksLevel > 0)
             playSound(keyClicksLevel + 10, 0);
         if (keyVibration > 0) {
+            int ms = (int) (Math.pow(2, (keyVibration - 1) / 2.0) + 0.5);
             Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
-            v.vibrate(keyVibration);
+            v.vibrate(ms);
         }
     }
     
@@ -2012,7 +1993,6 @@ public class Free42Activity extends Activity {
     ///////////////////////////////////////////
     
     private native void nativeInit();
-    private native void core_keydown_finish();
     
     private native void core_init(int read_state, int version, String state_file_name, int state_file_offset);
     private native void core_save_state(String state_file_name);
@@ -2213,6 +2193,7 @@ public class Free42Activity extends Activity {
      * power-off is left to the OS and/or shell.
      */
     public void shell_powerdown() {
+        quit_flag = true;
         finish();
     }
     
