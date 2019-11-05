@@ -122,7 +122,6 @@ public class Free42Activity extends Activity {
     private ScrollView printScrollView;
     private boolean printViewShowing;
     private PreferencesDialog preferencesDialog;
-    private AlertDialog mainMenuDialog;
     private AlertDialog programImportExportMenuDialog;
     private Handler mainHandler;
     private boolean alwaysOn;
@@ -594,32 +593,25 @@ public class Free42Activity extends Activity {
     }
 
     private void postMainMenu() {
-        if (mainMenuDialog == null) {
-            AlertDialog.Builder builder = new AlertDialog.Builder(this);
-            builder.setTitle("Main Menu");
-            List<String> itemsList = new ArrayList<String>();
-            itemsList.add("Show Print-Out");
-            itemsList.add("Program Import & Export");
-            itemsList.add("States");
-            itemsList.add("Preferences");
-            itemsList.add("Select Skin");
-            itemsList.add("Skin: Other...");
-            itemsList.add("Copy");
-            itemsList.add("Paste");
-            itemsList.add("About Free42");
-            itemsList.add("Cancel");
-            builder.setItems(itemsList.toArray(new String[itemsList.size()]),
-                    new DialogInterface.OnClickListener() {
-                        public void onClick(DialogInterface dialog, int which) {
-                            mainMenuItemSelected(which);
-                        }
-                    });
-            mainMenuDialog = builder.create();
-        }
-        mainMenuDialog.show();
+        final String[] itemsArr = {
+            "Show Print-Out",
+            "Program Import & Export",
+            "States",
+            "Preferences",
+            "Select Skin",
+            "Skin: Other...",
+            "Copy",
+            "Paste",
+            "About Free42",
+            "Cancel",
+        };
+        new AlertDialog.Builder(this)
+            .setTitle("Main Menu")
+            .setItems(itemsArr, this::mainMenuItemSelected)
+            .show();
     }
 
-    private void mainMenuItemSelected(int which) {
+    private void mainMenuItemSelected(DialogInterface dialog, int which) {
         switch (which) {
             case 0:
                 doFlipCalcPrintout();
