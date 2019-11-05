@@ -21,11 +21,13 @@ import android.app.Dialog;
 import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.os.Vibrator;
+import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.SeekBar;
 import android.widget.Spinner;
@@ -69,6 +71,7 @@ public class PreferencesDialog extends Dialog {
     private CheckBox alwaysOnCB;
     private SeekBar keyClicksSB;
     private SeekBar hapticSB;
+    private CheckBox hapticSystemCB;
     private Spinner orientationSP;
     private Spinner styleSP;
     private CheckBox maintainSkinAspectCB;
@@ -139,6 +142,14 @@ public class PreferencesDialog extends Dialog {
                 // ignore
             }
         });
+
+        hapticSystemCB = findViewById(R.id.hapticSystemCB);
+        hapticSystemCB.setOnCheckedChangeListener((CompoundButton buttonView, boolean isChecked) -> {
+            hapticSB.setEnabled(!isChecked);
+            if (isChecked)
+                buttonView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+        });
+
         orientationSP = (Spinner) findViewById(R.id.orientationSpinner);
         String[] values;
         if (reversePortraitSupported)
@@ -267,10 +278,19 @@ public class PreferencesDialog extends Dialog {
     }
     
     public void setKeyVibration(int ms) {
-        hapticSB.setProgress(ms);
+        if (ms == -1) {
+            hapticSystemCB.setChecked(true);
+            hapticSB.setEnabled(false);
+        } else {
+            hapticSystemCB.setChecked(false);
+            hapticSB.setEnabled(true);
+            hapticSB.setProgress(ms);
+        }
     }
     
     public int getKeyVibration() {
+        if (hapticSystemCB.isChecked())
+            return -1;
         return hapticSB.getProgress();
     }
     

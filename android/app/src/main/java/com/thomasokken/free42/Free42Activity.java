@@ -77,6 +77,7 @@ import android.text.SpannableString;
 import android.text.method.LinkMovementMethod;
 import android.text.util.Linkify;
 import android.util.Log;
+import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -1191,7 +1192,7 @@ public class Free42Activity extends Activity {
                         this.possibleMenuEvent = true;
                     return true;
                 }
-                click();
+                click(this);
                 Object macroObj = skin.find_macro(ckey);
                 if (timeout3_active && (macroObj != null || ckey != 28 /* SHIFT */)) {
                     cancelTimeout3();
@@ -1968,17 +1969,18 @@ public class Free42Activity extends Activity {
         startRunner();
     }
     
-    private void click() {
+    private void click(View view) {
         if (keyClicksLevel > 0)
             playSound(keyClicksLevel + 10, 0);
-        if (keyVibration > 0) {
+        if (keyVibration == -1) {
+            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+        } else if (keyVibration > 0) {
             int ms = (int) (Math.pow(2, (keyVibration - 1) / 2.0) + 0.5);
             Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
             v.vibrate(ms);
         }
     }
-    
-    
+
     public void playSound(int index, int duration) {
         soundPool.play(soundIds[index], 1f, 1f, 0, 0, 1f);
     }
