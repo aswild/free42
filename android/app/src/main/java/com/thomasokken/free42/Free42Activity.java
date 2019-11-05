@@ -76,6 +76,7 @@ import android.support.v4.content.FileProvider;
 import android.text.SpannableString;
 import android.text.method.LinkMovementMethod;
 import android.text.util.Linkify;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -1035,6 +1036,8 @@ public class Free42Activity extends Activity {
         
         if (preferredOrientation != oldOrientation)
             setRequestedOrientation(preferredOrientation);
+
+        preferencesDialog.dismiss();
     }
     
     private void doAbout() {
@@ -2518,7 +2521,7 @@ public class Free42Activity extends Activity {
     }
     
     public void shell_log(String s) {
-        System.err.print(s);
+        Log.i("FREE42", s);
     }
     
     public static boolean checkStorageAccess() {
