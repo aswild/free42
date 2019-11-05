@@ -17,6 +17,7 @@ bin/
 gen/
 out/
 release/
+app/.cxx/
 
 # Gradle files
 .gradle/
@@ -45,6 +46,7 @@ captures/
 .idea/assetWizardSettings.xml
 .idea/dictionaries
 .idea/libraries
+.idea/codeStyles
 # Android Studio 3 in .gitignore file.
 .idea/caches
 .idea/modules.xml

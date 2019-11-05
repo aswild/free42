@@ -55,8 +55,7 @@ android {
                 abiFilters 'armeabi-v7a', 'arm64-v8a'
             }
             manifestPlaceholders = [appLabel: "Free42"]
-            minifyEnabled false
-            useProguard false
+            minifyEnabled false // R8 doesn't work, app crashes on startup
             signingConfig signingConfigs.release
         }
     }
