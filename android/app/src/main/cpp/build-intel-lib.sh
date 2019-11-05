@@ -48,9 +48,9 @@ build_arch () {
     BUILT=1
 }
 
-build_arch armv7 armv7a-linux-androideabi28-clang arm-linux-androideabi-ar
+#build_arch armv7 armv7a-linux-androideabi28-clang arm-linux-androideabi-ar
 build_arch arm64 aarch64-linux-android28-clang aarch64-linux-android-ar
-build_arch x86 i686-linux-android28-clang i686-linux-android-ar
+#build_arch x86 i686-linux-android28-clang i686-linux-android-ar
 build_arch x86_64 x86_64-linux-android28-clang x86_64-linux-android-ar
 
 if [ $BUILT -ne 0 ]; then
