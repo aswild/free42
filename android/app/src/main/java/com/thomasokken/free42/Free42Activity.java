@@ -69,10 +69,6 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Vibrator;
-import android.support.annotation.NonNull;
-import android.support.v4.app.ActivityCompat;
-import android.support.v4.content.ContextCompat;
-import android.support.v4.content.FileProvider;
 import android.text.SpannableString;
 import android.text.method.LinkMovementMethod;
 import android.text.util.Linkify;
@@ -88,6 +84,12 @@ import android.widget.ImageView;
 import android.widget.RelativeLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.app.AppCompatDialog;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.FileProvider;
+import androidx.core.content.ContextCompat;
 
 /**
  * This Activity class contains most of the Free42 'shell' functionality;
@@ -97,7 +99,7 @@ import android.widget.TextView;
  * C++ and porting it to Java is not practical, hence the use of JNI).
  */
 @SuppressWarnings("deprecation")
-public class Free42Activity extends Activity {
+public class Free42Activity extends AppCompatActivity {
 
     public static final String[] builtinSkinNames = new String[] { "Standard", "Landscape" };
     
@@ -1037,7 +1039,7 @@ public class Free42Activity extends Activity {
         new AboutDialog(this).show();
     }
     
-    public class AboutDialog extends Dialog {
+    public class AboutDialog extends AppCompatDialog {
         private AboutView view;
         
         public AboutDialog(Context context) {
