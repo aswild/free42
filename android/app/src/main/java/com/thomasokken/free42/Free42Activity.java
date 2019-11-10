@@ -300,9 +300,10 @@ public class Free42Activity extends AppCompatActivity {
         if (alwaysOn)
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        if (style == 1)
-            setTheme(android.R.style.Theme_NoTitleBar_Fullscreen);
-        else if (style == 2) {
+        if (style == 1) {
+            shell_log("No Status style is disabled, it doesn't play nicely with AppCompat");
+            //setTheme(android.R.style.Theme_NoTitleBar_Fullscreen);
+        } else if (style == 2) {
             try {
                 Method m = View.class.getMethod("setSystemUiVisibility", int.class);
                 m.invoke(getWindow().getDecorView(), PreferencesDialog.immersiveModeFlags);
