@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:paddingLeft="16dp"
+    android:paddingTop="12dp">
+
+    <TextView
+        android:id="@+id/textAboutVersion"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingBottom="14dp"
+        android:text="Version 2.5.X (placeholder)" />
+
+    <TextView
+        android:id="@+id/textAboutCopyright"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="(C) 2004-2019 Thomas Okken" />
+
+    <TextView
+        android:id="@+id/textAboutURL"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:autoLink="web"
+        android:text="https://thomasokken.com/free42/" />
+
+    <TextView
+        android:id="@+id/textAboutModifications"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Modifications by Allen Wild" />
+
+    <TextView
+        android:id="@+id/textAboutGithubURL"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:autoLink="web"
+        android:text="https://github.com/aswild/free42/" />
+
+</LinearLayout>

@@ -69,9 +69,6 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Vibrator;
-import android.text.SpannableString;
-import android.text.method.LinkMovementMethod;
-import android.text.util.Linkify;
 import android.util.Log;
 import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
@@ -80,16 +77,15 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
-import android.widget.ImageView;
-import android.widget.RelativeLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.app.AppCompatDialog;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.FileProvider;
 import androidx.core.content.ContextCompat;
+import androidx.fragment.app.DialogFragment;
 
 /**
  * This Activity class contains most of the Free42 'shell' functionality;
@@ -125,6 +121,7 @@ public class Free42Activity extends AppCompatActivity {
     private boolean printViewShowing;
     private PreferencesDialog preferencesDialog;
     private AlertDialog programImportExportMenuDialog;
+    private AboutDialogFragment aboutDialogFragment;
     private Handler mainHandler;
     private boolean alwaysOn;
     
@@ -1036,89 +1033,44 @@ public class Free42Activity extends AppCompatActivity {
     }
     
     private void doAbout() {
-        new AboutDialog(this).show();
-    }
-    
-    public class AboutDialog extends AppCompatDialog {
-        private AboutView view;
-        
-        public AboutDialog(Context context) {
-            super(context);
-            view = new AboutView(context);
-            setContentView(view);
-            this.setTitle("About Free42");
+        if (aboutDialogFragment == null) {
+            aboutDialogFragment = new AboutDialogFragment(this);
         }
-        
-        private class AboutView extends RelativeLayout {
-            public AboutView(Context context) {
-                super(context);
-                
-                ImageView icon = new ImageView(context);
-                icon.setId(1);
-                icon.setImageResource(R.drawable.icon);
-                addView(icon);
-                
-                TextView label1 = new TextView(context);
-                label1.setId(2);
-                String version = "";
-                try {
-                    version = " " + getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
-                } catch (NameNotFoundException e) {}
-                if (BuildConfig.DEBUG)
-                    version += " debug";
-                version += " (" + BuildConfig.GitRev + ")";
-                label1.setText("Free42" + version);
-                LayoutParams lp = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
-                lp.addRule(RelativeLayout.ALIGN_TOP, icon.getId());
-                lp.addRule(RelativeLayout.RIGHT_OF, icon.getId());
-                addView(label1, lp);
+        aboutDialogFragment.show(getSupportFragmentManager(), "aboutDialog");
+    }
 
-                TextView label2 = new TextView(context);
-                label2.setId(3);
-                label2.setText("(C) 2004-2019 Thomas Okken");
-                lp = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
-                lp.addRule(RelativeLayout.ALIGN_LEFT, label1.getId());
-                lp.addRule(RelativeLayout.BELOW, label1.getId());
-                addView(label2, lp);
+    public static class AboutDialogFragment extends DialogFragment {
+        private Activity parent;
+        public AboutDialogFragment(Activity parent) {
+            super();
+            this.parent = parent;
+        }
 
-                TextView label3 = new TextView(context);
-                label3.setId(4);
-                SpannableString s = new SpannableString("https://thomasokken.com/free42/");
-                Linkify.addLinks(s, Linkify.WEB_URLS);
-                label3.setText(s);
-                label3.setMovementMethod(LinkMovementMethod.getInstance());
-                lp = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
-                lp.addRule(RelativeLayout.ALIGN_LEFT, label2.getId());
-                lp.addRule(RelativeLayout.BELOW, label2.getId());
-                addView(label3, lp);
-
-                TextView label4 = new TextView(context);
-                label4.setId(5);
-                s = new SpannableString("https://thomasokken.com/free42/#doc");
-                Linkify.addLinks(s, Linkify.WEB_URLS);
-                label4.setText(s);
-                label4.setMovementMethod(LinkMovementMethod.getInstance());
-                lp = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
-                lp.addRule(RelativeLayout.ALIGN_LEFT, label3.getId());
-                lp.addRule(RelativeLayout.BELOW, label3.getId());
-                addView(label4, lp);
-
-                Button okB = new Button(context);
-                okB.setId(6);
-                okB.setText("   OK   ");
-                okB.setOnClickListener(new OnClickListener() {
-                    public void onClick(View view) {
-                        AboutDialog.this.dismiss();
-                    }
-                });
-                lp = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
-                lp.addRule(RelativeLayout.BELOW, label4.getId());
-                lp.addRule(RelativeLayout.CENTER_HORIZONTAL);
-                addView(okB, lp);
-
+        @Override @NonNull
+        public Dialog onCreateDialog(Bundle savedInstanceState) {
+            String version;
+            try {
+                version = "Version " + parent.getPackageManager().getPackageInfo(parent.getPackageName(), 0).versionName;
+            } catch (NameNotFoundException e) {
+                version = "[unknown version]";
             }
+            if (BuildConfig.DEBUG)
+                version += " debug";
+            version += " (" + BuildConfig.GitRev + ")";
+
+            View aboutView = parent.getLayoutInflater().inflate(R.layout.about_view, null);
+            TextView aboutText = aboutView.findViewById(R.id.textAboutVersion);
+            aboutText.setText(version);
+
+            AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
+            builder.setTitle("About Free42")
+                    .setView(aboutView)
+                    .setIcon(R.drawable.icon)
+                    .setPositiveButton("OK", (DialogInterface dialog, int id) -> dismiss());
+            return builder.create();
         }
     }
+
     /**
      * This class is calculator view used by the Free42 Activity.
      * Note that most of the heavy lifting takes place in the
