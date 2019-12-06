@@ -15,11 +15,8 @@
 // along with this program; if not, see http://www.gnu.org/licenses/.
 ///////////////////////////////////////////////////////////////////////////////
 
-#include <X11/Xlib.h>
-#include <X11/Xmu/WinUtil.h>
 #include <gtk/gtk.h>
 #include <gdk/gdkkeysyms.h>
-#include <gdk/gdkx.h>
 #include <errno.h>
 #include <locale.h>
 #include <pwd.h>
@@ -99,10 +96,11 @@ static int gif_lines;
 
 static int pype[2];
 
+static GtkApplication *app = NULL;
 static GtkWidget *mainwindow;
 static GtkWidget *printwindow;
 static GtkWidget *print_widget;
-static GdkGC *print_gc = NULL;
+//static GdkGC *print_gc = NULL;
 static GtkAdjustment *print_adj;
 static GdkPixbuf *icon_128;
 static GdkPixbuf *icon_48;
@@ -142,11 +140,9 @@ static void init_shell_state(int4 version);
 static int read_shell_state(int4 *version);
 static int write_shell_state();
 static void int_term_handler(int sig);
-static void usr1_handler(int sig);
 static gboolean gt_signal_handler(GIOChannel *source, GIOCondition condition,
                                                             gpointer data);
 static void quit();
-static void set_window_property(GtkWidget *window, const char *prop_name, char *props[], int num_props);
 static char *strclone(const char *s);
 static bool is_file(const char *name);
 static void show_message(const char *title, const char *message, GtkWidget *parent = mainwindow);
@@ -168,10 +164,10 @@ static void appendSuffix(char *path, char *suffix);
 static void copyCB();
 static void pasteCB();
 static void aboutCB();
-static void delete_cb(GtkWidget *w, gpointer cd);
-static void delete_print_cb(GtkWidget *w, gpointer cd);
-static gboolean expose_cb(GtkWidget *w, GdkEventExpose *event, gpointer cd);
-static gboolean print_expose_cb(GtkWidget *w, GdkEventExpose *event, gpointer cd);
+static gboolean delete_cb(GtkWidget *w, GdkEventAny *ev);
+static gboolean delete_print_cb(GtkWidget *w, GdkEventAny *ev);
+static gboolean draw_cb(GtkWidget *w, cairo_t *cr, gpointer cd);
+static gboolean print_draw_cb(GtkWidget *w, cairo_t *cr, gpointer cd);
 static gboolean print_key_cb(GtkWidget *w, GdkEventKey *event, gpointer cd);
 static gboolean button_cb(GtkWidget *w, GdkEventButton *event, gpointer cd);
 static gboolean key_cb(GtkWidget *w, GdkEventKey *event, gpointer cd);
@@ -182,7 +178,7 @@ static gboolean timeout1(gpointer cd);
 static gboolean timeout2(gpointer cd);
 static gboolean timeout3(gpointer cd);
 static gboolean battery_checker(gpointer cd);
-static void repaint_printout(int x, int y, int width, int height);
+static void repaint_printout(cairo_t *cr);
 static gboolean reminder(gpointer cd);
 static void txt_writer(const char *text, int length);
 static void txt_newliner();
@@ -196,76 +192,173 @@ static void gif_writer(const char *text, int length);
 #define TITLE "Free42 Binary"
 #endif
 
-static GtkItemFactoryEntry entries[] = {
-    { "/File", NULL, NULL, 0, "<Branch>" },
-    { "/File/States...", NULL, statesCB, 0, "<Item>" },
-    { "/File/sep1", NULL, NULL, 0, "<Separator>" },
-    { "/File/Show Print-Out", NULL, showPrintOutCB, 0, "<Item>" },
-    { "/File/Paper Advance", "<CTRL>A", paperAdvanceCB, 0, "<Item>" },
-    { "/File/sep2", NULL, NULL, 0, "<Separator>" },
-    { "/File/Import Programs...", NULL, importProgramCB, 0, "<Item>" },
-    { "/File/Export Programs...", NULL, exportProgramCB, 0, "<Item>" },
-    { "/File/sep3", NULL, NULL, 0, "<Separator>" },
-    { "/File/Preferences...", NULL, preferencesCB, 0, "<Item>" },
-    { "/File/sep4", NULL, NULL, 0, "<Separator>" },
-    { "/File/Quit", "<CTRL>Q", quitCB, 0, "<Item>" },
-    { "/Edit", NULL, NULL, 0, "<Branch>" },
-    { "/Edit/Copy", "<CTRL>C", copyCB, 0, "<Item>" },
-    { "/Edit/Paste", "<CTRL>V", pasteCB, 0, "<Item>" },
-    { "/Edit/sep5", NULL, NULL, 0, "<Separator>" },
-    { "/Edit/Copy Print-Out as Text", "<CTRL>T", copyPrintAsTextCB, 0, "<Item>" },
-    { "/Edit/Copy Print-Out as Image", "<CTRL>I", copyPrintAsImageCB, 0, "<Item>" },
-    { "/Edit/Clear Print-Out", NULL, clearPrintOutCB, 0, "<Item>" },
-    { "/Skin", NULL, NULL, 0, "<Branch>" },
-    { "/Help", NULL, NULL, 0, "<Branch>" },
-    { "/Help/About Free42...", NULL, aboutCB, 0, "<Item>" }
-};
+static const char *mainWindowXml =
+"<?xml version='1.0' encoding='UTF-8'?>"
+"<interface>"
+  "<!-- interface-requires gtk+ 3.0 -->"
+  "<object class='GtkApplicationWindow' id='window'>"
+    "<child>"
+      "<object class='GtkVBox' id='box'>"
+        "<child>"
+          "<object class='GtkMenuBar' id='menubar'>"
+            "<child>"
+              "%s" // Additional menu level goes here when using -compactmenu
+              "<object class='GtkMenuItem' id='file_item'>"
+                "<property name='label'>File</property>"
+                "<child type='submenu'>"
+                  "<object class='GtkMenu' id='file_menu'>"
+                    "<child>"
+                      "<object class='GtkMenuItem' id='states_item'>"
+                        "<property name='label'>States...</property>"
+                      "</object>"
+                    "</child>"
+                    "<child>"
+                      "<object class='GtkSeparatorMenuItem' id='sep_1'>"
+                      "</object>"
+                    "</child>"
+                    "<child>"
+                      "<object class='GtkMenuItem' id='show_printout_item'>"
+                        "<property name='label'>Show Print-Out</property>"
+                      "</object>"
+                    "</child>"
+                    "<child>"
+                      "<object class='GtkMenuItem' id='paper_advance_item'>"
+                        "<property name='label'>Paper Advance</property>"
+                        "<accelerator key='A' signal='activate' modifiers='GDK_CONTROL_MASK'/>"
+                      "</object>"
+                    "</child>"
+                    "<child>"
+                      "<object class='GtkSeparatorMenuItem' id='sep_2'>"
+                      "</object>"
+                    "</child>"
+                    "<child>"
+                      "<object class='GtkMenuItem' id='import_programs_item'>"
+                        "<property name='label'>Import Programs...</property>"
+                      "</object>"
+                    "</child>"
+                    "<child>"
+                      "<object class='GtkMenuItem' id='export_programs_item'>"
+                        "<property name='label'>Export Programs...</property>"
+                      "</object>"
+                    "</child>"
+                    "<child>"
+                      "<object class='GtkSeparatorMenuItem' id='sep_3'>"
+                      "</object>"
+                    "</child>"
+                    "<child>"
+                      "<object class='GtkMenuItem' id='preferences_item'>"
+                        "<property name='label'>Preferences...</property>"
+                      "</object>"
+                    "</child>"
+                    "<child>"
+                      "<object class='GtkSeparatorMenuItem' id='sep_4'>"
+                      "</object>"
+                    "</child>"
+                    "<child>"
+                      "<object class='GtkMenuItem' id='quit_item'>"
+                        "<property name='label'>Quit</property>"
+                        "<accelerator key='Q' signal='activate' modifiers='GDK_CONTROL_MASK'/>"
+                      "</object>"
+                    "</child>"
+                  "</object>"
+                "</child>"
+              "</object>"
+            "</child>"
+            "<child>"
+              "<object class='GtkMenuItem' id='edit_item'>"
+                "<property name='label'>Edit</property>"
+                "<child type='submenu'>"
+                  "<object class='GtkMenu' id='edit_menu'>"
+                    "<child>"
+                      "<object class='GtkMenuItem' id='copy_item'>"
+                        "<property name='label'>Copy</property>"
+                        "<accelerator key='C' signal='activate' modifiers='GDK_CONTROL_MASK'/>"
+                      "</object>"
+                    "</child>"
+                    "<child>"
+                      "<object class='GtkMenuItem' id='paste_item'>"
+                        "<property name='label'>Paste</property>"
+                        "<accelerator key='V' signal='activate' modifiers='GDK_CONTROL_MASK'/>"
+                      "</object>"
+                    "</child>"
+                    "<child>"
+                      "<object class='GtkSeparatorMenuItem' id='sep_5'>"
+                      "</object>"
+                    "</child>"
+                    "<child>"
+                      "<object class='GtkMenuItem' id='copy_printout_as_text_item'>"
+                        "<property name='label'>Copy Print-Out as Text</property>"
+                        "<accelerator key='T' signal='activate' modifiers='GDK_CONTROL_MASK'/>"
+                      "</object>"
+                    "</child>"
+                    "<child>"
+                      "<object class='GtkMenuItem' id='copy_printout_as_image_item'>"
+                        "<property name='label'>Copy Print-Out as Image</property>"
+                        "<accelerator key='I' signal='activate' modifiers='GDK_CONTROL_MASK'/>"
+                      "</object>"
+                    "</child>"
+                    "<child>"
+                      "<object class='GtkMenuItem' id='clear_printout_item'>"
+                        "<property name='label'>Clear Print-Out</property>"
+                      "</object>"
+                    "</child>"
+                  "</object>"
+                "</child>"
+              "</object>"
+            "</child>"
+            "<child>"
+              "<object class='GtkMenuItem' id='skin_item'>"
+                "<property name='label'>Skin</property>"
+                "<child type='submenu'>"
+                  "<object class='GtkMenu' id='skin_menu'>"
+                    "<!-- Skin items inserted programmatically here -->"
+                  "</object>"
+                "</child>"
+              "</object>"
+            "</child>"
+            "<child>"
+              "<object class='GtkMenuItem' id='help_item'>"
+                "<property name='label'>Help</property>"
+                "<child type='submenu'>"
+                  "<object class='GtkMenu' id='help_menu'>"
+                    "<child>"
+                      "<object class='GtkMenuItem' id='about_item'>"
+                        "<property name='label'>About Free42...</property>"
+                      "</object>"
+                    "</child>"
+                  "</object>"
+                "</child>"
+              "</object>"
+              "%s"
+            "</child>"
+          "</object>"
+        "</child>"
+      "</object>"
+    "</child>"
+  "</object>"
+"</interface>";
 
-static gint num_entries = sizeof(entries) / sizeof(entries[0]);
+static const char *compactMenuIntroXml =
+"<object class='GtkMenuItem' id='top_item'>"
+  "<property name='label'>Menu</property>"
+  "<child type='submenu'>"
+    "<object class='GtkMenu' id='top_menu'>"
+      "<child>";
 
-static GtkItemFactoryEntry entries_compactmenu[] = {
-    { "/Menu", NULL, NULL, 0, "<Branch>" },
-    { "/Menu/File", NULL, NULL, 0, "<Branch>" },
-    { "/Menu/File/States...", NULL, statesCB, 0, "<Item>" },
-    { "/Menu/File/sep1", NULL, NULL, 0, "<Separator>" },
-    { "/Menu/File/Show Print-Out", NULL, showPrintOutCB, 0, "<Item>" },
-    { "/Menu/File/Paper Advance", "<CTRL>A", paperAdvanceCB, 0, "<Item>" },
-    { "/Menu/File/sep2", NULL, NULL, 0, "<Separator>" },
-    { "/Menu/File/Import Programs...", NULL, importProgramCB, 0, "<Item>" },
-    { "/Menu/File/Export Programs...", NULL, exportProgramCB, 0, "<Item>" },
-    { "/Menu/File/sep3", NULL, NULL, 0, "<Separator>" },
-    { "/Menu/File/Preferences...", NULL, preferencesCB, 0, "<Item>" },
-    { "/Menu/File/sep4", NULL, NULL, 0, "<Separator>" },
-    { "/Menu/File/Quit", "<CTRL>Q", quitCB, 0, "<Item>" },
-    { "/Menu/Edit", NULL, NULL, 0, "<Branch>" },
-    { "/Menu/Edit/Copy", "<CTRL>C", copyCB, 0, "<Item>" },
-    { "/Menu/Edit/Paste", "<CTRL>V", pasteCB, 0, "<Item>" },
-    { "/Menu/Edit/sep5", NULL, NULL, 0, "<Separator>" },
-    { "/Menu/Edit/Copy Print-Out as Text", "<CTRL>T", copyPrintAsTextCB, 0, "<Item>" },
-    { "/Menu/Edit/Copy Print-Out as Image", "<CTRL>I", copyPrintAsImageCB, 0, "<Item>" },
-    { "/Menu/Edit/Clear Print-Out", NULL, clearPrintOutCB, 0, "<Item>" },
-    { "/Menu/Skin", NULL, NULL, 0, "<Branch>" },
-    { "/Menu/Help", NULL, NULL, 0, "<Branch>" },
-    { "/Menu/Help/About Free42...", NULL, aboutCB, 0, "<Item>" }
-};
-
-static gint num_entries_compactmenu = sizeof(entries_compactmenu) / sizeof(entries_compactmenu[0]);
+static const char *compactMenuOutroXml =
+      "</child>"
+    "</object>"
+  "</child>"
+"</object>";
 
 static int use_compactmenu = 0;
+static char *skin_arg = NULL;
 
 static bool decimal_point;
 
+static void activate(GtkApplication *theApp, gpointer userData);
+
 int main(int argc, char *argv[]) {
-    gtk_init(&argc, &argv);
-
-    // Capture state of decimal_point, which may have been changed by
-    // gtk_init(), and then set it to the C locale, because the binary/decimal
-    // conversions expect a decimal point, not a comma.
-    struct lconv *loc = localeconv();
-    decimal_point = strcmp(loc->decimal_point, ",") != 0;
-    setlocale(LC_NUMERIC, "C");
-
-    char *skin_arg = NULL;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-skin") == 0)
             skin_arg = ++i < argc ? argv[i] : NULL;
@@ -277,19 +370,31 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (argc >= 3 && strcmp(argv[1], "-skin") == 0)
-        skin_arg = argv[2];
+    GtkApplication *app;
+    int status;
+    app = gtk_application_new("com.thomasokken.free42", G_APPLICATION_FLAGS_NONE);
+    g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
+    status = g_application_run(G_APPLICATION(app), 0, NULL);
+    g_object_unref(app);
+    return status;
+}
 
-    /*********************************************************/
-    /***** Ignore SIGUSR1 until we're ready to handle it *****/
-    /*********************************************************/
+static void activate(GtkApplication *theApp, gpointer userData) {
 
-    struct sigaction act;
-    act.sa_handler = SIG_IGN;
-    sigemptyset(&act.sa_mask);
-    sigaddset(&act.sa_mask, SIGUSR1);
-    act.sa_flags = 0;
-    sigaction(SIGUSR1, &act, NULL);
+    if (app != NULL) {
+        gtk_window_present(GTK_WINDOW(mainwindow));
+        gdk_window_focus(gtk_widget_get_window(mainwindow), GDK_CURRENT_TIME);
+        return;
+    }
+
+    app = theApp;
+
+    // Capture state of decimal_point, which may have been changed by
+    // gtk_init(), and then set it to the C locale, because the binary/decimal
+    // conversions expect a decimal point, not a comma.
+    struct lconv *loc = localeconv();
+    decimal_point = strcmp(loc->decimal_point, ",") != 0;
+    setlocale(LC_NUMERIC, "C");
 
 
     /*****************************************************/
@@ -391,62 +496,25 @@ int main(int argc, char *argv[]) {
         }
     }
 
-
-    /*******************************************************/
-    /***** Enforce single-instance mode, if applicable *****/
-    /*******************************************************/
-
-    char *appid;
-    if (state.singleInstance) {
-        int appid_len = _POSIX_HOST_NAME_MAX + _POSIX_LOGIN_NAME_MAX + 2;
-        appid = (char *) malloc(appid_len);
-        gethostname(appid, appid_len);
-        strcat(appid, "|");
-        strcat(appid, getpwuid(getuid())->pw_name);
-        Display *display = GDK_DISPLAY();
-        Atom FREE42_HOST_AND_USER = XInternAtom(display, "FREE42_HOST_AND_USER", False);
-        XGrabServer(display);
-        Window root;
-        Window parent;
-        Window *children;
-        unsigned int nchildren;
-        if (XQueryTree(display, GDK_ROOT_WINDOW(), &root, &parent, &children, &nchildren) != 0) {
-            for (unsigned int i = 0; i < nchildren; i++) {
-                Window win = children[i];
-                Window cwin = XmuClientWindow(display, win);
-                XTextProperty prop;
-                XGetTextProperty(display, cwin, &prop, FREE42_HOST_AND_USER);
-                if (prop.value != NULL) {
-                    char **list;
-                    int nitems;
-                    XTextPropertyToStringList(&prop, &list, &nitems);
-                    if (nitems > 0 && strcmp(list[0], appid) == 0) {
-                        pid_t pid;
-                        if (sscanf(list[1], "%d", &pid) == 1) {
-                            kill(pid, SIGUSR1);
-                            XUngrabServer(display);
-                            return 0;
-                        }
-                    }
-                    if (list != NULL)
-                        XFree(list);
-                    XFree(prop.value);
-                }
-            }
-        }
-        if (children != NULL)
-            XFree(children);
-    }
-
-
     /*********************************/
     /***** Build the main window *****/
     /*********************************/
 
+    char *xml = (char *) malloc(10240);
+    if (use_compactmenu)
+        sprintf(xml, mainWindowXml, compactMenuIntroXml, compactMenuOutroXml);
+    else
+        sprintf(xml, mainWindowXml, "", "");
+    GtkBuilder *builder = gtk_builder_new();
+    gtk_builder_add_from_string(builder, xml, -1, NULL);
+    free(xml);
+    GObject *obj = gtk_builder_get_object(builder, "window");
+    mainwindow = GTK_WIDGET(obj);
+    gtk_window_set_application(GTK_WINDOW(mainwindow), app);
+
     icon_128 = gdk_pixbuf_new_from_xpm_data((const char **) icon_128_xpm);
     icon_48 = gdk_pixbuf_new_from_xpm_data((const char **) icon_48_xpm);
 
-    mainwindow = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_icon(GTK_WINDOW(mainwindow), icon_128);
     gtk_window_set_title(GTK_WINDOW(mainwindow), TITLE);
     gtk_window_set_role(GTK_WINDOW(mainwindow), "Free42 Calculator");
@@ -458,66 +526,60 @@ int main(int argc, char *argv[]) {
         gtk_window_move(GTK_WINDOW(mainwindow), state.mainWindowX,
                                             state.mainWindowY);
 
-    GtkAccelGroup *acc_grp = gtk_accel_group_new();
-    GtkItemFactory *fac = gtk_item_factory_new(GTK_TYPE_MENU_BAR,
-                                               "<Main>", acc_grp);
-    if (use_compactmenu)
-        gtk_item_factory_create_items(fac, num_entries_compactmenu, entries_compactmenu, NULL);
-    else
-        gtk_item_factory_create_items(fac, num_entries, entries, NULL);
-    gtk_window_add_accel_group(GTK_WINDOW(mainwindow), acc_grp);
-    GtkWidget *menubar = gtk_item_factory_get_widget(fac, "<Main>");
-
     // The "Skin" menu is dynamic; we don't populate any items in it here.
     // Instead, we attach a callback which scans the .free42 directory for
     // available skins; this callback is invoked when the menu is about to
     // be mapped.
-    GList *children = gtk_container_get_children(GTK_CONTAINER(menubar));
-    if (use_compactmenu) {
-        GtkMenuItem *menu_btn = (GtkMenuItem *) children->data;
-        g_list_free(children);
-        GtkMenu *menu = (GtkMenu *) gtk_menu_item_get_submenu(menu_btn);
-        children = gtk_container_get_children(GTK_CONTAINER(menu));
-    }
-    GtkMenuItem *skin_btn = (GtkMenuItem *) children->next->next->data;
-    g_list_free(children);
+    GtkMenuItem *item = GTK_MENU_ITEM(gtk_builder_get_object(builder, "skin_item"));
+    g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(skin_menu_update), NULL);
 
-    g_signal_connect(G_OBJECT(skin_btn), "activate",
-                     G_CALLBACK(skin_menu_update), NULL);
-
-    GtkWidget *box = gtk_vbox_new(FALSE, 0);
-    gtk_container_add(GTK_CONTAINER(mainwindow), box);
-    gtk_box_pack_start(GTK_BOX(box), menubar, FALSE, FALSE, 0);
+    item = GTK_MENU_ITEM(gtk_builder_get_object(builder, "states_item"));
+    g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(statesCB), NULL);
+    item = GTK_MENU_ITEM(gtk_builder_get_object(builder, "show_printout_item"));
+    g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(showPrintOutCB), NULL);
+    item = GTK_MENU_ITEM(gtk_builder_get_object(builder, "paper_advance_item"));
+    g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(paperAdvanceCB), NULL);
+    item = GTK_MENU_ITEM(gtk_builder_get_object(builder, "import_programs_item"));
+    g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(importProgramCB), NULL);
+    item = GTK_MENU_ITEM(gtk_builder_get_object(builder, "export_programs_item"));
+    g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(exportProgramCB), NULL);
+    item = GTK_MENU_ITEM(gtk_builder_get_object(builder, "preferences_item"));
+    g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(preferencesCB), NULL);
+    item = GTK_MENU_ITEM(gtk_builder_get_object(builder, "quit_item"));
+    g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(quitCB), NULL);
+    item = GTK_MENU_ITEM(gtk_builder_get_object(builder, "copy_item"));
+    g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(copyCB), NULL);
+    item = GTK_MENU_ITEM(gtk_builder_get_object(builder, "paste_item"));
+    g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(pasteCB), NULL);
+    item = GTK_MENU_ITEM(gtk_builder_get_object(builder, "copy_printout_as_text_item"));
+    g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(copyPrintAsTextCB), NULL);
+    item = GTK_MENU_ITEM(gtk_builder_get_object(builder, "copy_printout_as_image_item"));
+    g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(copyPrintAsImageCB), NULL);
+    item = GTK_MENU_ITEM(gtk_builder_get_object(builder, "clear_printout_item"));
+    g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(clearPrintOutCB), NULL);
+    item = GTK_MENU_ITEM(gtk_builder_get_object(builder, "about_item"));
+    g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(aboutCB), NULL);
 
 
     /****************************************/
     /* Drawing area for the calculator skin */
     /****************************************/
 
+    GtkWidget *box = GTK_WIDGET(gtk_builder_get_object(builder, "box"));
+
     int win_width, win_height;
     skin_load(&win_width, &win_height);
     GtkWidget *w = gtk_drawing_area_new();
     gtk_widget_set_size_request(w, win_width, win_height);
     gtk_box_pack_start(GTK_BOX(box), w, FALSE, FALSE, 0);
-    g_signal_connect(G_OBJECT(w), "expose_event", G_CALLBACK(expose_cb), NULL);
+    g_signal_connect(G_OBJECT(w), "draw", G_CALLBACK(draw_cb), NULL);
     gtk_widget_add_events(w, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK);
     g_signal_connect(G_OBJECT(w), "button-press-event", G_CALLBACK(button_cb), NULL);
     g_signal_connect(G_OBJECT(w), "button-release-event", G_CALLBACK(button_cb), NULL);
-    GTK_WIDGET_SET_FLAGS(w, GTK_CAN_FOCUS);
+    gtk_widget_set_can_focus(w, TRUE);
     g_signal_connect(G_OBJECT(w), "key-press-event", G_CALLBACK(key_cb), NULL);
     g_signal_connect(G_OBJECT(w), "key-release-event", G_CALLBACK(key_cb), NULL);
     calc_widget = w;
-
-    if (state.singleInstance) {
-        char *list[2];
-        char pidstr[11];
-        sprintf(pidstr, "%u", getpid());
-        list[0] = appid;
-        list[1] = pidstr;
-        set_window_property(mainwindow, "FREE42_HOST_AND_USER", list, 2);
-        free(appid);
-        XUngrabServer(GDK_DISPLAY());
-    }
 
 
     /**************************************/
@@ -576,7 +638,7 @@ int main(int argc, char *argv[]) {
     printout_top = 0;
     print_text_top = 0;
 
-    printwindow = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    printwindow = gtk_application_window_new(GTK_APPLICATION(app));
     gtk_window_set_icon(GTK_WINDOW(printwindow), icon_128);
     gtk_window_set_title(GTK_WINDOW(printwindow), "Free42 Print-Out");
     gtk_window_set_role(GTK_WINDOW(printwindow), "Free42 Print-Out");
@@ -592,8 +654,8 @@ int main(int argc, char *argv[]) {
     gtk_widget_set_size_request(print_widget, 358, printout_bottom);
     gtk_container_add(GTK_CONTAINER(view), print_widget);
     print_adj = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scroll));
-    g_signal_connect(G_OBJECT(print_widget), "expose_event", G_CALLBACK(print_expose_cb), NULL);
-    GTK_WIDGET_SET_FLAGS(print_widget, GTK_CAN_FOCUS);
+    g_signal_connect(G_OBJECT(print_widget), "draw", G_CALLBACK(print_draw_cb), NULL);
+    gtk_widget_set_can_focus(print_widget, TRUE);
     g_signal_connect(G_OBJECT(print_widget), "key-press-event", G_CALLBACK(print_key_cb), NULL);
 
     gtk_widget_show(print_widget);
@@ -605,7 +667,7 @@ int main(int argc, char *argv[]) {
     geom.max_width = 358;
     geom.min_height = 1;
     geom.max_height = 32767;
-    gtk_window_set_geometry_hints(GTK_WINDOW(printwindow), print_widget, &geom, GdkWindowHints(GDK_HINT_MIN_SIZE | GDK_HINT_MAX_SIZE));
+    gtk_window_set_geometry_hints(GTK_WINDOW(printwindow), NULL, &geom, GdkWindowHints(GDK_HINT_MIN_SIZE | GDK_HINT_MAX_SIZE));
 
     if (state.printWindowKnown)
         gtk_window_move(GTK_WINDOW(printwindow), state.printWindowX,
@@ -662,6 +724,7 @@ int main(int argc, char *argv[]) {
             (GIOFlags) (g_io_channel_get_flags(channel) | G_IO_FLAG_NONBLOCK), &err);
         g_io_add_watch(channel, G_IO_IN, gt_signal_handler, NULL);
 
+        struct sigaction act;
         act.sa_handler = int_term_handler;
         sigemptyset(&act.sa_mask);
         sigaddset(&act.sa_mask, SIGINT);
@@ -669,15 +732,7 @@ int main(int argc, char *argv[]) {
         act.sa_flags = 0;
         sigaction(SIGINT, &act, NULL);
         sigaction(SIGTERM, &act, NULL);
-
-        act.sa_handler = usr1_handler;
-        sigemptyset(&act.sa_mask);
-        sigaddset(&act.sa_mask, SIGUSR1);
-        act.sa_flags = 0;
-        sigaction(SIGUSR1, &act, NULL);
     }
-    gtk_main();
-    return 0;
 }
 
 keymap_entry *parse_keymap_entry(char *line, int lineno) {
@@ -702,7 +757,7 @@ keymap_entry *parse_keymap_entry(char *line, int lineno) {
         bool alt = false;
         bool shift = false;
         bool cshift = false;
-        guint keyval = GDK_VoidSymbol;
+        guint keyval = GDK_KEY_VoidSymbol;
         bool done = false;
         unsigned char macrobuf[KEYMAP_MAX_MACRO_LENGTH + 1];
         int macrolen = 0;
@@ -725,7 +780,7 @@ keymap_entry *parse_keymap_entry(char *line, int lineno) {
                 cshift = true;
             else {
                 keyval = gdk_keyval_from_name(tok);
-                if (keyval == GDK_VoidSymbol) {
+                if (keyval == GDK_KEY_VoidSymbol) {
                     fprintf(stderr, "Keymap, line %d: Unrecognized KeyName.\n", lineno);
                     return NULL;
                 }
@@ -830,7 +885,7 @@ static void init_shell_state(int4 version) {
             state.skinName[0] = 0;
             /* fall through */
         case 3:
-            state.singleInstance = 0;
+            state.singleInstance = 1;
             /* fall through */
         case 4:
             strcpy(state.coreName, "Untitled");
@@ -841,7 +896,10 @@ static void init_shell_state(int4 version) {
             core_settings.auto_repeat = true;
             /* fall through */
         case 6:
-            /* current version (SHELL_VERSION = 6),
+            state.old_repaint = false;
+            /* fall through */
+        case 7:
+            /* current version (SHELL_VERSION = 7),
              * so nothing to do here since everything
              * was initialized from the state file.
              */
@@ -918,23 +976,9 @@ static void int_term_handler(int sig) {
     write(pype[1], "1\n", 2);
 }
 
-static void usr1_handler(int sig) {
-    write(pype[1], "2\n", 2);
-}
-
 static gboolean gt_signal_handler(GIOChannel *source, GIOCondition condition,
                                                             gpointer data) {
-    char buf[1];
-    if (read(pype[0], buf, 1) == 1)
-        if (buf[0] == '1')
-            quit();
-        else {
-            //gtk_widget_show(mainwindow);
-            gtk_window_present(GTK_WINDOW(mainwindow));
-            //gdk_window_deiconify(mainwindow->window);
-            //gdk_window_raise(mainwindow->window);
-            gdk_window_focus(mainwindow->window, GDK_CURRENT_TIME);
-        }
+    quit();
     return TRUE;
 }
 
@@ -1040,16 +1084,6 @@ static void quit() {
     exit(0);
 }
 
-static void set_window_property(GtkWidget *window, const char *prop_name, char *props[], int num_props) {
-    Display *display = GDK_DISPLAY();
-    gtk_widget_realize(window);
-    XTextProperty prop;
-    XStringListToTextProperty(props, num_props, &prop);
-    Atom PROP = XInternAtom(display, prop_name, False);
-    XSetTextProperty(display, GDK_WINDOW_XWINDOW(window->window), &prop, PROP);
-    XFree(prop.value);
-}
-
 static char *strclone(const char *s) {
     char *s2 = (char *) malloc(strlen(s) + 1);
     if (s2 != NULL)
@@ -1078,9 +1112,10 @@ static void show_message(const char *title, const char *message, GtkWidget *pare
 }
 
 static void no_mwm_resize_helper(GtkWidget *w, gpointer cd) {
-    gdk_window_set_decorations(w->window, GdkWMDecoration(GDK_DECOR_ALL
+    GdkWindow *win = gtk_widget_get_window(w);
+    gdk_window_set_decorations(win, GdkWMDecoration(GDK_DECOR_ALL
                                     | GDK_DECOR_RESIZEH | GDK_DECOR_MAXIMIZE));
-    gdk_window_set_functions(w->window, GdkWMFunction(GDK_FUNC_ALL
+    gdk_window_set_functions(win, GdkWMFunction(GDK_FUNC_ALL
                                     | GDK_FUNC_RESIZE | GDK_FUNC_MAXIMIZE));
 }
 
@@ -1098,8 +1133,9 @@ static void no_mwm_resize_borders(GtkWidget *window) {
 }
 
 static void scroll_printout_to_bottom() {
-    gtk_adjustment_set_value(print_adj,
-                             print_adj->upper - print_adj->page_size);
+    gdouble upper = gtk_adjustment_get_upper(print_adj);
+    gdouble page_size = gtk_adjustment_get_page_size(print_adj);
+    gtk_adjustment_set_value(print_adj, upper - page_size);
 }
 
 static void quitCB() {
@@ -1160,13 +1196,13 @@ static char *get_state_name(const char *prompt) {
                             "State Name",
                             GTK_WINDOW(dlg),
                             GTK_DIALOG_MODAL,
-                            GTK_STOCK_OK, GTK_RESPONSE_ACCEPT,
-                            GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,
+                            "_OK", GTK_RESPONSE_ACCEPT,
+                            "_Cancel", GTK_RESPONSE_CANCEL,
                             NULL);
         gtk_window_set_resizable(GTK_WINDOW(state_name_dialog), FALSE);
         no_mwm_resize_borders(state_name_dialog);
         GtkWidget *container = gtk_bin_get_child(GTK_BIN(state_name_dialog));
-        GtkWidget *box = gtk_vbox_new(FALSE, 0);
+        GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
         gtk_container_add(GTK_CONTAINER(container), box);
 
         promptLabel = gtk_label_new("Enter state name:");
@@ -1514,9 +1550,11 @@ static void row_activated_cb(GtkWidget *w, gpointer p) {
 
 static void states_menu_pos_func(GtkMenu *menu, gint *x, gint *y, gboolean *push_in, gpointer data) {
     GtkWidget *btn = GTK_WIDGET(data);
-    gdk_window_get_origin(btn->window, x, y);
-    *x += btn->allocation.x;
-    *y += btn->allocation.y + btn->allocation.height;
+    gdk_window_get_origin(gtk_widget_get_window(btn), x, y);
+    GtkAllocation allocation;
+    gtk_widget_get_allocation(btn, &allocation);
+    *x += allocation.x;
+    *y += allocation.y + allocation.height;
     *push_in = true;
 }
 
@@ -1560,7 +1598,7 @@ static void statesCB() {
         gtk_window_set_resizable(GTK_WINDOW(states_dialog), FALSE);
         no_mwm_resize_borders(states_dialog);
         GtkWidget *container = gtk_bin_get_child(GTK_BIN(states_dialog));
-        GtkWidget *box = gtk_vbox_new(FALSE, 0);
+        GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
         gtk_container_add(GTK_CONTAINER(container), box);
 
         currentLabel = gtk_label_new("Current:");
@@ -1685,9 +1723,8 @@ static void statesCB() {
 //////////////////////////////////
 
 static void showPrintOutCB() {
-    //gtk_widget_show(printwindow);
     gtk_window_present(GTK_WINDOW(printwindow));
-    gdk_window_focus(printwindow->window, GDK_CURRENT_TIME);
+    gdk_window_focus(gtk_widget_get_window(printwindow), GDK_CURRENT_TIME);
     state.printWindowKnown = 1;
     state.printWindowMapped = 1;
 }
@@ -1702,13 +1739,13 @@ static void exportProgramCB() {
                             "Export Programs",
                             GTK_WINDOW(mainwindow),
                             GTK_DIALOG_MODAL,
-                            GTK_STOCK_OK, GTK_RESPONSE_ACCEPT,
-                            GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,
+                            "_OK", GTK_RESPONSE_ACCEPT,
+                            "_Cancel", GTK_RESPONSE_CANCEL,
                             NULL);
         gtk_window_set_resizable(GTK_WINDOW(sel_dialog), FALSE);
         no_mwm_resize_borders(sel_dialog);
         GtkWidget *container = gtk_bin_get_child(GTK_BIN(sel_dialog));
-        GtkWidget *box = gtk_vbox_new(FALSE, 0);
+        GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
         gtk_container_add(GTK_CONTAINER(container), box);
 
         GtkWidget *label = gtk_label_new("Select Programs to Export:");
@@ -1720,7 +1757,6 @@ static void exportProgramCB() {
         select = gtk_tree_view_get_selection(tree);
         gtk_tree_selection_set_mode(select, GTK_SELECTION_MULTIPLE);
         GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
-        //gtk_cell_renderer_text_set_fixed_height_from_font((GtkCellRendererText *) renderer, 12);
         GtkTreeViewColumn *column = gtk_tree_view_column_new_with_attributes("Foo", renderer, "text", 0, NULL);
         gtk_tree_view_append_column(tree, column);
         gtk_tree_view_set_headers_visible(tree, FALSE);
@@ -1823,8 +1859,8 @@ static GtkWidget *make_file_select_dialog(const char *title,
                         GTK_WINDOW(owner),
                         save ? GTK_FILE_CHOOSER_ACTION_SAVE
                              : GTK_FILE_CHOOSER_ACTION_OPEN,
-                        GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,
-                        save ? GTK_STOCK_SAVE : GTK_STOCK_OPEN,
+                        "_Cancel", GTK_RESPONSE_CANCEL,
+                        save ? "_Save" : "_Open",
                         GTK_RESPONSE_ACCEPT,
                         NULL);
     const char *p = pattern;
@@ -2066,51 +2102,52 @@ static void preferencesCB() {
     static GtkWidget *singularmatrix;
     static GtkWidget *matrixoutofrange;
     static GtkWidget *autorepeat;
-    static GtkWidget *singleinstance;
     static GtkWidget *printtotext;
     static GtkWidget *textpath;
     static GtkWidget *printtogif;
     static GtkWidget *gifpath;
     static GtkWidget *gifheight;
+    static GtkWidget *oldrepaint;
 
     if (dialog == NULL) {
         dialog = gtk_dialog_new_with_buttons(
                             "Preferences",
                             GTK_WINDOW(mainwindow),
                             GTK_DIALOG_MODAL,
-                            GTK_STOCK_OK, GTK_RESPONSE_ACCEPT,
-                            GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,
+                            "_OK", GTK_RESPONSE_ACCEPT,
+                            "_Cancel", GTK_RESPONSE_CANCEL,
                             NULL);
         gtk_window_set_resizable(GTK_WINDOW(dialog), FALSE);
         no_mwm_resize_borders(dialog);
         GtkWidget *container = gtk_bin_get_child(GTK_BIN(dialog));
-        GtkWidget *table = gtk_table_new(6, 4, FALSE);
-        gtk_container_add(GTK_CONTAINER(container), table);
+        GtkWidget *grid = gtk_grid_new();
+        gtk_container_add(GTK_CONTAINER(container), grid);
 
         singularmatrix = gtk_check_button_new_with_label("Inverting or solving a singular matrix yields \"Singular Matrix\" error");
-        gtk_table_attach(GTK_TABLE(table), singularmatrix, 0, 4, 0, 1, (GtkAttachOptions) (GTK_EXPAND | GTK_FILL), (GtkAttachOptions) 0, 3, 3);
+        gtk_grid_attach(GTK_GRID(grid), singularmatrix, 0, 0, 4, 1);
         matrixoutofrange = gtk_check_button_new_with_label("Overflows during matrix operations yield \"Out of Range\" error");
-        gtk_table_attach(GTK_TABLE(table), matrixoutofrange, 0, 4, 1, 2, (GtkAttachOptions) (GTK_EXPAND | GTK_FILL), (GtkAttachOptions) 0, 3, 3);
+        gtk_grid_attach(GTK_GRID(grid), matrixoutofrange, 0, 1, 4, 1);
         autorepeat = gtk_check_button_new_with_label("Auto-repeat for number entry and ALPHA mode");
-        gtk_table_attach(GTK_TABLE(table), autorepeat, 0, 4, 2, 3, (GtkAttachOptions) (GTK_EXPAND | GTK_FILL), (GtkAttachOptions) 0, 3, 3);
-        singleinstance = gtk_check_button_new_with_label("Single instance");
-        gtk_table_attach(GTK_TABLE(table), singleinstance, 0, 4, 3, 4, (GtkAttachOptions) (GTK_EXPAND | GTK_FILL), (GtkAttachOptions) 0, 3, 3);
+        gtk_grid_attach(GTK_GRID(grid), autorepeat, 0, 2, 4, 1);
         printtotext = gtk_check_button_new_with_label("Print to text file:");
-        gtk_table_attach(GTK_TABLE(table), printtotext, 0, 1, 4, 5, (GtkAttachOptions) (GTK_SHRINK | GTK_FILL), (GtkAttachOptions) 0, 3, 3);
+        gtk_grid_attach(GTK_GRID(grid), printtotext, 0, 3, 1, 1);
         textpath = gtk_entry_new();
-        gtk_table_attach(GTK_TABLE(table), textpath, 1, 3, 4, 5, (GtkAttachOptions) (GTK_EXPAND | GTK_FILL), (GtkAttachOptions) 0, 3, 3);
+        gtk_grid_attach(GTK_GRID(grid), textpath, 1, 3, 2, 1);
         GtkWidget *browse1 = gtk_button_new_with_label("Browse...");
-        gtk_table_attach(GTK_TABLE(table), browse1, 3, 4, 4, 5, (GtkAttachOptions) (GTK_SHRINK | GTK_FILL), (GtkAttachOptions) 0, 3, 3);
+        gtk_grid_attach(GTK_GRID(grid), browse1, 3, 3, 1, 1);
         printtogif = gtk_check_button_new_with_label("Print to GIF file:");
-        gtk_table_attach(GTK_TABLE(table), printtogif, 0, 1, 5, 6, (GtkAttachOptions) (GTK_SHRINK | GTK_FILL), (GtkAttachOptions) 0, 3, 3);
+        gtk_grid_attach(GTK_GRID(grid), printtogif, 0, 4, 1, 1);
         gifpath = gtk_entry_new();
-        gtk_table_attach(GTK_TABLE(table), gifpath, 1, 3, 5, 6, (GtkAttachOptions) (GTK_EXPAND | GTK_FILL), (GtkAttachOptions) 0, 3, 3);
+        gtk_grid_attach(GTK_GRID(grid), gifpath, 1, 4, 2, 1);
         GtkWidget *browse2 = gtk_button_new_with_label("Browse...");
-        gtk_table_attach(GTK_TABLE(table), browse2, 3, 4, 5, 6, (GtkAttachOptions) (GTK_SHRINK | GTK_FILL), (GtkAttachOptions) 0, 3, 3);
+        gtk_grid_attach(GTK_GRID(grid), browse2, 3, 4, 1, 1);
         GtkWidget *label = gtk_label_new("Maximum GIF height (pixels):");
-        gtk_table_attach(GTK_TABLE(table), label, 1, 2, 6, 7, (GtkAttachOptions) (GTK_EXPAND | GTK_FILL), (GtkAttachOptions) 0, 3, 3);
-        gifheight = gtk_entry_new_with_max_length(5);
-        gtk_table_attach(GTK_TABLE(table), gifheight, 2, 3, 6, 7, (GtkAttachOptions) (GTK_SHRINK), (GtkAttachOptions) 0, 3, 3);
+        gtk_grid_attach(GTK_GRID(grid), label, 1, 5, 1, 1);
+        gifheight = gtk_entry_new();
+        gtk_entry_set_max_length(GTK_ENTRY(gifheight), 5);
+        gtk_grid_attach(GTK_GRID(grid), gifheight, 2, 5, 1, 1);
+        oldrepaint = gtk_check_button_new_with_label("Old display update logic");
+        gtk_grid_attach(GTK_GRID(grid), oldrepaint, 0, 6, 4, 1);
 
         g_signal_connect(G_OBJECT(browse1), "clicked", G_CALLBACK(browse_file),
                 (gpointer) new browse_file_info("Select Text File Name",
@@ -2127,7 +2164,6 @@ static void preferencesCB() {
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(singularmatrix), core_settings.matrix_singularmatrix);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(matrixoutofrange), core_settings.matrix_outofrange);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(autorepeat), core_settings.auto_repeat);
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(singleinstance), state.singleInstance);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(printtotext), state.printerToTxtFile);
     gtk_entry_set_text(GTK_ENTRY(textpath), state.printerTxtFileName);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(printtogif), state.printerToGifFile);
@@ -2135,13 +2171,13 @@ static void preferencesCB() {
     char maxlen[6];
     snprintf(maxlen, 6, "%d", state.printerGifMaxLength);
         gtk_entry_set_text(GTK_ENTRY(gifheight), maxlen);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(oldrepaint), state.old_repaint);
 
     gtk_window_set_role(GTK_WINDOW(dialog), "Free42 Dialog");
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
         core_settings.matrix_singularmatrix = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(singularmatrix));
         core_settings.matrix_outofrange = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(matrixoutofrange));
         core_settings.auto_repeat = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(autorepeat));
-        state.singleInstance = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(singleinstance));
 
         state.printerToTxtFile = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(printtotext));
         char *old = strclone(state.printerTxtFileName);
@@ -2176,6 +2212,8 @@ static void preferencesCB() {
             else if (state.printerGifMaxLength > 32767) state.printerGifMaxLength = 32767;
         } else
             state.printerGifMaxLength = 256;
+
+        state.old_repaint = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(oldrepaint));
     }
 
     gtk_widget_hide(GTK_WIDGET(dialog));
@@ -2243,17 +2281,17 @@ static void aboutCB() {
                             "About Free42",
                             GTK_WINDOW(mainwindow),
                             GTK_DIALOG_MODAL,
-                            GTK_STOCK_OK,
+                            "_OK",
                             GTK_RESPONSE_ACCEPT,
                             NULL);
         gtk_window_set_resizable(GTK_WINDOW(about), FALSE);
         no_mwm_resize_borders(about);
         GtkWidget *container = gtk_bin_get_child(GTK_BIN(about));
-        GtkWidget *box = gtk_hbox_new(FALSE, 0);
+        GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
         gtk_container_add(GTK_CONTAINER(container), box);
         GtkWidget *image = gtk_image_new_from_pixbuf(icon_48);
         gtk_box_pack_start(GTK_BOX(box), image, FALSE, FALSE, 10);
-        GtkWidget *box2 = gtk_vbox_new(FALSE, 0);
+        GtkWidget *box2 = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
         GtkWidget *version = gtk_label_new("Free42 " VERSION);
         gtk_misc_set_alignment(GTK_MISC(version), 0, 0);
         gtk_box_pack_start(GTK_BOX(box2), version, FALSE, FALSE, 10);
@@ -2261,11 +2299,11 @@ static void aboutCB() {
         gtk_misc_set_alignment(GTK_MISC(author), 0, 0);
         gtk_box_pack_start(GTK_BOX(box2), author, FALSE, FALSE, 0);
         GtkWidget *websitelink = gtk_link_button_new("https://thomasokken.com/free42/");
-        GtkWidget *websitebox = gtk_hbox_new(FALSE, 0);
+        GtkWidget *websitebox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
         gtk_box_pack_start(GTK_BOX(websitebox), websitelink, FALSE, FALSE, 0);
         gtk_box_pack_start(GTK_BOX(box2), websitebox, FALSE, FALSE, 0);
         GtkWidget *forumlink = gtk_link_button_new("https://thomasokken.com/free42/#doc");
-        GtkWidget *forumbox = gtk_hbox_new(FALSE, 0);
+        GtkWidget *forumbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
         gtk_box_pack_start(GTK_BOX(forumbox), forumlink, FALSE, FALSE, 0);
         gtk_box_pack_start(GTK_BOX(box2), forumbox, FALSE, FALSE, 0);
         gtk_box_pack_start(GTK_BOX(box), box2, FALSE, FALSE, 0);
@@ -2281,11 +2319,12 @@ static void aboutCB() {
     gtk_widget_hide(GTK_WIDGET(about));
 }
 
-static void delete_cb(GtkWidget *w, gpointer cd) {
+static gboolean delete_cb(GtkWidget *w, GdkEventAny *ev) {
     quit();
+    return TRUE;
 }
 
-static void delete_print_cb(GtkWidget *w, gpointer cd) {
+static gboolean delete_print_cb(GtkWidget *w, GdkEventAny *ev) {
     gint x, y;
     gtk_window_get_position(GTK_WINDOW(printwindow), &x, &y);
     state.printWindowX = x;
@@ -2293,27 +2332,27 @@ static void delete_print_cb(GtkWidget *w, gpointer cd) {
     state.printWindowMapped = 0;
     state.printWindowKnown = 1;
     gtk_widget_hide(GTK_WIDGET(printwindow));
-}
-
-static gboolean expose_cb(GtkWidget *w, GdkEventExpose *event, gpointer cd) {
-    allow_paint = true;
-    skin_repaint();
-    skin_repaint_display();
-    skin_repaint_annunciator(1, ann_updown);
-    skin_repaint_annunciator(2, ann_shift);
-    skin_repaint_annunciator(3, ann_print);
-    skin_repaint_annunciator(4, ann_run);
-    skin_repaint_annunciator(5, ann_battery);
-    skin_repaint_annunciator(6, ann_g);
-    skin_repaint_annunciator(7, ann_rad);
-    if (ckey != 0)
-        skin_repaint_key(skey, 1);
     return TRUE;
 }
 
-static gboolean print_expose_cb(GtkWidget *w, GdkEventExpose *event, gpointer cd) {
-    repaint_printout(event->area.x, event->area.y,
-                     event->area.width, event->area.height);
+static gboolean draw_cb(GtkWidget *w, cairo_t *cr, gpointer cd) {
+    allow_paint = true;
+    skin_repaint(cr);
+    skin_repaint_display(cr);
+    skin_repaint_annunciator(cr, 1, ann_updown);
+    skin_repaint_annunciator(cr, 2, ann_shift);
+    skin_repaint_annunciator(cr, 3, ann_print);
+    skin_repaint_annunciator(cr, 4, ann_run);
+    skin_repaint_annunciator(cr, 5, ann_battery);
+    skin_repaint_annunciator(cr, 6, ann_g);
+    skin_repaint_annunciator(cr, 7, ann_rad);
+    if (ckey != 0)
+        skin_repaint_key(cr, skey, 1);
+    return TRUE;
+}
+
+static gboolean print_draw_cb(GtkWidget *w, cairo_t *cr, gpointer cd) {
+    repaint_printout(cr);
     return TRUE;
 }
 
@@ -2325,9 +2364,6 @@ static gboolean print_key_cb(GtkWidget *w, GdkEventKey *event, gpointer cd) {
 
     if (event->type != GDK_KEY_PRESS)
         return TRUE;
-    if (event->hardware_keycode == active_keycode)
-        // Auto-repeat
-        return TRUE;
 
     bool ctrl = (event->state & GDK_CONTROL_MASK) != 0;
     bool alt = (event->state & GDK_MOD1_MASK) != 0;
@@ -2336,22 +2372,22 @@ static gboolean print_key_cb(GtkWidget *w, GdkEventKey *event, gpointer cd) {
         return TRUE;
 
     switch (event->keyval) {
-        case GDK_a:
+        case GDK_KEY_a:
             paperAdvanceCB();
             break;
-        case GDK_t:
+        case GDK_KEY_t:
             copyPrintAsTextCB();
             break;
-        case GDK_i:
+        case GDK_KEY_i:
             copyPrintAsImageCB();
             break;
-        case GDK_q:
+        case GDK_KEY_q:
             quit();
             break;
-        case GDK_c:
+        case GDK_KEY_c:
             copyCB();
             break;
-        case GDK_v:
+        case GDK_KEY_v:
             pasteCB();
             break;
     }
@@ -2359,10 +2395,13 @@ static gboolean print_key_cb(GtkWidget *w, GdkEventKey *event, gpointer cd) {
 }
 
 static void shell_keydown() {
+    GdkWindow *win = gtk_widget_get_window(calc_widget);
+    cairo_t *cr = gdk_cairo_create(win);
+
     int repeat, keep_running;
     if (skey == -1)
         skey = skin_find_skey(ckey);
-    skin_repaint_key(skey, 1);
+    skin_repaint_key(cr, skey, 1);
     if (timeout3_id != 0 && (macro != NULL || ckey != 28 /* KEY_SHIFT */)) {
         g_source_remove(timeout3_id);
         timeout3_id = 0;
@@ -2387,19 +2426,21 @@ static void shell_keydown() {
             }
             if (!one_key_macro) {
                 skin_display_set_enabled(true);
-                skin_repaint_display();
-                skin_repaint_annunciator(1, ann_updown);
-                skin_repaint_annunciator(2, ann_shift);
-                skin_repaint_annunciator(3, ann_print);
-                skin_repaint_annunciator(4, ann_run);
-                skin_repaint_annunciator(5, ann_battery);
-                skin_repaint_annunciator(6, ann_g);
-                skin_repaint_annunciator(7, ann_rad);
+                skin_repaint_display(cr);
+                skin_repaint_annunciator(cr, 1, ann_updown);
+                skin_repaint_annunciator(cr, 2, ann_shift);
+                skin_repaint_annunciator(cr, 3, ann_print);
+                skin_repaint_annunciator(cr, 4, ann_run);
+                skin_repaint_annunciator(cr, 5, ann_battery);
+                skin_repaint_annunciator(cr, 6, ann_g);
+                skin_repaint_annunciator(cr, 7, ann_rad);
                 repeat = 0;
             }
         }
     } else
         keep_running = core_keydown(ckey, &enqueued, &repeat);
+
+    cairo_destroy(cr);
 
     if (quit_flag)
         quit();
@@ -2417,7 +2458,11 @@ static void shell_keydown() {
 }
 
 static void shell_keyup() {
-    skin_repaint_key(skey, 0);
+    GdkWindow *win = gtk_widget_get_window(calc_widget);
+    cairo_t *cr = gdk_cairo_create(win);
+    skin_repaint_key(cr, skey, 0);
+    cairo_destroy(cr);
+
     ckey = 0;
     skey = -1;
     if (timeout_id != 0) {
@@ -2465,7 +2510,7 @@ static gboolean key_cb(GtkWidget *w, GdkEventKey *event, gpointer cd) {
             bool printable = event->length == 1 && event->string[0] >= 32 && event->string[0] <= 126;
             just_pressed_shift = false;
 
-            if (event->keyval == GDK_Shift_L || event->keyval == GDK_Shift_R) {
+            if (event->keyval == GDK_KEY_Shift_L || event->keyval == GDK_KEY_Shift_R) {
                 just_pressed_shift = true;
                 return TRUE;
             }
@@ -2583,8 +2628,8 @@ static gboolean key_cb(GtkWidget *w, GdkEventKey *event, gpointer cd) {
         }
     } else if (event->type == GDK_KEY_RELEASE) {
         if (ckey == 0) {
-            if (just_pressed_shift && (event->keyval == GDK_Shift_L
-                                    || event->keyval == GDK_Shift_R)) {
+            if (just_pressed_shift && (event->keyval == GDK_KEY_Shift_L
+                                    || event->keyval == GDK_KEY_Shift_R)) {
                 ckey = 28;
                 skey = -1;
                 macro = NULL;
@@ -2655,22 +2700,26 @@ static gboolean battery_checker(gpointer cd) {
     return TRUE;
 }
 
-static void repaint_printout(int x, int y, int width, int height) {
+static void repaint_printout(cairo_t *cr) {
+    GdkRectangle clip;
+    if (!gdk_cairo_get_clip_rectangle(cr, &clip))
+        gtk_widget_get_allocation(print_widget, &clip);
+
     GdkPixbuf *buf = gdk_pixbuf_new(GDK_COLORSPACE_RGB, FALSE,
-                                    8, width, height);
+                                    8, clip.width, clip.height);
     int d_bpl = gdk_pixbuf_get_rowstride(buf);
     guchar *d1 = gdk_pixbuf_get_pixels(buf);
     int length = printout_bottom - printout_top;
     if (length < 0)
         length += PRINT_LINES;
 
-    for (int v = y; v < y + height; v++) {
+    for (int v = clip.y; v < clip.y + clip.height; v++) {
         int v2 = printout_top + v;
         if (v2 >= PRINT_LINES)
             v2 -= PRINT_LINES;
         int v3 = v2 * 36;
         guchar *dst = d1;
-        for (int h = x; h < x + width; h++) {
+        for (int h = clip.x; h < clip.x + clip.width; h++) {
             unsigned char c;
             if (v >= length)
                 c = 127;
@@ -2687,9 +2736,8 @@ static void repaint_printout(int x, int y, int width, int height) {
         d1 += d_bpl;
     }
 
-    gdk_draw_pixbuf(print_widget->window, NULL, buf,
-                    0, 0, x, y, width, height,
-                    GDK_RGB_DITHER_MAX, 0, 0);
+    gdk_cairo_set_source_pixbuf(cr, buf, clip.x, clip.y);
+    cairo_paint(cr);
     g_object_unref(G_OBJECT(buf));
 }
 
@@ -2761,9 +2809,18 @@ static void gif_writer(const char *text, int length) {
 
 void shell_blitter(const char *bits, int bytesperline, int x, int y,
                                      int width, int height) {
-    skin_display_blitter(bits, bytesperline, x, y, width, height);
-    if (skey >= -7 && skey <= -2)
-        skin_repaint_key(skey, 1);
+    if (state.old_repaint) {
+        GdkWindow *win = gtk_widget_get_window(calc_widget);
+        cairo_t *cr = gdk_cairo_create(win);
+
+        skin_display_blitter(cr, bits, bytesperline, x, y, width, height);
+        if (skey >= -7 && skey <= -2)
+            skin_repaint_key(cr, skey, 1);
+
+        cairo_destroy(cr);
+    } else {
+        skin_display_blitter(NULL, bits, bytesperline, x, y, width, height);
+    }
 }
 
 void shell_beeper(int frequency, int duration) {
@@ -2771,18 +2828,23 @@ void shell_beeper(int frequency, int duration) {
     const char *display_name = gdk_display_get_name(gdk_display_get_default());
     if (display_name == NULL || display_name[0] == ':') {
         if (!alsa_beeper(frequency, duration))
-            gdk_beep();
+            gdk_display_beep(gdk_display_get_default());
     } else
-        gdk_beep();
+        gdk_display_beep(gdk_display_get_default());
 #else
-    gdk_beep();
+    gdk_display_beep(gdk_display_get_default());
 #endif
 }
 
 static gboolean ann_print_timeout(gpointer cd) {
+    GdkWindow *win = gtk_widget_get_window(calc_widget);
+    cairo_t *cr = gdk_cairo_create(win);
+
     ann_print_timeout_id = 0;
     ann_print = 0;
-    skin_repaint_annunciator(3, ann_print);
+    skin_repaint_annunciator(cr, 3, ann_print);
+
+    cairo_destroy(cr);
     return FALSE;
 }
 
@@ -2791,13 +2853,16 @@ const char *shell_platform() {
 }
 
 void shell_annunciators(int updn, int shf, int prt, int run, int g, int rad) {
+    GdkWindow *win = gtk_widget_get_window(calc_widget);
+    cairo_t *cr = gdk_cairo_create(win);
+
     if (updn != -1 && ann_updown != updn) {
         ann_updown = updn;
-        skin_repaint_annunciator(1, ann_updown);
+        skin_repaint_annunciator(cr, 1, ann_updown);
     }
     if (shf != -1 && ann_shift != shf) {
         ann_shift = shf;
-        skin_repaint_annunciator(2, ann_shift);
+        skin_repaint_annunciator(cr, 2, ann_shift);
     }
     if (prt != -1) {
         if (ann_print_timeout_id != 0) {
@@ -2807,23 +2872,25 @@ void shell_annunciators(int updn, int shf, int prt, int run, int g, int rad) {
         if (ann_print != prt)
             if (prt) {
                 ann_print = 1;
-                skin_repaint_annunciator(3, ann_print);
+                skin_repaint_annunciator(cr, 3, ann_print);
             } else {
                 ann_print_timeout_id = g_timeout_add(1000, ann_print_timeout, NULL);
             }
     }
     if (run != -1 && ann_run != run) {
         ann_run = run;
-        skin_repaint_annunciator(4, ann_run);
+        skin_repaint_annunciator(cr, 4, ann_run);
     }
     if (g != -1 && ann_g != g) {
         ann_g = g;
-        skin_repaint_annunciator(6, ann_g);
+        skin_repaint_annunciator(cr, 6, ann_g);
     }
     if (rad != -1 && ann_rad != rad) {
         ann_rad = rad;
-        skin_repaint_annunciator(7, ann_rad);
+        skin_repaint_annunciator(cr, 7, ann_rad);
     }
+
+    cairo_destroy(cr);
 }
 
 int shell_wants_cpu() {
@@ -2889,7 +2956,7 @@ int shell_low_battery() {
          *
          * Assuming status will always be "Discharging" when the system is
          * actually running on battery (it could also be "Full", but then it is
-         * definitely now low!), and that capacity is a number between 0 and
+         * definitely not low!), and that capacity is a number between 0 and
          * 100. The choice of 10% or less as being "low" is completely
          * arbitrary.
          * Checking BATn where n = 0, 1, or 2. Some docs suggest BAT0 should
@@ -2922,8 +2989,12 @@ int shell_low_battery() {
     }
     if (lowbat != ann_battery) {
         ann_battery = lowbat;
-        if (allow_paint)
-            skin_repaint_annunciator(5, ann_battery);
+        if (allow_paint) {
+            GdkWindow *win = gtk_widget_get_window(calc_widget);
+            cairo_t *cr = gdk_cairo_create(win);
+            skin_repaint_annunciator(cr, 5, ann_battery);
+            cairo_destroy(cr);
+        }
     }
     return lowbat;
 }
@@ -2966,7 +3037,16 @@ static gboolean print_widget_grew(GtkWidget *w, GdkEventConfigure *event,
                                                                 gpointer cd) {
     print_growth_info *info = (print_growth_info *) cd;
     scroll_printout_to_bottom();
-    repaint_printout(0, info->y, 358, info->height);
+    cairo_t *cr = gdk_cairo_create(gtk_widget_get_window(print_widget));
+    GdkRectangle clip;
+    clip.x = 0;
+    clip.y = info->y;
+    clip.width = 358;
+    clip.height = info->height;
+    gdk_cairo_rectangle(cr, &clip);
+    cairo_clip(cr);
+    repaint_printout(cr);
+    cairo_destroy(cr);
     g_signal_handlers_disconnect_by_func(G_OBJECT(w), (gpointer) print_widget_grew, cd);
     delete info;
     return FALSE;
@@ -3005,18 +3085,12 @@ void shell_print(const char *text, int length,
     newlength = oldlength + 2 * height;
 
     if (newlength >= PRINT_LINES) {
-        int offset;
         printout_top = (printout_bottom + 2) % PRINT_LINES;
         newlength = PRINT_LINES - 2;
         if (newlength != oldlength)
             gtk_widget_set_size_request(print_widget, 358, newlength);
         scroll_printout_to_bottom();
-        offset = 2 * height - newlength + oldlength;
-        if (print_gc == NULL)
-            print_gc = gdk_gc_new(print_widget->window);
-        gdk_draw_drawable(print_widget->window, print_gc, print_widget->window,
-                          0, offset, 0, 0, 358, oldlength - offset);
-        repaint_printout(0, newlength - 2 * height, 358, 2 * height);
+        gtk_widget_queue_draw(print_widget);
     } else {
         gtk_widget_set_size_request(print_widget, 358, newlength);
         // The resize request does not take effect immediately;

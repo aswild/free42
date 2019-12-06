@@ -26,8 +26,8 @@ CFLAGS = -MMD \
 	 -Wno-format-truncation \
 	 -Wno-unknown-warning-option \
 	 -g \
-	 -I/usr/X11R6/include \
-	 $(shell pkg-config --cflags gtk+-2.0) \
+	 $(shell pkg-config --cflags gtk+-3.0) \
+	 -DGDK_DISABLE_DEPRECATED -DGTK_DISABLE_DEPRECATED -DGTK_DISABLE_SINGLE_INCLUDES -DGSEAL_ENABLE \
 	 -DVERSION="\"$(shell cat VERSION)\"" \
 	 -DVERSION_PLATFORM="\"$(shell uname -s)\"" \
 	 -DDECIMAL_CALL_BY_REFERENCE=1 \
@@ -36,18 +36,25 @@ CFLAGS = -MMD \
 	 -DDECIMAL_GLOBAL_EXCEPTION_FLAGS=1 \
 	 -DDECIMAL_GLOBAL_EXCEPTION_FLAGS_ACCESS_FUNCTIONS=1
 
+###############################################################################
+### Note that there are deprecation warnings while compiling shell_main.cc  ###
+### with GTK+ 3.22 or later. I will deal with those when I switch to a      ###
+### release build environment that has GTK+ 3.22 or later.                  ###
+### My current release build environment is Ubuntu 12.04 with GTK+ 3.4, and ###
+### for the sake of compatibility with existing systems, I am in no hurry   ###
+### to upgrade that environment, even though I do use Ubuntu 18.04 with     ###
+### GTK+ 3.22 for testing.                                                  ###
+###############################################################################
+
 CXXFLAGS = $(CFLAGS) \
 	 -fno-exceptions \
 	 -fno-rtti \
 	 -D_WCHAR_T_DEFINED
 
-LDFLAGS = -L/usr/X11R6/lib
-LIBS = gcc111libbid.a $(shell pkg-config --libs gtk+-2.0) -lXmu -lX11
+LIBS = gcc111libbid.a $(shell pkg-config --libs gtk+-3.0)
 
-ifeq "$(shell uname -s)" "FreeBSD"
 ifdef AUDIO_ALSA
-LIBS += -ldl
-endif
+LIBS += -lpthread -ldl
 endif
 
 ifneq "$(findstring 6162,$(shell echo ab | od -x))" ""
