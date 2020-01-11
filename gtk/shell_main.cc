@@ -1,6 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Free42 -- an HP-42S calculator simulator
-// Copyright (C) 2004-2019  Thomas Okken
+// Copyright (C) 2004-2020  Thomas Okken
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2,
@@ -896,7 +896,7 @@ static void init_shell_state(int4 version) {
             core_settings.auto_repeat = true;
             /* fall through */
         case 6:
-            state.old_repaint = false;
+            state.old_repaint = true;
             /* fall through */
         case 7:
             /* current version (SHELL_VERSION = 7),
@@ -2102,12 +2102,12 @@ static void preferencesCB() {
     static GtkWidget *singularmatrix;
     static GtkWidget *matrixoutofrange;
     static GtkWidget *autorepeat;
+    static GtkWidget *repaintwholedisplay;
     static GtkWidget *printtotext;
     static GtkWidget *textpath;
     static GtkWidget *printtogif;
     static GtkWidget *gifpath;
     static GtkWidget *gifheight;
-    static GtkWidget *oldrepaint;
 
     if (dialog == NULL) {
         dialog = gtk_dialog_new_with_buttons(
@@ -2129,25 +2129,25 @@ static void preferencesCB() {
         gtk_grid_attach(GTK_GRID(grid), matrixoutofrange, 0, 1, 4, 1);
         autorepeat = gtk_check_button_new_with_label("Auto-repeat for number entry and ALPHA mode");
         gtk_grid_attach(GTK_GRID(grid), autorepeat, 0, 2, 4, 1);
+        repaintwholedisplay = gtk_check_button_new_with_label("Always repaint entire display");
+        gtk_grid_attach(GTK_GRID(grid), repaintwholedisplay, 0, 3, 4, 1);
         printtotext = gtk_check_button_new_with_label("Print to text file:");
-        gtk_grid_attach(GTK_GRID(grid), printtotext, 0, 3, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), printtotext, 0, 4, 1, 1);
         textpath = gtk_entry_new();
-        gtk_grid_attach(GTK_GRID(grid), textpath, 1, 3, 2, 1);
+        gtk_grid_attach(GTK_GRID(grid), textpath, 1, 4, 2, 1);
         GtkWidget *browse1 = gtk_button_new_with_label("Browse...");
-        gtk_grid_attach(GTK_GRID(grid), browse1, 3, 3, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), browse1, 3, 4, 1, 1);
         printtogif = gtk_check_button_new_with_label("Print to GIF file:");
-        gtk_grid_attach(GTK_GRID(grid), printtogif, 0, 4, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), printtogif, 0, 5, 1, 1);
         gifpath = gtk_entry_new();
-        gtk_grid_attach(GTK_GRID(grid), gifpath, 1, 4, 2, 1);
+        gtk_grid_attach(GTK_GRID(grid), gifpath, 1, 5, 2, 1);
         GtkWidget *browse2 = gtk_button_new_with_label("Browse...");
-        gtk_grid_attach(GTK_GRID(grid), browse2, 3, 4, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), browse2, 3, 5, 1, 1);
         GtkWidget *label = gtk_label_new("Maximum GIF height (pixels):");
-        gtk_grid_attach(GTK_GRID(grid), label, 1, 5, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), label, 1, 6, 1, 1);
         gifheight = gtk_entry_new();
         gtk_entry_set_max_length(GTK_ENTRY(gifheight), 5);
-        gtk_grid_attach(GTK_GRID(grid), gifheight, 2, 5, 1, 1);
-        oldrepaint = gtk_check_button_new_with_label("Old display update logic");
-        gtk_grid_attach(GTK_GRID(grid), oldrepaint, 0, 6, 4, 1);
+        gtk_grid_attach(GTK_GRID(grid), gifheight, 2, 6, 1, 1);
 
         g_signal_connect(G_OBJECT(browse1), "clicked", G_CALLBACK(browse_file),
                 (gpointer) new browse_file_info("Select Text File Name",
@@ -2171,7 +2171,7 @@ static void preferencesCB() {
     char maxlen[6];
     snprintf(maxlen, 6, "%d", state.printerGifMaxLength);
         gtk_entry_set_text(GTK_ENTRY(gifheight), maxlen);
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(oldrepaint), state.old_repaint);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(repaintwholedisplay), !state.old_repaint);
 
     gtk_window_set_role(GTK_WINDOW(dialog), "Free42 Dialog");
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
@@ -2213,7 +2213,7 @@ static void preferencesCB() {
         } else
             state.printerGifMaxLength = 256;
 
-        state.old_repaint = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(oldrepaint));
+        state.old_repaint = !gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(repaintwholedisplay));
     }
 
     gtk_widget_hide(GTK_WIDGET(dialog));
@@ -2295,7 +2295,7 @@ static void aboutCB() {
         GtkWidget *version = gtk_label_new("Free42 " VERSION);
         gtk_misc_set_alignment(GTK_MISC(version), 0, 0);
         gtk_box_pack_start(GTK_BOX(box2), version, FALSE, FALSE, 10);
-        GtkWidget *author = gtk_label_new("(C) 2004-2019 Thomas Okken");
+        GtkWidget *author = gtk_label_new("(C) 2004-2020 Thomas Okken");
         gtk_misc_set_alignment(GTK_MISC(author), 0, 0);
         gtk_box_pack_start(GTK_BOX(box2), author, FALSE, FALSE, 0);
         GtkWidget *websitelink = gtk_link_button_new("https://thomasokken.com/free42/");
@@ -2396,12 +2396,11 @@ static gboolean print_key_cb(GtkWidget *w, GdkEventKey *event, gpointer cd) {
 
 static void shell_keydown() {
     GdkWindow *win = gtk_widget_get_window(calc_widget);
-    cairo_t *cr = gdk_cairo_create(win);
 
     int repeat, keep_running;
     if (skey == -1)
         skey = skin_find_skey(ckey);
-    skin_repaint_key(cr, skey, 1);
+    skin_invalidate_key(win, skey);
     if (timeout3_id != 0 && (macro != NULL || ckey != 28 /* KEY_SHIFT */)) {
         g_source_remove(timeout3_id);
         timeout3_id = 0;
@@ -2426,21 +2425,19 @@ static void shell_keydown() {
             }
             if (!one_key_macro) {
                 skin_display_set_enabled(true);
-                skin_repaint_display(cr);
-                skin_repaint_annunciator(cr, 1, ann_updown);
-                skin_repaint_annunciator(cr, 2, ann_shift);
-                skin_repaint_annunciator(cr, 3, ann_print);
-                skin_repaint_annunciator(cr, 4, ann_run);
-                skin_repaint_annunciator(cr, 5, ann_battery);
-                skin_repaint_annunciator(cr, 6, ann_g);
-                skin_repaint_annunciator(cr, 7, ann_rad);
+                skin_invalidate_display(win);
+                skin_invalidate_annunciator(win, 1);
+                skin_invalidate_annunciator(win, 2);
+                skin_invalidate_annunciator(win, 3);
+                skin_invalidate_annunciator(win, 4);
+                skin_invalidate_annunciator(win, 5);
+                skin_invalidate_annunciator(win, 6);
+                skin_invalidate_annunciator(win, 7);
                 repeat = 0;
             }
         }
     } else
         keep_running = core_keydown(ckey, &enqueued, &repeat);
-
-    cairo_destroy(cr);
 
     if (quit_flag)
         quit();
@@ -2459,9 +2456,7 @@ static void shell_keydown() {
 
 static void shell_keyup() {
     GdkWindow *win = gtk_widget_get_window(calc_widget);
-    cairo_t *cr = gdk_cairo_create(win);
-    skin_repaint_key(cr, skey, 0);
-    cairo_destroy(cr);
+    skin_invalidate_key(win, skey);
 
     ckey = 0;
     skey = -1;
@@ -2811,15 +2806,12 @@ void shell_blitter(const char *bits, int bytesperline, int x, int y,
                                      int width, int height) {
     if (state.old_repaint) {
         GdkWindow *win = gtk_widget_get_window(calc_widget);
-        cairo_t *cr = gdk_cairo_create(win);
 
-        skin_display_blitter(cr, bits, bytesperline, x, y, width, height);
+        skin_display_invalidater(win, bits, bytesperline, x, y, width, height);
         if (skey >= -7 && skey <= -2)
-            skin_repaint_key(cr, skey, 1);
-
-        cairo_destroy(cr);
+            skin_invalidate_key(win, skey);
     } else {
-        skin_display_blitter(NULL, bits, bytesperline, x, y, width, height);
+        skin_display_invalidater(NULL, bits, bytesperline, x, y, width, height);
     }
 }
 
@@ -2838,13 +2830,11 @@ void shell_beeper(int frequency, int duration) {
 
 static gboolean ann_print_timeout(gpointer cd) {
     GdkWindow *win = gtk_widget_get_window(calc_widget);
-    cairo_t *cr = gdk_cairo_create(win);
 
     ann_print_timeout_id = 0;
     ann_print = 0;
-    skin_repaint_annunciator(cr, 3, ann_print);
+    skin_invalidate_annunciator(win, 3);
 
-    cairo_destroy(cr);
     return FALSE;
 }
 
@@ -2854,15 +2844,14 @@ const char *shell_platform() {
 
 void shell_annunciators(int updn, int shf, int prt, int run, int g, int rad) {
     GdkWindow *win = gtk_widget_get_window(calc_widget);
-    cairo_t *cr = gdk_cairo_create(win);
 
     if (updn != -1 && ann_updown != updn) {
         ann_updown = updn;
-        skin_repaint_annunciator(cr, 1, ann_updown);
+        skin_invalidate_annunciator(win, 1);
     }
     if (shf != -1 && ann_shift != shf) {
         ann_shift = shf;
-        skin_repaint_annunciator(cr, 2, ann_shift);
+        skin_invalidate_annunciator(win, 2);
     }
     if (prt != -1) {
         if (ann_print_timeout_id != 0) {
@@ -2872,25 +2861,23 @@ void shell_annunciators(int updn, int shf, int prt, int run, int g, int rad) {
         if (ann_print != prt)
             if (prt) {
                 ann_print = 1;
-                skin_repaint_annunciator(cr, 3, ann_print);
+                skin_invalidate_annunciator(win, 3);
             } else {
                 ann_print_timeout_id = g_timeout_add(1000, ann_print_timeout, NULL);
             }
     }
     if (run != -1 && ann_run != run) {
         ann_run = run;
-        skin_repaint_annunciator(cr, 4, ann_run);
+        skin_invalidate_annunciator(win, 4);
     }
     if (g != -1 && ann_g != g) {
         ann_g = g;
-        skin_repaint_annunciator(cr, 6, ann_g);
+        skin_invalidate_annunciator(win, 6);
     }
     if (rad != -1 && ann_rad != rad) {
         ann_rad = rad;
-        skin_repaint_annunciator(cr, 7, ann_rad);
+        skin_invalidate_annunciator(win, 7);
     }
-
-    cairo_destroy(cr);
 }
 
 int shell_wants_cpu() {
@@ -2991,9 +2978,7 @@ int shell_low_battery() {
         ann_battery = lowbat;
         if (allow_paint) {
             GdkWindow *win = gtk_widget_get_window(calc_widget);
-            cairo_t *cr = gdk_cairo_create(win);
-            skin_repaint_annunciator(cr, 5, ann_battery);
-            cairo_destroy(cr);
+            skin_invalidate_annunciator(win, 5);
         }
     }
     return lowbat;
@@ -3037,16 +3022,13 @@ static gboolean print_widget_grew(GtkWidget *w, GdkEventConfigure *event,
                                                                 gpointer cd) {
     print_growth_info *info = (print_growth_info *) cd;
     scroll_printout_to_bottom();
-    cairo_t *cr = gdk_cairo_create(gtk_widget_get_window(print_widget));
     GdkRectangle clip;
     clip.x = 0;
     clip.y = info->y;
     clip.width = 358;
     clip.height = info->height;
-    gdk_cairo_rectangle(cr, &clip);
-    cairo_clip(cr);
-    repaint_printout(cr);
-    cairo_destroy(cr);
+    GdkWindow *win = gtk_widget_get_window(print_widget);
+    gdk_window_invalidate_rect(win, &clip, FALSE);
     g_signal_handlers_disconnect_by_func(G_OBJECT(w), (gpointer) print_widget_grew, cd);
     delete info;
     return FALSE;
