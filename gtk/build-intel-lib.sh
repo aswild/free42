@@ -1,9 +1,7 @@
 #!/bin/sh
-if [ -f gcc111libbid.a ]; then exit 0; fi
-set -x
 
 if [ -z $MK ]; then
-  which gmake >/dev/null
+  which gmake >/dev/null 2>&1
   if [ $? -eq 0 ]; then
     MK=gmake
   else
@@ -11,12 +9,15 @@ if [ -z $MK ]; then
   fi
 fi
 
-which gcc >/dev/null
+which gcc >/dev/null 2>&1
 if [ $? -eq 0 ]; then
   CC=gcc
 else
   CC=cc
 fi
+
+# don't let environment CFLAGS (intended for free42 code) pollute the build
+unset CFLAGS
 
 # Hack to support FreeBSD; not 100% sure what this does, but it produces a
 # library that passes all tests.
@@ -42,11 +43,7 @@ else
   ENDIAN_ARG=
 fi
 
-tar xzf ../inteldecimal/IntelRDFPMathLib20U1.tar.gz
-cd IntelRDFPMathLib20U1
-patch -p0 <../intel-lib-linux.patch
-
-# When building for architectures other than x86 or x86_64, I remove the
+# When building for architectures other than x86 or x86_64, I override the
 # section titled "Determine host architecture" in
 # IntelRDFPMathLib20U1/LIBRARY/makefile.iml_head, and replace it with a simple
 # "_HOST_ARCH := x86" or "_HOST_ARCH := x86_64", depending on whether I'm
@@ -55,18 +52,33 @@ patch -p0 <../intel-lib-linux.patch
 # to x86 works when targeting armv7 and ppc, both 32-bit platforms, and setting
 # it to x86_64 works when targeting arm64, a 64-bit platform.
 # Of course, proceed with caution. Your mileage may vary.
-
 case `uname -m` in
   armv7|armv7l|ppc)
-    patch -p0 <../intel-lib-unknown-32bit.patch
+      ARCH_ARG='_HOST_ARCH=x86'
     ;;
-  arm64|i86pc)
-    patch -p0 <../intel-lib-unknown-64bit.patch
+  arm64|aarch64|i86pc)
+      ARCH_ARG='_HOST_ARCH=x86_64'
+    ;;
+  *)
+      ARCH_ARG=
     ;;
 esac
 
+if [ -z "$V" ]; then
+    V=0
+fi
+
+set -x
+tar xzf ../inteldecimal/IntelRDFPMathLib20U1.tar.gz
+cd IntelRDFPMathLib20U1
+patch -p1 <../intel-lib-linux.patch
+
 cd LIBRARY
-$MK $OS_ARG CC=$CC CALL_BY_REF=1 GLOBAL_RND=1 GLOBAL_FLAGS=1 UNCHANGED_BINARY_FLAGS=0 $ENDIAN_ARG lib
-mv libbid.a ../../gcc111libbid.a
+$MK $OS_ARG $ARCH_ARG V="$V" CC="$CC" CALL_BY_REF=1 GLOBAL_RND=1 GLOBAL_FLAGS=1 UNCHANGED_BINARY_FLAGS=0 $ENDIAN_ARG lib
+
 cd ../..
+ln -sf IntelRDFPMathLib20U1/TESTS/readtest.c
+
+set +x
+echo "Generate readtest_lines.cc"
 ( echo '#ifdef FREE42_FPTEST'; echo 'const char *readtest_lines[] = {'; tr -d '\r' < IntelRDFPMathLib20U1/TESTS/readtest.in | sed 's/^\(.*\)$/"\1",/'; echo '0 };'; echo '#endif' ) > readtest_lines.cc

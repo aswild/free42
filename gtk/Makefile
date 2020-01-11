@@ -15,19 +15,16 @@
 # along with this program; if not, see http://www.gnu.org/licenses/.
 ###############################################################################
 
-CFLAGS = -MMD \
+CFLAGS += -MMD \
 	 -Wall \
 	 -Wno-parentheses \
 	 -Wno-write-strings \
 	 -Wno-sign-compare \
 	 -Wno-narrowing \
-	 -Wno-constant-conversion \
-	 -Wno-sometimes-uninitialized \
 	 -Wno-format-truncation \
-	 -Wno-unknown-warning-option \
 	 -g \
 	 $(shell pkg-config --cflags gtk+-3.0) \
-	 -DGDK_DISABLE_DEPRECATED -DGTK_DISABLE_DEPRECATED -DGTK_DISABLE_SINGLE_INCLUDES -DGSEAL_ENABLE \
+	 -DGDK_DISABLE_DEPRECATION_WARNINGS -DGTK_DISABLE_SINGLE_INCLUDES -DGSEAL_ENABLE \
 	 -DVERSION="\"$(shell cat VERSION)\"" \
 	 -DVERSION_PLATFORM="\"$(shell uname -s)\"" \
 	 -DDECIMAL_CALL_BY_REFERENCE=1 \
@@ -35,6 +32,10 @@ CFLAGS = -MMD \
 	 -DDECIMAL_GLOBAL_ROUNDING_ACCESS_FUNCTIONS=1 \
 	 -DDECIMAL_GLOBAL_EXCEPTION_FLAGS=1 \
 	 -DDECIMAL_GLOBAL_EXCEPTION_FLAGS_ACCESS_FUNCTIONS=1
+
+ifeq ($(WERROR),1)
+CFLAGS += -Werror
+endif
 
 ###############################################################################
 ### Note that there are deprecation warnings while compiling shell_main.cc  ###
@@ -51,7 +52,13 @@ CXXFLAGS = $(CFLAGS) \
 	 -fno-rtti \
 	 -D_WCHAR_T_DEFINED
 
-LIBS = gcc111libbid.a $(shell pkg-config --libs gtk+-3.0)
+HOSTCC       ?= $(CC)
+HOSTCXX      ?= $(CXX)
+HOSTCFLAGS   ?= $(CFLAGS)
+HOSTCXXFLAGS ?= $(CXXFLAGS)
+HOSTLDFLAGS  ?= $(LDFLAGS)
+
+LIBS = -L$(INTEL_DIR)/LIBRARY -lbid $(shell pkg-config --libs gtk+-3.0)
 
 ifdef AUDIO_ALSA
 LIBS += -lpthread -ldl
@@ -78,6 +85,9 @@ OBJS = shell_main.o shell_skin.o skins.o keymap.o shell_loadimage.o \
 
 BCD_MATH ?= 1
 
+INTEL_DIR = IntelRDFPMathLib20U1
+INTEL_LIB = $(INTEL_DIR)/LIBRARY/libbid.a
+
 ifeq ($(BCD_MATH),1)
 CXXFLAGS += -DBCD_MATH
 EXE = free42dec
@@ -102,54 +112,61 @@ SRCS += audio_alsa.cc
 OBJS += audio_alsa.o
 endif
 
-$(EXE): $(OBJS)
-	$(CXX) -o $(EXE) $(LDFLAGS) $(OBJS) $(LIBS)
+# silent make rules
+V ?= 0
+_V_CC_0        = @echo "  CC      " $@;
+_V_CXX_0       = @echo "  CXX     " $@;
+_V_LD_0        = @echo "  LD      " $@;
+_V_HOSTCC_0    = @echo "  HOSTCC  " $@;
+_V_HOSTCXX_0   = @echo "  HOSTCXX " $@;
+_V_HOSTLD_0    = @echo "  HOSTLD  " $@;
+_V_GEN_0       = @echo "  GEN     " $@;
+_V_CLEAN_0     = @echo "  CLEAN";
+_V_DISTCLEAN_0 = @echo "  DISTCLEAN";
 
-$(SRCS) skin2cc.cc keymap2cc.cc skin2cc.conf: symlinks
+$(EXE): $(OBJS)
+	$(_V_LD_$(V))$(CXX) -o $(EXE) $(CXXFLAGS) $(LDFLAGS) $(OBJS) $(LIBS)
+
+$(SRCS) skin2cc.cc keymap2cc.cc skin2cc.conf: .symlinks_done $(INTEL_LIB)
 
 .cc.o:
-	$(CXX) $(CXXFLAGS) -c -o $@ $<
+	$(_V_CXX_$(V))$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 readtest.o: readtest.c
-	$(CC) $(CFLAGS) -I IntelRDFPMathLib20U1/TESTS -D__intptr_t_defined -DLINUX -c -o $@ $<
+	$(_V_CC_$(V))$(CC) $(CFLAGS) -I $(INTEL_DIR)/TESTS -D__intptr_t_defined -DLINUX -c -o $@ $<
 
 skin2cc: skin2cc.cc
-	$(CXX) -o skin2cc skin2cc.cc
+	$(_V_HOSTCXX_$(V))$(HOSTCXX) $(HOSTCXXFLAGS) $(HOSTLDFLAGS) -o skin2cc skin2cc.cc
 
 skins.cc: skin2cc skin2cc.conf
-	./skin2cc
+	$(_V_GEN_$(V))./skin2cc
 
 keymap2cc: keymap2cc.cc
-	$(CXX) -o keymap2cc keymap2cc.cc
+	$(_V_HOSTCXX_$(V))$(CXX) $(HOSTCXXFLAGS) $(HOSTLDFLAGS) -o keymap2cc keymap2cc.cc
 
 keymap.cc: keymap2cc keymap.txt
-	./keymap2cc
+	$(_V_GEN_$(V))./keymap2cc
 
-symlinks:
-	for fn in `cd ../common; /bin/ls`; do ln -s ../common/$$fn; done
+symlinks: .symlinks_done
+.symlinks_done:
+	find ../common -type f -exec ln -s {} . \;
+	@touch $@
+
+$(INTEL_LIB):
 	+sh ./build-intel-lib.sh
-	ln -s IntelRDFPMathLib20U1/TESTS/readtest.c
-	touch symlinks
 
-clean: FORCE
-	rm -f `find . -type l` \
-		skin2cc skin2cc.exe skins.cc \
-		keymap2cc keymap2cc.exe keymap.cc \
-		readtest_lines.cc \
-		gcc111libbid.a \
-		*.o *.d *.i *.ii *.s symlinks core.*
-	rm -rf IntelRDFPMathLib20U1
+CLEAN_FILES = skin2cc skins.cc keymap2cc keymap.cc readtest_lines.cc
+CLEAN_FILES += .symlinks_done *.o *.d 
+CLEANER_FILES = free42bin free42dec
 
-cleaner: FORCE
-	rm -f `find . -type l` \
-		free42bin free42bin.exe free42dec free42dec.exe \
-		skin2cc skin2cc.exe skins.cc \
-		keymap2cc keymap2cc.exe keymap.cc \
-		readtest_lines.cc \
-		gcc111libbid.a \
-		*.o *.d *.i *.ii *.s symlinks core.*
-	rm -rf IntelRDFPMathLib20U1
+clean:
+	find . -type l -delete
+	rm -f $(CLEAN_FILES)
+	rm -rf $(INTEL_DIR)
 
-FORCE:
+cleaner: clean
+	rm -f $(CLEANER_FILES)
+
+.PHONY: clean cleaner
 
 -include $(OBJS:.o=.d)

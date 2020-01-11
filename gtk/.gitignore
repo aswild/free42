@@ -66,4 +66,4 @@ shell_spool.cc
 shell_spool.h
 skin2cc.cc
 skin2cc.conf
-symlinks
+.symlinks_done
