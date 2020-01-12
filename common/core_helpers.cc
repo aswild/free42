@@ -943,22 +943,23 @@ int dimension_array_ref(vartype *matrix, int4 rows, int4 columns) {
             if (new_is_string == NULL)
                 return ERR_INSUFFICIENT_MEMORY;
             int4 i, s, oldsize;
-            phloat *new_data = (phloat *)
-                                    realloc(oldmatrix->array->data,
-                                            size * sizeof(phloat));
+            phloat *new_data = new phloat[size];
             if (new_data == NULL) {
                 free(new_is_string);
                 return ERR_INSUFFICIENT_MEMORY;
             }
             oldsize = oldmatrix->rows * oldmatrix->columns;
             s = oldsize < size ? oldsize : size;
-            for (i = 0; i < s; i++)
+            for (i = 0; i < s; i++) {
                 new_is_string[i] = oldmatrix->array->is_string[i];
+                new_data[i] = oldmatrix->array->data[i];
+            }
             for (i = s; i < size; i++) {
                 new_is_string[i] = 0;
                 new_data[i] = 0;
             }
             free(oldmatrix->array->is_string);
+            delete[] oldmatrix->array->data;
             oldmatrix->array->is_string = new_is_string;
             oldmatrix->array->data = new_data;
             oldmatrix->rows = rows;
@@ -976,7 +977,7 @@ int dimension_array_ref(vartype *matrix, int4 rows, int4 columns) {
             new_array = (realmatrix_data *) malloc(sizeof(realmatrix_data));
             if (new_array == NULL)
                 return ERR_INSUFFICIENT_MEMORY;
-            new_array->data = (phloat *) malloc(size * sizeof(phloat));
+            new_array->data = new phloat[size];
             if (new_array->data == NULL) {
                 free(new_array);
                 return ERR_INSUFFICIENT_MEMORY;
@@ -1012,14 +1013,17 @@ int dimension_array_ref(vartype *matrix, int4 rows, int4 columns) {
             /* Since there are no shared references to this array,
              * I can modify it in place using a realloc().
              */
-            int4 i, oldsize;
-            phloat *new_data = (phloat *)
-                    realloc(oldmatrix->array->data, 2 * size * sizeof(phloat));
+            int4 i, s, oldsize;
+            phloat *new_data = new phloat[2 * size];
             if (new_data == NULL)
                 return ERR_INSUFFICIENT_MEMORY;
             oldsize = oldmatrix->rows * oldmatrix->columns;
-            for (i = 2 * oldsize; i < 2 * size; i++)
+            s = oldsize < size ? oldsize : size;
+            for (i = 0; i < 2 * s; i++)
+                new_data[i] = oldmatrix->array->data[i];
+            for (i = 2 * s; i < 2 * size; i++)
                 new_data[i] = 0;
+            delete[] oldmatrix->array->data;
             oldmatrix->array->data = new_data;
             oldmatrix->rows = rows;
             oldmatrix->columns = columns;

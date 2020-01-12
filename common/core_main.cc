@@ -3458,22 +3458,22 @@ void core_paste(const char *buf) {
         } else {
             // Matrix
             int n = rows * cols;
-            phloat *data = (phloat *) malloc(n * sizeof(phloat));
-            if (data == NULL) {
+            phloat *data = new phloat[n];
+            if (data == nullptr) {
                 display_error(ERR_INSUFFICIENT_MEMORY, 0);
                 redisplay();
                 return;
             }
             char *is_string = (char *) malloc(n);
             if (is_string == NULL) {
-                free(data);
+                delete[] data;
                 display_error(ERR_INSUFFICIENT_MEMORY, 0);
                 redisplay();
                 return;
             }
             char *asciibuf = (char *) malloc(max_cell_size + 1);
             if (asciibuf == NULL) {
-                free(data);
+                delete[] data;
                 free(is_string);
                 display_error(ERR_INSUFFICIENT_MEMORY, 0);
                 redisplay();
@@ -3482,7 +3482,7 @@ void core_paste(const char *buf) {
             char *hpbuf = (char *) malloc(max_cell_size + 5);
             if (hpbuf == NULL) {
                 free(asciibuf);
-                free(data);
+                delete[] data;
                 free(is_string);
                 display_error(ERR_INSUFFICIENT_MEMORY, 0);
                 redisplay();
@@ -3508,6 +3508,7 @@ void core_paste(const char *buf) {
                     char s[6];
                     int slen;
                     int type = parse_scalar(hpbuf, hplen, true, &re, &im, s, &slen);
+                    phloat *newdata = NULL;
                     if (is_string != NULL) {
                         switch (type) {
                             case TYPE_REAL:
@@ -3520,8 +3521,7 @@ void core_paste(const char *buf) {
                                         data[i] = 0;
                                 free(is_string);
                                 is_string = NULL;
-                                phloat *newdata;
-                                newdata = (phloat *) realloc(data, 2 * n * sizeof(phloat));
+                                newdata = new phloat[2 * n];
                                 if (newdata == NULL) {
                                     free(data);
                                     free(asciibuf);
@@ -3530,6 +3530,9 @@ void core_paste(const char *buf) {
                                     redisplay();
                                     return;
                                 }
+                                for (int i = 0; i < n; i++)
+                                    newdata[i] = data[i];
+                                delete[] data;
                                 data = newdata;
                                 for (int i = p - 1; i >= 0; i--) {
                                     data[i * 2] = data[i];
@@ -3600,7 +3603,7 @@ void core_paste(const char *buf) {
                 vartype_realmatrix *rm = (vartype_realmatrix *)
                                 malloc(sizeof(vartype_realmatrix));
                 if (rm == NULL) {
-                    free(data);
+                    delete[] data;
                     free(is_string);
                     display_error(ERR_INSUFFICIENT_MEMORY, 0);
                     redisplay();
@@ -3610,7 +3613,7 @@ void core_paste(const char *buf) {
                                 malloc(sizeof(realmatrix_data));
                 if (rm->array == NULL) {
                     free(rm);
-                    free(data);
+                    delete[] data;
                     free(is_string);
                     display_error(ERR_INSUFFICIENT_MEMORY, 0);
                     redisplay();
@@ -3627,7 +3630,7 @@ void core_paste(const char *buf) {
                 vartype_complexmatrix *cm = (vartype_complexmatrix *)
                                 malloc(sizeof(vartype_complexmatrix));
                 if (cm == NULL) {
-                    free(data);
+                    delete[] data;
                     display_error(ERR_INSUFFICIENT_MEMORY, 0);
                     redisplay();
                     return;
@@ -3636,7 +3639,7 @@ void core_paste(const char *buf) {
                                 malloc(sizeof(complexmatrix_data));
                 if (cm->array == NULL) {
                     free(cm);
-                    free(data);
+                    delete[] data;
                     display_error(ERR_INSUFFICIENT_MEMORY, 0);
                     redisplay();
                     return;
