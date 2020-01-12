@@ -3427,14 +3427,24 @@ void core_paste(const char *buf) {
         } else if (rows == 1 && cols == 1) {
             // Scalar
             int len = (int) strlen(buf);
-            char *asciibuf = (char *) malloc(len + 1);
-            strcpy(asciibuf, buf);
+            char *asciibuf = strdup(buf);
+            if (asciibuf == NULL) {
+                display_error(ERR_INSUFFICIENT_MEMORY, 0);
+                redisplay();
+                return;
+            }
             if (len > 0 && asciibuf[len - 1] == '\n') {
                 asciibuf[--len] = 0;
                 if (len > 0 && asciibuf[len - 1] == '\r')
                     asciibuf[--len] = 0;
             }
             char *hpbuf = (char *) malloc(len + 4);
+            if (hpbuf == NULL) {
+                free(asciibuf);
+                display_error(ERR_INSUFFICIENT_MEMORY, 0);
+                redisplay();
+                return;
+            }
             len = ascii2hp(hpbuf, asciibuf, len);
             free(asciibuf);
             v = parse_base(hpbuf, len);
@@ -3455,6 +3465,7 @@ void core_paste(const char *buf) {
                         break;
                 }
             }
+            free(hpbuf);
         } else {
             // Matrix
             int n = rows * cols;
