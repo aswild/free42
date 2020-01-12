@@ -43,7 +43,7 @@ struct hp_string {
 #ifndef BCD_MATH
 
 
-#define phloat double
+typedef double phloat;
 
 #define p_isinf(x) (isinf(x) ? (x) > 0 ? 1 : -1 : 0)
 #define p_isnan isnan
@@ -63,9 +63,6 @@ double decimal2double(void *data, bool pin_magnitude = false);
 
 
 #else // BCD_MATH
-
-
-#define phloat Phloat
 
 class Phloat {
     public:
@@ -210,6 +207,8 @@ class Phloat {
         Phloat operator--(); // prefix
         Phloat operator--(int); // postfix
 };
+
+typedef Phloat phloat;
 
 // I can't simply overload isinf() and isnan(), because the Linux math.h
 // defines them as macros.
