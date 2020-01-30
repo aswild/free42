@@ -48,43 +48,52 @@
 
 - (void) raised {
     // This gets called just before the view is raised, every time
-    // TODO: separator between built-in and external skins
     [skinNames removeAllObjects];
-    int index = 0;
-    selectedIndex = -1;
-    char buf[1024];
-    NSString *path = [[NSBundle mainBundle] pathForResource:@"builtin_skins" ofType:@"txt"];
-    [path getCString:buf maxLength:1024 encoding:NSUTF8StringEncoding];
-    FILE *builtins = fopen(buf, "r");
-    char *skinName = [CalcView isPortrait] ? state.skinName : state.landscapeSkinName;
-    while (fgets(buf, 1024, builtins) != NULL) {
-        char *context;
-        char *name = strtok_r(buf, " \t\r\n", &context);
-        [skinNames addObject:[NSString stringWithUTF8String:name]];
-        if (strcasecmp(name, skinName) == 0)
-            selectedIndex = index;
-        index++;
-    }
-    fclose(builtins);
     DIR *dir = opendir("skins");
     struct dirent *d;
-    NSUInteger num_builtin_skins = [skinNames count];
     while ((d = readdir(dir)) != NULL) {
         size_t len = strlen(d->d_name);
         if (len < 8 || strcmp(d->d_name + len - 7, ".layout") != 0)
             continue;
         d->d_name[len - 7] = 0;
         NSString *s = [NSString stringWithUTF8String:d->d_name];
-        for (int i = 0; i < num_builtin_skins; i++)
-            if ([s caseInsensitiveCompare:[skinNames objectAtIndex:i]] == 0)
-                goto skip;
         [skinNames addObject:s];
-        if (strcasecmp(d->d_name, skinName) == 0)
-            selectedIndex = index;
-        index++;
-        skip:;
     }
     closedir(dir);
+    [skinNames sortUsingSelector:@selector(caseInsensitiveCompare:)];
+    char buf[1024];
+    NSString *path = [[NSBundle mainBundle] pathForResource:@"builtin_skins" ofType:@"txt"];
+    [path getCString:buf maxLength:1024 encoding:NSUTF8StringEncoding];
+    FILE *builtins = fopen(buf, "r");
+    int builtins_count = 0;
+    while (fgets(buf, 1024, builtins) != NULL) {
+        char *context;
+        char *name = strtok_r(buf, " \t\r\n", &context);
+        [skinNames insertObject:[NSString stringWithUTF8String:name] atIndex:builtins_count++];
+    }
+    fclose(builtins);
+    if (enabled != NULL)
+        delete[] enabled;
+    int total_count = [skinNames count];
+    enabled = new bool[total_count];
+    for (int i = 0; i < builtins_count; i++) {
+        enabled[i] = true;
+        NSString *n1 = [skinNames objectAtIndex:i];
+        for (int j = builtins_count; j < total_count; j++) {
+            NSString *n2 = [skinNames objectAtIndex:j];
+            if ([n1 compare:n2] == NSOrderedSame) {
+                enabled[i] = false;
+                break;
+            }
+        }
+    }
+    for (int i = builtins_count; i < total_count; i++)
+        enabled[i] = true;
+    char *skinName = [CalcView isPortrait] ? state.skinName : state.landscapeSkinName;
+    NSString *name = [NSString stringWithUTF8String:skinName];
+    selectedIndex = (int) ([skinNames count] - 1);
+    while (selectedIndex >= 0 && [[skinNames objectAtIndex:selectedIndex] compare:name] != NSOrderedSame)
+        selectedIndex--;
     [skinTable reloadData];
 }
 
@@ -118,6 +127,8 @@
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
     cell.textLabel.text = s;
     cell.accessoryType = selectedIndex == (int) n ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
+    cell.userInteractionEnabled = enabled[n];
+    [cell.textLabel setEnabled:enabled[n]];
     return cell;
 }
 

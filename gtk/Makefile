@@ -37,16 +37,6 @@ ifeq ($(WERROR),1)
 CFLAGS += -Werror
 endif
 
-###############################################################################
-### Note that there are deprecation warnings while compiling shell_main.cc  ###
-### with GTK+ 3.22 or later. I will deal with those when I switch to a      ###
-### release build environment that has GTK+ 3.22 or later.                  ###
-### My current release build environment is Ubuntu 12.04 with GTK+ 3.4, and ###
-### for the sake of compatibility with existing systems, I am in no hurry   ###
-### to upgrade that environment, even though I do use Ubuntu 18.04 with     ###
-### GTK+ 3.22 for testing.                                                  ###
-###############################################################################
-
 CXXFLAGS = $(CFLAGS) \
 	 -fno-exceptions \
 	 -fno-rtti \
@@ -162,10 +152,10 @@ CLEANER_FILES = free42bin free42dec
 clean:
 	find . -type l -delete
 	rm -f $(CLEAN_FILES)
-	rm -rf $(INTEL_DIR)
 
 cleaner: clean
 	rm -f $(CLEANER_FILES)
+	rm -rf $(INTEL_DIR)
 
 .PHONY: clean cleaner
 

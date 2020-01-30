@@ -190,9 +190,13 @@ int core_menu() {
     return mode_clall || get_front_menu() != NULL;
 }
 
-int core_alpha_menu() {
+bool alpha_active() {
     int *menu = get_front_menu();
     return menu != NULL && *menu >= MENU_ALPHA1 && *menu <= MENU_ALPHA_MISC2;
+}
+
+int core_alpha_menu() {
+    return !mode_getkey && alpha_active();
 }
 
 int core_hex_menu() {
@@ -2224,7 +2228,7 @@ char *core_copy() {
             return NULL;
         } else
             return tb.buf;
-    } else if (core_alpha_menu()) {
+    } else if (alpha_active()) {
         char *buf = (char *) malloc(5 * reg_alpha_length + 1);
         int bufptr = hp2ascii(buf, reg_alpha, reg_alpha_length);
         buf[bufptr] = 0;
@@ -2484,9 +2488,11 @@ static int ascii2hp(char *dst, const char *src, int maxchars) {
             case 0x221a: code =   2; break; // square root sign
             case 0x222b: code =   3; break; // integral sign
             case 0x2592: code =   4; break; // gray rectangle
-            case 0x03a3: code =   5; break; // Uppercase sigma 
+            case 0x03a3:                    // Uppercase sigma
+            case 0x2211: code =   5; break; // n-ary summation sign (i41CX)
             case 0x25b6:                    // right-pointing triangle
-            case 0x25b8: code =   6; break; // small right-pointing triangle
+            case 0x25b8:                    // small right-pointing triangle
+            case 0x25c6: code =   6; break; // black diamond (HP-41 LBL marker)
             case 0x03c0: code =   7; break; // lowercase pi
             case 0x00bf: code =   8; break; // upside-down question mark
             case 0x2264: code =   9; break; // less-than-or-equals sign
@@ -2498,26 +2504,42 @@ static int ascii2hp(char *dst, const char *src, int maxchars) {
             case 0x2190: code =  16; break; // left-pointing arrow
             case 0x00b5:                    // micro sign
             case 0x03bc: code =  17; break; // lowercase mu
-            case 0x00a3: code =  18; break; // pound sterling sign
+            case 0x00a3:                    // pound sterling sign
+            case 0x20a4: code =  18; break; // lira sign (Emu42)
             case 0x00b0: code =  19; break; // degree symbol
-            case 0x00c5: code =  20; break; // uppercase a with ring
-            case 0x00d1: code =  21; break; // uppercase n with tilde
-            case 0x00c4: code =  22; break; // uppercase a with umlaut
+            case 0x00c5:                    // uppercase a with ring
+            case 0x00e5:                    // lowercase a with ring
+            case 0x0226:                    // uppercase a with dot (i41CX)
+            case 0x0227: code =  20; break; // lowercase a with dot (i41CX)
+            case 0x00d1:                    // uppercase n with tilde
+            case 0x00f1: code =  21; break; // lowercase n with tilde
+            case 0x00c4:                    // uppercase a with umlaut
+            case 0x00e4: code =  22; break; // lowercase a with umlaut
             case 0x2220:                    // angle symbol
             case 0x2221: code =  23; break; // measured angle symbol
             case 0x1d07: code =  24; break; // small-caps e
-            case 0x00c6: code =  25; break; // uppercase ae ligature
+            case 0x00c6:                    // uppercase ae ligature
+            case 0x00e6:                    // lowercase ae ligature
+            case 0x1d01: code =  25; break; // small-caps ae ligature (i41CX)
+            case 0x2025:                    // two-dot leader (Emu42)
             case 0x2026: code =  26; break; // ellipsis
-            case 0x00d6: code =  28; break; // uppercase o with umlaut
-            case 0x00dc: code =  29; break; // uppercase u with umlaut
+            case 0x241b: code =  27; break; // ESC symbol
+            case 0x00d6:                    // uppercase o with umlaut
+            case 0x00f6: code =  28; break; // lowercase o with umlaut
+            case 0x00dc:                    // uppercase u with umlaut
+            case 0x00fc: code =  29; break; // lowercase u with umlaut
+            case 0x00b7:                    // middle dot (Emu42)
             case 0x2022: code =  31; break; // bullet
             case 0x201c:                    // left curly double quote
             case 0x201d: code =  34; break; // right curly double quote
             case 0x2018:                    // left curly single quote
             case 0x2019: code =  39; break; // right curly single quote
             case 0x2191: code =  94; break; // upward-pointing arrow
+            case 0x22a2:                    // right tack sign (i41CX)
+            case 0x22a6:                    // assertion sign (Emu42)
             case 0x251c: code = 127; break; // append sign
             case 0x028f: code = 129; break; // small-caps y
+            case 0x240a: code = 138; break; // LF symbol
             // Combining accents: apply them if they fit,
             // otherwise ignore them
             case 0x0303:
@@ -2564,7 +2586,7 @@ static int ascii2hp(char *dst, const char *src, int maxchars) {
                 // ESC is not representable, so we replace it with bullets,
                 // except for combining diacritics, which we skip, and tabs,
                 // which we treat as spaces.
-                if (code >= 0x0300 && code <= 0x03bf) {
+                if (code >= 0x0300 && code <= 0x036f) {
                     state = 0;
                     continue;
                 }
@@ -3324,6 +3346,7 @@ static void paste_programs(const char *buf) {
                 // Number or bust!
                 if (nexttoken(hpbuf, hppos, hpend, &tok_start, &tok_end)) {
                     char c = hpbuf[tok_start];
+                    bool have_exp = false;
                     if (c >= '0' && c <= '9' || c == '-' || c == '.' || c == ','
                             || c == 'E' || c == 'e' || c == 24) {
                         // The first character could plausibly be part of a number;
@@ -3338,9 +3361,40 @@ static void paste_programs(const char *buf) {
                                 c = 'E';
                             else if (c == ',')
                                 c = '.';
+                            if (c == 'E')
+                                have_exp = true;
                             numbuf[i] = c;
                         }
                         numbuf[len] = 0;
+                        if (!have_exp) {
+                            // In HP-41 program listings, there may be a space
+                            // before the 'E' character, e.g. "1 E3". So, if we
+                            // haven't seen an exponent yet, check if the next
+                            // token looks like an exponent, and if so, add it.
+                            if (nexttoken(hpbuf, tok_end, hpend, &tok_start, &tok_end)) {
+                                c = hpbuf[tok_start];
+                                if (c == 'E' || c == 'e' || c == 24) {
+                                    int explen = tok_end - tok_start;
+                                    bool is_exp = true;
+                                    for (int i = 1; i < explen; i++) {
+                                        c = hpbuf[tok_start + i];
+                                        if (!(c == '-' && i == 1 || c >= '0' && c <= '9')) {
+                                            is_exp = false;
+                                            break;
+                                        }
+                                    }
+                                    if (is_exp) {
+                                        if (len + explen > 49)
+                                            explen = 49 - len;
+                                        char *p = numbuf + len;
+                                        *p++ = 'E';
+                                        for (int i = 1; i < explen; i++)
+                                            *p++ = hpbuf[tok_start + i];
+                                        *p = 0;
+                                    }
+                                }
+                            }
+                        }
                         cmd = CMD_NUMBER;
                         arg.val_d = parse_number_line(numbuf);
                         arg.type = ARGTYPE_DOUBLE;
@@ -3370,7 +3424,7 @@ void core_paste(const char *buf) {
 
     if (flags.f.prgm_mode) {
         paste_programs(buf);
-    } else if (core_alpha_menu()) {
+    } else if (alpha_active()) {
         char hpbuf[48];
         int len = ascii2hp(hpbuf, buf, 44);
         int tlen = len + reg_alpha_length;
