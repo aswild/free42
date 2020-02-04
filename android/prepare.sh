@@ -8,6 +8,3 @@ pushd app/src/main/cpp
 ./link-files.sh
 ./build-intel-lib.sh
 popd
-
-sed -e "s/versionCode .*/versionCode $(<version.code)/" \
-    -i app/build.gradle
