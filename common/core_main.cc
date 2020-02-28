@@ -789,11 +789,11 @@ static size_t raw_write(const char *buf, size_t size) {
 
 static void raw_close(const char *mode) {
     if (raw_buf == NULL) {
-	if (ferror(gfile)) {
-	    char msg[50];
-	    sprintf(msg, "An error occurred during program %s.", mode);
+        if (ferror(gfile)) {
+            char msg[50];
+            sprintf(msg, "An error occurred during program %s.", mode);
             shell_message(msg);
-	}
+        }
         fclose(gfile);
     }
 }

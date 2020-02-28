@@ -204,9 +204,6 @@
 
 # /skins/
 
-# /util/
-/util/.DS_Store
-
 # /windows/
 /windows/*.ncb
 /windows/*.suo

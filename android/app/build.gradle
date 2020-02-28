@@ -38,8 +38,8 @@ android {
         buildConfigField "String", "GitRev", "\"${getGitRev()}\""
         minSdkVersion 14
         targetSdkVersion 28
-        versionCode 121
-        versionName "2.5.16"
+        versionCode 122
+        versionName "2.5.17a"
     }
     buildTypes {
         debug {
