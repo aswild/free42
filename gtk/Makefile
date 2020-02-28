@@ -157,6 +157,7 @@ cleaner: clean
 	rm -f $(CLEANER_FILES)
 	rm -rf $(INTEL_DIR)
 
-.PHONY: clean cleaner
+distclean: cleaner
+.PHONY: clean cleaner distclean
 
 -include $(OBJS:.o=.d)
