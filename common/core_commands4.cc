@@ -32,9 +32,9 @@
 /********************************************************/
 
 int docmd_insr(arg_struct *arg) {
-    vartype *m, *newx;
-    vartype_realmatrix *rm;
-    vartype_complexmatrix *cm;
+    vartype *m, *newx = NULL;
+    vartype_realmatrix *rm = NULL;
+    vartype_complexmatrix *cm = NULL;
     int4 rows, columns, i;
     int err, refcount;
     int interactive;
@@ -1034,9 +1034,9 @@ int docmd_x_swap(arg_struct *arg) {
 #define DIR_DOWN  3
 
 static int matedit_move(int direction) {
-    vartype *m, *v;
-    vartype_realmatrix *rm;
-    vartype_complexmatrix *cm;
+    vartype *m, *v = NULL;
+    vartype_realmatrix *rm = NULL;
+    vartype_complexmatrix *cm = NULL;
     int4 rows, columns, new_i, new_j, old_n, new_n;
     int edge_flag = 0;
     int end_flag = 0;

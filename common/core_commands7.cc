@@ -655,7 +655,7 @@ int docmd_time(arg_struct *arg) {
     ((vartype_real *) new_x)->x /= 1000000;
     if (!program_running()) {
         int h = time / 1000000;
-        bool am;
+        bool am = false;
         if (!mode_time_clk24) {
             am = h < 12;
             h = h % 12;

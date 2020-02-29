@@ -559,7 +559,7 @@ int generic_sto(arg_struct *arg, char operation) {
                 }
                 return ERR_NONE;
             } else {
-                vartype *oldval;
+                vartype *oldval = NULL;
                 switch (arg->val.stk) {
                     case 'X': oldval = reg_x; break;
                     case 'Y': oldval = reg_y; break;

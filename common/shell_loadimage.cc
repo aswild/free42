@@ -71,7 +71,7 @@ int shell_loadimage() {
     int size;
 
     int mono;
-    int invert;
+    int invert = 0;
 
     int i, j, type, res;
     unsigned char *ptr;

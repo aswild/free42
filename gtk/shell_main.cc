@@ -499,10 +499,10 @@ static void activate(GtkApplication *theApp, gpointer userData) {
     /***** Open the state file and read the shell settings *****/
     /***********************************************************/
 
-    int4 version;
+    int4 version = 0;
     int init_mode;
     char core_state_file_name[FILENAMELEN];
-    int core_state_file_offset;
+    int core_state_file_offset = 0;
 
     statefile = fopen(statefilename, "r");
     if (statefile != NULL) {
@@ -1445,7 +1445,7 @@ static void states_menu_rename() {
     snprintf(newpath, FILENAMELEN, "%s/%s.f42", free42dirname, newname);
     rename(oldpath, newpath);
     if (strcmp(state_names[selectedStateIndex], state.coreName) == 0)
-        strncpy(state.coreName, newname, FILENAMELEN);
+        snprintf(state.coreName, FILENAMELEN, "%s", newname);
     gtk_dialog_response(GTK_DIALOG(dlg), 4);
 }
 
@@ -2448,7 +2448,7 @@ static gboolean print_key_cb(GtkWidget *w, GdkEventKey *event, gpointer cd) {
 static void shell_keydown() {
     GdkWindow *win = gtk_widget_get_window(calc_widget);
 
-    int repeat, keep_running;
+    int repeat, keep_running = 0;
     if (skey == -1)
         skey = skin_find_skey(ckey);
     skin_invalidate_key(win, skey);

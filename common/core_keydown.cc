@@ -513,7 +513,7 @@ void keydown_number_entry(int shift, int key) {
                 return;
         }
     } else /* KEY_0 .. KEY_9 or hex A-F */ {
-        int digit;
+        int digit = 0;
         char c;
         switch (key) {
             case KEY_0: digit = 0; break;
@@ -1162,7 +1162,7 @@ void keydown_command_entry(int shift, int key) {
                     || key == KEY_3 || key == KEY_4 || key == KEY_5
                     || key == KEY_6 || key == KEY_7 || key == KEY_8
                     || key == KEY_9)) {
-            int digit;
+            int digit = 0;
             switch (key) {
                 case KEY_0: digit = 0; break;
                 case KEY_1: digit = 1; break;
@@ -2282,8 +2282,8 @@ void keydown_normal_mode(int shift, int key) {
                 return;
             } else if (menu == MENU_INTEG_PARAMS) {
                 if (menukey <= 2) {
-                    const char *name;
-                    int length;
+                    const char *name = "";
+                    int length = 0;
                     switch (menukey) {
                         case 0: name = "LLIM"; length = 4; break;
                         case 1: name = "ULIM"; length = 4; break;

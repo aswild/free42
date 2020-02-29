@@ -1746,7 +1746,7 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
     int i;
 
     int byte1, byte2, suffix;
-    int cmd, flag, str_len;
+    int cmd, flag, str_len = 0;
     int done_flag = 0;
     arg_struct arg;
     int assign = 0;
@@ -3099,7 +3099,7 @@ static void paste_programs(const char *buf) {
                 // What we're looking for is '".*"  *TO  *[0-9][0-9]'
                 tok_end = hppos;
                 bool after_to = false;
-                int to_start;
+                int to_start = 0;
                 int keynum;
                 while (true) {
                     if (!nexttoken(hpbuf, tok_end, hpend, &tok_start, &tok_end))

@@ -369,9 +369,9 @@ int docmd_custom(arg_struct *arg) {
 }
 
 int docmd_delr(arg_struct *arg) {
-    vartype *m, *newx;
-    vartype_realmatrix *rm;
-    vartype_complexmatrix *cm;
+    vartype *m, *newx = NULL;
+    vartype_realmatrix *rm = NULL;
+    vartype_complexmatrix *cm = NULL;
     int4 rows, columns, i, j, n, newi;
     int err, refcount;
     int interactive;

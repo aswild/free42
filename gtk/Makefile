@@ -15,6 +15,8 @@
 # along with this program; if not, see http://www.gnu.org/licenses/.
 ###############################################################################
 
+CFLAGS ?= -O2
+
 CFLAGS += -MMD \
 	 -Wall \
 	 -Wno-parentheses \
@@ -22,7 +24,7 @@ CFLAGS += -MMD \
 	 -Wno-sign-compare \
 	 -Wno-narrowing \
 	 -Wno-format-truncation \
-	 -g \
+	 -pipe -g \
 	 $(shell pkg-config --cflags gtk+-3.0) \
 	 -DGDK_DISABLE_DEPRECATION_WARNINGS -DGTK_DISABLE_SINGLE_INCLUDES -DGSEAL_ENABLE \
 	 -DVERSION="\"$(shell cat VERSION)\"" \

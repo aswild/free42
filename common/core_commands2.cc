@@ -701,7 +701,7 @@ static int generic_loop(arg_struct *arg, bool isg) {
             }
         }
         case ARGTYPE_STK: {
-            vartype *v;
+            vartype *v = NULL;
             switch (arg->val.stk) {
                 case 'X': v = reg_x; break;
                 case 'Y': v = reg_y; break;
@@ -709,7 +709,9 @@ static int generic_loop(arg_struct *arg, bool isg) {
                 case 'T': v = reg_t; break;
                 case 'L': v = reg_lastx; break;
             }
-            if (v->type == TYPE_REAL)
+            if (v == NULL)
+                return ERR_INVALID_TYPE;
+            else if (v->type == TYPE_REAL)
                 return generic_loop_helper(&((vartype_real *) v)->x, isg);
             else if (v->type == TYPE_STRING)
                 return ERR_ALPHA_DATA_IS_INVALID;
