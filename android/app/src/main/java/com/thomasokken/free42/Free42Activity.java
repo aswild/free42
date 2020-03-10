@@ -73,13 +73,10 @@ import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v4.content.FileProvider;
-import android.support.v4.view.GestureDetectorCompat;
-import android.support.v4.view.MotionEventCompat;
 import android.text.SpannableString;
 import android.text.method.LinkMovementMethod;
 import android.text.util.Linkify;
 import android.util.Log;
-import android.view.GestureDetector;
 import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
@@ -150,7 +147,6 @@ public class Free42Activity extends Activity {
     private int ckey;
     private boolean timeout3_active;
     private boolean quit_flag;
-    private int currentPointer;
     
     private boolean low_battery;
     private BroadcastReceiver lowBatteryReceiver;
@@ -250,26 +246,6 @@ public class Free42Activity extends Activity {
     ///////////////////////////////////////////////////////
     ///// Top-level code to interface with Android UI /////
     ///////////////////////////////////////////////////////
-
-    private class MyFlingRecognizer extends GestureDetector.SimpleOnGestureListener {
-        @Override
-        public boolean onDown(MotionEvent event) {
-            return true;
-        }
-        @Override
-        public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
-            float diffY = e2.getY() - e1.getY();
-            float diffX = e2.getX() - e1.getX();
-            if (Math.abs(diffX) > Math.abs(diffY) && !dontFlip) {
-                doFlipCalcPrintout();
-                return true;
-            } else
-                return false;
-        }
-    }
-
-    private GestureDetectorCompat gdc;
-    private boolean dontFlip;
     
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -385,23 +361,7 @@ public class Free42Activity extends Activity {
         printScrollView = (ScrollView) printView.findViewById(R.id.printScrollView);
         printScrollView.setBackgroundColor(PRINT_BACKGROUND_COLOR);
         printScrollView.addView(printPaperView);
-
-        gdc = new GestureDetectorCompat(this, new MyFlingRecognizer());
-        calcView.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View view, MotionEvent motionEvent) {
-                gdc.onTouchEvent(motionEvent);
-                return calcView.onTouchEvent(motionEvent);
-            }
-        });
-        printPaperView.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View view, MotionEvent motionEvent) {
-                gdc.onTouchEvent(motionEvent);
-                return printPaperView.onTouchEvent(motionEvent);
-            }
-        });
-
+        
         skin = null;
         if (skinName[orientation].length() == 0 && externalSkinName[orientation].length() > 0) {
             try {
@@ -1169,18 +1129,6 @@ public class Free42Activity extends Activity {
         private int hOffset, vOffset;
         private boolean possibleMenuEvent = false;
 
-        private boolean delayedTouch;
-        private int delayedPointer;
-        private int delayedX, delayedY;
-
-        private Runnable delayedTouchCaller = new Runnable() {
-            public void run() {
-                delayedTouch = false;
-                dontFlip = true;
-                myTouchDown();
-            }
-        };
-
         public CalcView(Context context) {
             super(context);
         }
@@ -1217,68 +1165,75 @@ public class Free42Activity extends Activity {
         @SuppressLint("ClickableViewAccessibility")
         @Override
         public boolean onTouchEvent(MotionEvent e) {
-            int what = MotionEventCompat.getActionMasked(e);
-            if (what != MotionEvent.ACTION_DOWN && what != MotionEvent.ACTION_UP
-                    && what != MotionEvent.ACTION_POINTER_DOWN && what != MotionEvent.ACTION_POINTER_UP
-                    && what != MotionEvent.ACTION_MOVE)
+            int what = e.getAction();
+            if (what != MotionEvent.ACTION_DOWN && what != MotionEvent.ACTION_UP)
                 return true;
-
-            int index = MotionEventCompat.getActionIndex(e);
-            int x = (int) ((MotionEventCompat.getX(e, index) - hOffset) / hScale);
-            int y = (int) ((MotionEventCompat.getY(e, index) - vOffset) / vScale);
-
-            if (what == MotionEvent.ACTION_MOVE) {
-                if (delayedTouch && Math.abs(x - delayedX) > 5) {
-                    mainHandler.removeCallbacks(delayedTouchCaller);
-                    delayedTouch = false;
-                    currentPointer = MotionEvent.INVALID_POINTER_ID;
+            
+            cancelRepeaterAndTimeouts1And2();
+            
+            if (what == MotionEvent.ACTION_DOWN) {
+                int x = (int) ((e.getX() - hOffset) / hScale);
+                int y = (int) ((e.getY() - vOffset) / vScale);
+                IntHolder skeyHolder = new IntHolder();
+                IntHolder ckeyHolder = new IntHolder();
+                skin.find_key(core_menu(), x, y, skeyHolder, ckeyHolder);
+                int skey = skeyHolder.value;
+                ckey = ckeyHolder.value;
+                if (ckey == 0) {
+                    if (skin.in_menu_area(x, y))
+                        this.possibleMenuEvent = true;
+                    return true;
                 }
-                return true;
-            }
-
-            dontFlip = false;
-
-            if (delayedTouch) {
-                mainHandler.removeCallbacks(delayedTouchCaller);
-                delayedTouch = false;
-                myTouchDown();
-            }
-
-            if (what == MotionEvent.ACTION_DOWN || what == MotionEvent.ACTION_POINTER_DOWN) {
-                delayedX = x;
-                delayedY = y;
-                delayedPointer = MotionEventCompat.getPointerId(e, index);
-                delayedTouch = true;
-                mainHandler.postDelayed(delayedTouchCaller, 50);
+                click(this);
+                Object macroObj = skin.find_macro(ckey);
+                if (timeout3_active && (macroObj != null || ckey != 28 /* SHIFT */)) {
+                    cancelTimeout3();
+                    core_timeout3(0);
+                }
+                Rect inval = skin.set_active_key(skey);
+                if (inval != null)
+                    invalidateScaled(inval);
+                boolean running;
+                BooleanHolder enqueued = new BooleanHolder();
+                IntHolder repeat = new IntHolder();
+                if (macroObj == null) {
+                    // Plain ol' key
+                    running = core_keydown(ckey, enqueued, repeat, true);
+                } else if (macroObj instanceof String) {
+                    // Direct-mapped command
+                    String cmd = (String) macroObj;
+                    running = core_keydown_command(cmd, enqueued, repeat, true);
+                } else {
+                    byte[] macro = (byte[]) macroObj;
+                    boolean one_key_macro = macro.length == 1 || (macro.length == 2 && macro[0] == 28);
+                    if (!one_key_macro)
+                        skin.set_display_enabled(false);
+                    for (int i = 0; i < macro.length - 1; i++) {
+                        core_keydown(macro[i] & 255, enqueued, repeat, true);
+                        if (!enqueued.value)
+                            core_keyup();
+                    }
+                    running = core_keydown(macro[macro.length - 1] & 255, enqueued, repeat, true);
+                    if (!one_key_macro)
+                        skin.set_display_enabled(true);
+                }
+                if (running)
+                    startRunner();
+                else {
+                    if (repeat.value != 0)
+                        mainHandler.postDelayed(repeaterCaller, repeat.value == 1 ? 1000 : 500);
+                    else if (!enqueued.value)
+                        mainHandler.postDelayed(timeout1Caller, 250);
+                }
             } else {
                 if (possibleMenuEvent) {
-                    cancelRepeaterAndTimeouts1And2();
                     possibleMenuEvent = false;
+                    int x = (int) ((e.getX() - hOffset) / hScale);
+                    int y = (int) ((e.getY() - vOffset) / vScale);
                     if (skin.in_menu_area(x, y))
                         Free42Activity.this.postMainMenu();
                 }
-                if (currentPointer == MotionEventCompat.getPointerId(e, index)) {
-                    cancelRepeaterAndTimeouts1And2();
-                    ckey = 0;
-                    Rect inval = skin.set_active_key(-1);
-                    if (inval != null)
-                        invalidateScaled(inval);
-                    boolean keep_running = core_keyup();
-                    if (keep_running)
-                        startRunner();
-                }
-            }
-                
-            return true;
-        }
-
-        private void myTouchDown() {
-            int x = delayedX;
-            int y = delayedY;
-
-            cancelRepeaterAndTimeouts1And2();
-
-            if (ckey != 0) {
+                ckey = 0;
                 Rect inval = skin.set_active_key(-1);
                 if (inval != null)
                     invalidateScaled(inval);
@@ -1286,59 +1241,8 @@ public class Free42Activity extends Activity {
                 if (keep_running)
                     startRunner();
             }
-
-            IntHolder skeyHolder = new IntHolder();
-            IntHolder ckeyHolder = new IntHolder();
-            skin.find_key(core_menu(), x, y, skeyHolder, ckeyHolder);
-            int skey = skeyHolder.value;
-            ckey = ckeyHolder.value;
-            if (ckey == 0) {
-                if (skin.in_menu_area(x, y))
-                    this.possibleMenuEvent = true;
-                return;
-            }
-            currentPointer = delayedPointer;
-            click(this);
-            Object macroObj = skin.find_macro(ckey);
-            if (timeout3_active && (macroObj != null || ckey != 28 /* SHIFT */)) {
-                cancelTimeout3();
-                core_timeout3(0);
-            }
-            Rect inval = skin.set_active_key(skey);
-            if (inval != null)
-                invalidateScaled(inval);
-            boolean running;
-            BooleanHolder enqueued = new BooleanHolder();
-            IntHolder repeat = new IntHolder();
-            if (macroObj == null) {
-                // Plain ol' key
-                running = core_keydown(ckey, enqueued, repeat, true);
-            } else if (macroObj instanceof String) {
-                // Direct-mapped command
-                String cmd = (String) macroObj;
-                running = core_keydown_command(cmd, enqueued, repeat, true);
-            } else {
-                byte[] macro = (byte[]) macroObj;
-                boolean one_key_macro = macro.length == 1 || (macro.length == 2 && macro[0] == 28);
-                if (!one_key_macro)
-                    skin.set_display_enabled(false);
-                for (int i = 0; i < macro.length - 1; i++) {
-                    core_keydown(macro[i] & 255, enqueued, repeat, true);
-                    if (!enqueued.value)
-                        core_keyup();
-                }
-                running = core_keydown(macro[macro.length - 1] & 255, enqueued, repeat, true);
-                if (!one_key_macro)
-                    skin.set_display_enabled(true);
-            }
-            if (running)
-                startRunner();
-            else {
-                if (repeat.value != 0)
-                    mainHandler.postDelayed(repeaterCaller, repeat.value == 1 ? 1000 : 500);
-                else if (!enqueued.value)
-                    mainHandler.postDelayed(timeout1Caller, 250);
-            }
+                
+            return true;
         }
         
         public void postInvalidateScaled(int left, int top, int right, int bottom) {
