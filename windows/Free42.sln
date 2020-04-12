@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
-VisualStudioVersion = 16.0.29020.237
+VisualStudioVersion = 16.0.29806.167
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Free42Binary", "Free42Binary.vcxproj", "{DF1D5B05-23C8-432A-94BF-ACC78831C191}"
 EndProject
@@ -38,6 +38,6 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {A2F39EB7-5312-413F-B129-1D1A9CB35929}
+		SolutionGuid = {5E997586-493B-4284-B29F-D8A2C7FE1C13}
 	EndGlobalSection
 EndGlobal

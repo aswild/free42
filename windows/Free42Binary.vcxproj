@@ -38,23 +38,17 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
-    <_ProjectFileVersion>16.0.28916.169</_ProjectFileVersion>
+    <_ProjectFileVersion>16.0.29511.113</_ProjectFileVersion>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <OutDir>$(SolutionDir)$(Configuration)\</OutDir>
     <IntDir>$(Configuration)\</IntDir>
     <LinkIncremental>true</LinkIncremental>
-    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
-    <CodeAnalysisRules />
-    <CodeAnalysisRuleAssemblies />
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <OutDir>$(SolutionDir)$(Configuration)\</OutDir>
     <IntDir>$(Configuration)\</IntDir>
     <LinkIncremental>false</LinkIncremental>
-    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
-    <CodeAnalysisRules />
-    <CodeAnalysisRuleAssemblies />
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -120,7 +114,6 @@
     <ClCompile Include="core_tables.cpp" />
     <ClCompile Include="core_variables.cpp" />
     <ClCompile Include="keymap.cpp" />
-    <ClCompile Include="mathfudge.c" />
     <ClCompile Include="msg2string.cpp" />
     <ClCompile Include="readtest.c">
       <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">-I IntelRDFPMathLib20U1/TESTS %(AdditionalOptions)</AdditionalOptions>
@@ -163,8 +156,9 @@
     <ClInclude Include="free42.h" />
     <ClInclude Include="msg2string.h" />
     <ClInclude Include="resource.h" />
-    <ClInclude Include="shell_main.h" />
+    <ClInclude Include="shell.h" />
     <ClInclude Include="shell_loadimage.h" />
+    <ClInclude Include="shell_main.h" />
     <ClInclude Include="shell_skin.h" />
     <ClInclude Include="shell_spool.h" />
     <ClInclude Include="StatesWindow.h" />

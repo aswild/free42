@@ -1,3 +1,10 @@
+2020-04-11: release 2.5.18
+
+* Fixed pasting of 1/X and 10^X without line number.
+* Android version: Updated HEADING implementation so it works on phones that no
+  longer provide the old compass API.
+* iOS version: Fixed double-import, when loading Shared files.
+
 2020-02-27: release 2.5.17b (Android only)
 
 * Removing the n-key rollover and swipe-to-switch that were introduced in the
