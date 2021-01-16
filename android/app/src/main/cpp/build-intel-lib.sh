@@ -1,8 +1,27 @@
 #!/bin/sh
 
-set -xe
+set -eo pipefail
 
-NDK="${ANDROID_NDK_ROOT:-/opt/android-ndk}"
+# figure out NDK version and path. build.gradle requests a specific version and we need to compile with
+# that same version here outside of gradle. Mixing NDK versions in the same build could be bad.
+NDK_VERSION="$(sed -nr 's/^[[:space:]]*ndkVersion[[:space:]]+"(.*)"[[:space:]]*$/\1/p' ../../../build.gradle)"
+if [ -n "$NDK_VERSION" ]; then
+    NDK="$ANDROID_HOME/ndk/$NDK_VERSION"
+else
+    # if no ndkVersion is set in build.gradle, then hope that ANDROID_NDK_ROOT is set to something sane
+    NDK="${ANDROID_NDK_ROOT:-/opt/android-ndk}"
+fi
+
+# make sure we actually found an NDK
+if [ -d "$NDK" ]; then
+    echo "Found NDK path '$NDK' for version '$NDK_VERSION'"
+else
+    echo "ERROR: NDK version '$NDK_VERSION' not found in path '$NDK'"
+    exit 1
+fi
+
+set -x
+
 export PATH="$PWD/bin:$NDK/prebuilt/linux-x86_64/bin:$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
 BUILT=0
 
