@@ -20,11 +20,17 @@
 /android/.idea/workspace.xml
 /android/.idea/navEditor.xml
 /android/.idea/assetWizardSettings.xml
+/android/.idea/compiler.xml
+/android/.idea/jarRepositories.xml
+
+# /android/.idea/modules/app/
+/android/.idea/modules/app/android.app.iml
 
 # /android/app/
 /android/app/*.iml
 /android/app/build
 /android/app/.externalNativeBuild
+/android/app/.cxx
 
 # /android/app/src/main/cpp/
 /android/app/src/main/cpp/bid_conf.h
@@ -187,7 +193,7 @@
 /mac/build
 /mac/.DS_Store
 /mac/IntelRDFPMathLib20U1
-/mac/gcc111libbid.a
+/mac/gcc111libbid*.a
 /mac/readtest_lines.cc
 
 # /mac/Free42.xcodeproj/

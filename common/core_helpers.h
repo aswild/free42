@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -68,6 +68,7 @@ void print_right(const char *left, int leftlen,
 void print_wide(const char *left, int leftlen,
                 const char *right, int rightlen);
 void print_command(int cmd, const arg_struct *arg);
+void print_trace();
 
 void generic_r2p(phloat re, phloat im, phloat *r, phloat *phi);
 void generic_p2r(phloat r, phloat phi, phloat *re, phloat *im);

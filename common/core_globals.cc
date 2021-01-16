@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -43,16 +43,13 @@ FILE *gfile = NULL;
 error_spec errors[] = {
     { /* NONE */                   NULL,                       0 },
     { /* ALPHA_DATA_IS_INVALID */  "Alpha Data Is Invalid",   21 },
-    { /* INSUFFICIENT_MEMORY */    "Insufficient Memory",     19 },
-    { /* NOT_YET_IMPLEMENTED */    "Not Yet Implemented",     19 },
     { /* OUT_OF_RANGE */           "Out of Range",            12 },
     { /* DIVIDE_BY_0 */            "Divide by 0",             11 },
     { /* INVALID_TYPE */           "Invalid Type",            12 },
     { /* INVALID_DATA */           "Invalid Data",            12 },
+    { /* NONEXISTENT */            "Nonexistent",             11 },
     { /* DIMENSION_ERROR */        "Dimension Error",         15 },
     { /* SIZE_ERROR */             "Size Error",              10 },
-    { /* INTERNAL_ERROR */         "Internal Error",          14 },
-    { /* NONEXISTENT */            "Nonexistent",             11 },
     { /* RESTRICTED_OPERATION */   "Restricted Operation",    20 },
     { /* YES */                    "Yes",                      3 },
     { /* NO */                     "No",                       2 },
@@ -73,8 +70,13 @@ error_spec errors[] = {
     { /* PRINTING_IS_DISABLED */   "Printing Is Disabled",    20 },
     { /* INTERRUPTIBLE */          NULL,                       0 },
     { /* NO_VARIABLES */           "No Variables",            12 },
+    { /* INSUFFICIENT_MEMORY */    "Insufficient Memory",     19 },
+    { /* NOT_YET_IMPLEMENTED */    "Not Yet Implemented",     19 },
+    { /* INTERNAL_ERROR */         "Internal Error",          14 },
     { /* SUSPICIOUS_OFF */         "Suspicious OFF",          14 },
-    { /* RTN_STACK_FULL */         "RTN Stack Full",          14 }
+    { /* RTN_STACK_FULL */         "RTN Stack Full",          14 },
+    { /* NUMBER_TOO_LARGE */       "Number Too Large",        16 },
+    { /* NUMBER_TOO_SMALL */       "Number Too Small",        16 }
 };
 
 
@@ -555,6 +557,9 @@ char reg_alpha[44];
 
 /* Flags */
 flags_struct flags;
+const char *virtual_flags =
+    /* 00-49 */ "00000000000000000000000000010000000000000000111111"
+    /* 50-99 */ "00010000000000010000000001000000000000000000000000";
 
 /* Variables */
 int vars_capacity = 0;
@@ -596,6 +601,7 @@ int mode_alphamenu;
 int mode_commandmenu;
 bool mode_running;
 bool mode_getkey;
+bool mode_getkey1;
 bool mode_pause = false;
 bool mode_disable_stack_lift; /* transient */
 bool mode_varmenu;
@@ -742,8 +748,11 @@ bool no_keystrokes_yet;
  * Version 29: 2.5.7  SOLVE: Tracking second best guess in order to be able to
  *                    report it accurately in Y, and to provide additional data
  *                    points for distinguishing between zeroes and poles.
+ * Version 30: 2.5.23 Private local variables
+ * Version 31: 2.5.24 Merge RTN and FRT functionality
+ * Version 32: 2.5.24 Replace FUNC[012] with FUNC [0-4][0-4]
  */
-#define FREE42_VERSION 29
+#define FREE42_VERSION 32
 
 
 /*******************/
@@ -786,6 +795,7 @@ static int rtn_stack_capacity = 0;
 static rtn_stack_entry *rtn_stack = NULL;
 static int rtn_level = 0;
 static bool rtn_level_0_has_matrix_entry;
+static bool rtn_level_0_has_func_state;
 static int rtn_stop_level = -1;
 static bool rtn_solve_active = false;
 static bool rtn_integ_active = false;
@@ -1467,8 +1477,7 @@ static bool persist_globals() {
         if (!write_char(vars[i].length)
             || fwrite(vars[i].name, 1, vars[i].length, gfile) != vars[i].length
             || !write_int2(vars[i].level)
-            || !write_bool(vars[i].hidden)
-            || !write_bool(vars[i].hiding)
+            || !write_int2(vars[i].flags)
             || !persist_vartype(vars[i].value))
             goto done;
     }
@@ -1492,6 +1501,8 @@ static bool persist_globals() {
         goto done;
     if (!write_bool(rtn_level_0_has_matrix_entry))
         goto done;
+    if (!write_bool(rtn_level_0_has_func_state))
+        goto done;
     int saved_prgm;
     saved_prgm = current_prgm;
     for (i = rtn_sp - 1; i >= 0; i--) {
@@ -1501,9 +1512,9 @@ static bool persist_globals() {
         } else {
             int4 p = rtn_stack[i].prgm;
             matrix_entry_follows = p < 0;
-            p = p & 0x7fffffff;
-            if ((p & 0x40000000) != 0)
-                p |= 0x80000000;
+            p = p & 0x3fffffff;
+            if ((p & 0x20000000) != 0)
+                p |= 0xc0000000;
             current_prgm = p;
             int4 l = rtn_stack[i].pc;
             if (current_prgm >= 0)
@@ -1655,8 +1666,7 @@ static bool unpersist_globals(int4 ver) {
         if (ver < 24)
             for (i = 0; i < vars_count; i++) {
                 vars[i].level = -1;
-                vars[i].hidden = false;
-                vars[i].hiding = false;
+                vars[i].flags = 0;
             }
         for (i = 0; i < vars_count; i++)
             if (!unpersist_vartype(&vars[i].value, padded)) {
@@ -1748,12 +1758,24 @@ static bool unpersist_globals(int4 ver) {
             goto done;
         }
         for (i = 0; i < vars_count; i++) {
-            if (!read_char((char *) &vars[i].length)
-                || fread(vars[i].name, 1, vars[i].length, gfile) != vars[i].length
-                || !read_int2(&vars[i].level)
-                || !read_bool(&vars[i].hidden)
-                || !read_bool(&vars[i].hiding)
-                || !unpersist_vartype(&vars[i].value, false)) {
+            if (!read_char((char *) &vars[i].length))
+                goto vars_fail;
+            if (fread(vars[i].name, 1, vars[i].length, gfile) != vars[i].length)
+                goto vars_fail;
+            if (!read_int2(&vars[i].level))
+                goto vars_fail;
+            if (ver < 30) {
+                bool hidden, hiding;
+                if (!read_bool(&hidden) || !read_bool(&hiding))
+                    goto vars_fail;
+                vars[i].flags = (hidden ? VAR_HIDDEN : 0)
+                                | (hiding ? VAR_HIDING : 0);
+            } else {
+                if (!read_int2(&vars[i].flags))
+                    goto vars_fail;
+            }
+            if (!unpersist_vartype(&vars[i].value, false)) {
+                vars_fail:
                 for (int j = 0; j < i; j++)
                     free_vartype(vars[j].value);
                 free(vars);
@@ -1805,6 +1827,12 @@ static bool unpersist_globals(int4 ver) {
             goto done;
         if (!read_bool(&rtn_level_0_has_matrix_entry))
             goto done;
+        if (ver >= 31) {
+            if (!read_bool(&rtn_level_0_has_func_state))
+                goto done;
+        } else {
+            rtn_level_0_has_func_state = false;
+        }
         rtn_stack_capacity = 16;
         while (rtn_sp > rtn_stack_capacity)
             rtn_stack_capacity <<= 1;
@@ -1820,9 +1848,9 @@ static bool unpersist_globals(int4 ver) {
                     if (!read_int4(&tprgm) || !read_int4(&l))
                         goto done;
                     matrix_entry_follows = tprgm < 0;
-                    p = tprgm & 0x7fffffff;
-                    if ((p & 0x40000000) != 0)
-                        p |= 0x80000000;
+                    p = tprgm & 0x3fffffff;
+                    if ((p & 0x20000000) != 0)
+                        p |= 0xc0000000;
                     current_prgm = p;
                     if (p >= 0)
                         l = line2pc(l);
@@ -1852,6 +1880,7 @@ static bool unpersist_globals(int4 ver) {
     } else {
         rtn_level = rtn_sp;
         rtn_level_0_has_matrix_entry = false;
+        rtn_level_0_has_func_state = false;
         rtn_stack_capacity = 16;
         rtn_stack = (rtn_stack_entry *) realloc(rtn_stack, rtn_stack_capacity * sizeof(rtn_stack_entry));
         rtn_solve_active = false;
@@ -1860,7 +1889,7 @@ static bool unpersist_globals(int4 ver) {
             int prgm;
             if (fread(&prgm, 1, sizeof(int), gfile) != sizeof(int))
                 goto done;
-            rtn_stack[i].prgm = prgm & 0x7fffffff;
+            rtn_stack[i].prgm = prgm & 0x3fffffff;
             if (i < rtn_sp)
                 if (prgm == -2)
                     rtn_solve_active = true;
@@ -1991,7 +2020,7 @@ void clear_prgm_lines(int4 count) {
     while (count > 0) {
         int command;
         arg_struct arg;
-        get_next_command(&pc, &command, &arg, 0);
+        get_next_command(&pc, &command, &arg, 0, NULL);
         if (command == CMD_END) {
             pc -= 2;
             break;
@@ -2033,7 +2062,7 @@ void goto_dot_dot(bool force_new) {
         /* Check if last program is empty */
         pc = 0;
         current_prgm = prgms_count - 1;
-        get_next_command(&pc, &command, &arg, 0);
+        get_next_command(&pc, &command, &arg, 0, NULL);
         if (command == CMD_END) {
             pc = -1;
             return;
@@ -2058,7 +2087,7 @@ void goto_dot_dot(bool force_new) {
     prgms[current_prgm].text = NULL;
     command = CMD_END;
     arg.type = ARGTYPE_NONE;
-    store_command(0, command, &arg);
+    store_command(0, command, &arg, NULL);
     pc = -1;
 }
 
@@ -2081,7 +2110,7 @@ int label_has_mvar(int lblindex) {
     current_prgm = labels[lblindex].prgm;
     pc = labels[lblindex].pc;
     pc += get_command_length(current_prgm, pc);
-    get_next_command(&pc, &command, &arg, 0);
+    get_next_command(&pc, &command, &arg, 0, NULL);
     current_prgm = saved_prgm;
     return command == CMD_MVAR;
 }
@@ -2091,7 +2120,8 @@ int get_command_length(int prgm_index, int4 pc) {
     int4 pc2 = pc;
     int command = prgm->text[pc2++];
     int argtype = prgm->text[pc2++];
-    command |= (argtype & 240) << 4;
+    command |= (argtype & 112) << 4;
+    bool have_orig_num = command == CMD_NUMBER && (argtype & 128) != 0;
     argtype &= 15;
 
     if ((command == CMD_GTO || command == CMD_XEQ)
@@ -2120,10 +2150,12 @@ int get_command_length(int prgm_index, int4 pc) {
             pc2 += sizeof(phloat);
             break;
     }
+    if (have_orig_num)
+        while (prgm->text[pc2++]);
     return pc2 - pc;
 }
 
-void get_next_command(int4 *pc, int *command, arg_struct *arg, int find_target){
+void get_next_command(int4 *pc, int *command, arg_struct *arg, int find_target, const char **num_str) {
     prgm_struct *prgm = prgms + current_prgm;
     int i;
     int4 target_pc;
@@ -2131,7 +2163,8 @@ void get_next_command(int4 *pc, int *command, arg_struct *arg, int find_target){
 
     *command = prgm->text[(*pc)++];
     arg->type = prgm->text[(*pc)++];
-    *command |= (arg->type & 240) << 4;
+    *command |= (arg->type & 112) << 4;
+    bool have_orig_num = *command == CMD_NUMBER && (arg->type & 128) != 0;
     arg->type &= 15;
 
     if ((*command == CMD_GTO || *command == CMD_XEQ)
@@ -2195,10 +2228,33 @@ void get_next_command(int4 *pc, int *command, arg_struct *arg, int find_target){
         }
     }
 
-    if (*command == CMD_NUMBER && arg->type != ARGTYPE_DOUBLE) {
-        /* argtype is ARGTYPE_NUM; convert to phloat */
-        arg->val_d = arg->val.num;
-        arg->type = ARGTYPE_DOUBLE;
+    if (*command == CMD_NUMBER) {
+        if (have_orig_num) {
+            char *p = (char *) &prgm->text[*pc];
+            if (num_str != NULL)
+                *num_str = p;
+            /* Make sure the decimal stored in the program matches
+             * the current setting of flag 28.
+             */
+            char wrong_dot = flags.f.decimal_point ? ',' : '.';
+            char right_dot = flags.f.decimal_point ? '.' : ',';
+            int numlen = 1;
+            while (*p != 0) {
+                if (*p == wrong_dot)
+                    *p = right_dot;
+                p++;
+                numlen++;
+            }
+            *pc += numlen;
+        } else {
+            if (num_str != NULL)
+                *num_str = NULL;
+        }
+        if (arg->type != ARGTYPE_DOUBLE) {
+            /* argtype is ARGTYPE_NUM; convert to phloat */
+            arg->val_d = arg->val.num;
+            arg->type = ARGTYPE_DOUBLE;
+        }
     }
     
     if (find_target) {
@@ -2227,7 +2283,7 @@ void rebuild_label_table() {
         while (pc < prgm->size) {
             int command = prgm->text[pc];
             int argtype = prgm->text[pc + 1];
-            command |= (argtype & 240) << 4;
+            command |= (argtype & 112) << 4;
             argtype &= 15;
 
             if (command == CMD_END
@@ -2280,7 +2336,7 @@ static void invalidate_lclbls(int prgm_index, bool force) {
         while (pc2 < prgm->size) {
             int command = prgm->text[pc2];
             int argtype = prgm->text[pc2 + 1];
-            command |= (argtype & 240) << 4;
+            command |= (argtype & 112) << 4;
             argtype &= 15;
             if ((command == CMD_GTO || command == CMD_XEQ)
                     && (argtype == ARGTYPE_NUM || argtype == ARGTYPE_STK
@@ -2306,7 +2362,7 @@ void delete_command(int4 pc) {
     int length = get_command_length(current_prgm, pc);
     int4 pos;
 
-    command |= (argtype & 240) << 4;
+    command |= (argtype & 112) << 4;
     argtype &= 15;
 
     if (command == CMD_END) {
@@ -2353,7 +2409,7 @@ void delete_command(int4 pc) {
     draw_varmenu();
 }
 
-void store_command(int4 pc, int command, arg_struct *arg) {
+void store_command(int4 pc, int command, arg_struct *arg, const char *num_str) {
     unsigned char buf[100];
     int bufptr = 0;
     int i;
@@ -2368,6 +2424,44 @@ void store_command(int4 pc, int command, arg_struct *arg) {
         arg->type = ARGTYPE_NEG_NUM;
         arg->val.num = -arg->val.num;
     } else if (command == CMD_NUMBER) {
+        /* Store the string representation of the number, unless it matches
+         * the canonical representation, or unless the number is zero.
+         */
+        if (num_str != NULL) {
+            if (arg->val_d == 0) {
+                num_str = NULL;
+            } else {
+                const char *ap = phloat2program(arg->val_d);
+                const char *bp = num_str;
+                bool equal = true;
+                while (1) {
+                    char a = *ap++;
+                    char b = *bp++;
+                    if (a == 0) {
+                        if (b != 0)
+                            equal = false;
+                        break;
+                    } else if (b == 0) {
+                        goto notequal;
+                    }
+                    if (a != b) {
+                        if (a == 24) {
+                            if (b != 'E' && b != 'e')
+                                goto notequal;
+                        } else if (a == '.' || a == ',') {
+                            if (b != '.' && b != ',')
+                                goto notequal;
+                        } else {
+                            notequal:
+                            equal = false;
+                            break;
+                        }
+                    }
+                }
+                if (equal)
+                    num_str = NULL;
+            }
+        }
         /* arg.type is always ARGTYPE_DOUBLE for CMD_NUMBER, but for storage
          * efficiency, we handle integers specially and store them as
          * ARGTYPE_NUM or ARGTYPE_NEG_NUM instead.
@@ -2391,7 +2485,7 @@ void store_command(int4 pc, int command, arg_struct *arg) {
     }
 
     buf[bufptr++] = command & 255;
-    buf[bufptr++] = arg->type | ((command & ~255) >> 4);
+    buf[bufptr++] = arg->type | ((command & 0x700) >> 4) | (command != CMD_NUMBER || num_str == NULL ? 0 : 128);
 
     /* If the program is nonempty, it must already contain an END,
      * since that's the very first thing that gets stored in any new
@@ -2490,6 +2584,21 @@ void store_command(int4 pc, int command, arg_struct *arg) {
         }
     }
 
+    if (command == CMD_NUMBER && num_str != NULL) {
+        const char *p = num_str;
+        char c;
+        const char wrong_dot = flags.f.decimal_point ? ',' : '.';
+        const char right_dot = flags.f.decimal_point ? '.' : ',';
+        while ((c = *p++) != 0) {
+            if (c == wrong_dot)
+                c = right_dot;
+            else if (c == 'E' || c == 'e')
+                c = 24;
+            buf[bufptr++] = c;
+        }
+        buf[bufptr++] = 0;
+    }
+
     if (bufptr + prgm->size > prgm->capacity) {
         unsigned char *newtext;
         prgm->capacity += 512;
@@ -2523,12 +2632,12 @@ void store_command(int4 pc, int command, arg_struct *arg) {
         draw_varmenu();
 }
 
-void store_command_after(int4 *pc, int command, arg_struct *arg) {
+void store_command_after(int4 *pc, int command, arg_struct *arg, const char *num_str) {
     if (*pc == -1)
         *pc = 0;
     else if (prgms[current_prgm].text[*pc] != CMD_END)
         *pc += get_command_length(current_prgm, *pc);
-    store_command(*pc, command, arg);
+    store_command(*pc, command, arg, num_str);
 }
 
 static int pc_line_convert(int4 loc, int loc_is_pc) {
@@ -2585,7 +2694,7 @@ int4 find_local_label(const arg_struct *arg) {
         }
         command = prgm->text[search_pc];
         argtype = prgm->text[search_pc + 1];
-        command |= (argtype & 240) << 4;
+        command |= (argtype & 112) << 4;
         argtype &= 15;
         if (command == CMD_LBL && (argtype == arg->type
                                 || argtype == ARGTYPE_STK)) {
@@ -2630,7 +2739,7 @@ int4 find_local_label(const arg_struct *arg) {
     return -2;
 }
 
-int find_global_label(const arg_struct *arg, int *prgm, int4 *pc) {
+static int find_global_label_2(const arg_struct *arg, int *prgm, int4 *pc, int *idx) {
     int i;
     const char *name = arg->val.text;
     int namelen = arg->length;
@@ -2643,12 +2752,24 @@ int find_global_label(const arg_struct *arg, int *prgm, int4 *pc) {
         for (j = 0; j < namelen; j++)
             if (labelname[j] != name[j])
                 goto nomatch;
-        *prgm = labels[i].prgm;
-        *pc = labels[i].pc;
+        if (prgm != NULL)
+            *prgm = labels[i].prgm;
+        if (pc != NULL)
+            *pc = labels[i].pc;
+        if (idx != NULL)
+            *idx = i;
         return 1;
         nomatch:;
     }
     return 0;
+}
+
+int find_global_label(const arg_struct *arg, int *prgm, int4 *pc) {
+    return find_global_label_2(arg, prgm, pc, NULL);
+}
+
+int find_global_label_index(const arg_struct *arg, int *idx) {
+    return find_global_label_2(arg, NULL, NULL, idx);
 }
 
 int push_rtn_addr(int prgm, int4 pc) {
@@ -2662,7 +2783,7 @@ int push_rtn_addr(int prgm, int4 pc) {
         rtn_stack_capacity = new_rtn_stack_capacity;
         rtn_stack = new_rtn_stack;
     }
-    rtn_stack[rtn_sp].prgm = prgm & 0x7fffffff;
+    rtn_stack[rtn_sp].prgm = prgm & 0x3fffffff;
     rtn_stack[rtn_sp].pc = pc;
     rtn_sp++;
     rtn_level++;
@@ -2731,6 +2852,108 @@ int push_indexed_matrix(const char *name, int len) {
     return ERR_NONE;
 }
 
+int push_func_state(int n) {
+    if (!program_running())
+        return ERR_RESTRICTED_OPERATION;
+    if (!ensure_var_space(7))
+        return ERR_INSUFFICIENT_MEMORY;
+    vartype *v = new_string(flags.f.error_ignore ? "1" : "0", 1);
+    if (v == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    store_private_var("F25", 3, v);
+    v = dup_vartype(reg_x);
+    if (v == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    store_private_var("X", 1, v);
+    v = dup_vartype(reg_y);
+    if (v == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    store_private_var("Y", 1, v);
+    v = dup_vartype(reg_z);
+    if (v == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    store_private_var("Z", 1, v);
+    v = dup_vartype(reg_t);
+    if (v == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    store_private_var("T", 1, v);
+    v = dup_vartype(reg_lastx);
+    if (v == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    store_private_var("L", 1, v);
+    v = new_real(n + 100);
+    if (v == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    store_private_var("N", 1, v);
+    flags.f.error_ignore = 0;
+
+    if (rtn_level == 0)
+        rtn_level_0_has_func_state = true;
+    else
+        rtn_stack[rtn_sp - 1].prgm |= 0x40000000;
+    return ERR_NONE;
+}
+
+int pop_func_state(bool error) {
+    if (rtn_level == 0) {
+        if (!rtn_level_0_has_func_state)
+            return ERR_NONE;
+        rtn_level_0_has_func_state = false;
+    } else {
+        if ((rtn_stack[rtn_sp - 1].prgm & 0x40000000) == 0)
+            return ERR_NONE;
+        rtn_stack[rtn_sp - 1].prgm &= 0xbfffffff;
+    }
+
+    vartype *vn = recall_private_var("N", 1);
+    int n = to_int(((vartype_real *) vn)->x);
+    // N is 0, 1, or 2 if the state was pushed by the old FNC[012]
+    // or FUNC[012] functions, or 1[0-4][0-4] is it was pushed by the
+    // new FUNC function. The old values have to be translated to
+    // 00, 11, and 21, respectively, while the new is translated
+    // to (n - 100). The result is a two-digit number, with each
+    // digit between 0 and 4, and the first digit indicating the
+    // number of inputs, and the second digit indicating the number
+    // of outputs.
+    if (n == 0)
+        n = 0;
+    else if (n == 1)
+        n = 11;
+    else if (n == 2)
+        n = 21;
+    else
+        n -= 100;
+    if (error)
+        n = 0;
+    int in = n / 10;
+    int out = n % 10;
+
+    free_vartype(reg_lastx);
+    reg_lastx = recall_and_purge_private_var(in == 0 ? "L" : "X", 1);
+
+    vartype **reg[4] = { &reg_x, &reg_y, &reg_z, &reg_t };
+    const char *name[4] = { "X", "Y", "Z", "T" };
+
+    for (int d = out; d < 4; d++) {
+        int s = d + in - out;
+        vartype *v;
+        if (s < 4)
+            v = recall_and_purge_private_var(name[s], 1);
+        else if (d > out)
+            v = dup_vartype(*reg[d - 1]);
+        else
+            v = recall_and_purge_private_var("T", 1);
+        if (v == NULL)
+            return ERR_INSUFFICIENT_MEMORY;
+        free_vartype(*reg[d]);
+        *reg[d] = v;
+    }
+
+    vartype_string *f25 = (vartype_string *) recall_private_var("F25", 3);
+    flags.f.error_ignore = f25->length == 1 && f25->text[0] == '1';
+    return ERR_NONE;
+}
+
 void step_out() {
     if (rtn_sp > 0)
         rtn_stop_level = rtn_level - 1;
@@ -2763,10 +2986,10 @@ static void remove_locals() {
             }
             matedit_mode = 0;
         }
-        if (vars[i].hiding) {
+        if ((vars[i].flags & VAR_HIDING) != 0) {
             for (int j = i - 1; j >= 0; j--)
-                if (vars[j].hidden && string_equals(vars[i].name, vars[i].length, vars[j].name, vars[j].length)) {
-                    vars[j].hidden = false;
+                if ((vars[j].flags & VAR_HIDDEN) != 0 && string_equals(vars[i].name, vars[i].length, vars[j].name, vars[j].length)) {
+                    vars[j].flags &= ~VAR_HIDDEN;
                     break;
                 }
         }
@@ -2787,12 +3010,67 @@ static void remove_locals() {
     update_catalog();
 }
 
+int rtn(int err) {
+    // NOTE: 'err' should be one of ERR_NONE, ERR_YES, or ERR_NO.
+    // For any actual *error*, i.e. anything that should actually
+    // stop program execution, use rtn_with_error() instead.
+    int newprgm;
+    int4 newpc;
+    bool stop;
+    pop_rtn_addr(&newprgm, &newpc, &stop);
+    if (newprgm == -3) {
+        return return_to_integ(stop);
+    } else if (newprgm == -2) {
+        return return_to_solve(0, stop);
+    } else if (newprgm == -1) {
+        if (pc >= prgms[current_prgm].size)
+            /* It's an END; go to line 0 */
+            pc = -1;
+        if (err != ERR_NONE)
+            display_error(err, 1);
+        return ERR_STOP;
+    } else {
+        current_prgm = newprgm;
+        pc = newpc;
+        if (err == ERR_NO) {
+            int command;
+            arg_struct arg;
+            get_next_command(&pc, &command, &arg, 0, NULL);
+            if (command == CMD_END)
+                pc = newpc;
+        }
+        return stop ? ERR_STOP : ERR_NONE;
+    }
+}
+
+int rtn_with_error(int err) {
+    bool stop;
+    if (solve_active() && (err == ERR_OUT_OF_RANGE
+                            || err == ERR_DIVIDE_BY_0
+                            || err == ERR_INVALID_DATA
+                            || err == ERR_STAT_MATH_ERROR)) {
+        stop = unwind_stack_until_solve();
+        return return_to_solve(1, stop);
+    }
+    int newprgm;
+    int4 newpc;
+    pop_rtn_addr(&newprgm, &newpc, &stop);
+    if (newprgm >= 0) {
+        // Stop on the calling XEQ, not the RTNERR
+        current_prgm = newprgm;
+        int line = pc2line(newpc);
+        set_old_pc(line2pc(line - 1));
+    }
+    return err;
+}
+
 void pop_rtn_addr(int *prgm, int4 *pc, bool *stop) {
     remove_locals();
     if (rtn_level == 0) {
         *prgm = -1;
         *pc = -1;
         rtn_stop_level = -1;
+        rtn_level_0_has_func_state = false;
         if (rtn_level_0_has_matrix_entry) {
             rtn_level_0_has_matrix_entry = false;
             restore_indexed_matrix:
@@ -2809,10 +3087,10 @@ void pop_rtn_addr(int *prgm, int4 *pc, bool *stop) {
         rtn_sp--;
         rtn_level--;
         int4 tprgm = rtn_stack[rtn_sp].prgm;
-        *prgm = tprgm & 0x7fffffff;
+        *prgm = tprgm & 0x3fffffff;
         // Fix sign, or -2 and -3 won't work!
-        if ((tprgm & 0x40000000) != 0)
-            *prgm |= 0x80000000;
+        if ((tprgm & 0x20000000) != 0)
+            *prgm |= 0xc0000000;
         *pc = rtn_stack[rtn_sp].pc;
         if (rtn_stop_level >= rtn_level) {
             *stop = true;
@@ -3860,7 +4138,7 @@ static bool convert_programs(bool *clear_stack) {
         for (i = 0; i < rtn_level; i++) {
             sp--;
             int4 prgm = rtn_stack[sp].prgm;
-            mod_prgm[mod_count] = prgm & 0x7fffffff;
+            mod_prgm[mod_count] = prgm & 0x3fffffff;
             mod_pc[mod_count] = rtn_stack[sp].pc;
             mod_sp[mod_count] = sp;
             if ((prgm & 0x80000000) != 0)
@@ -3922,6 +4200,9 @@ static bool convert_programs(bool *clear_stack) {
             int4 prevpc = pc;
             int command = prgm->text[pc++];
             int argtype = prgm->text[pc++];
+            // Note: not handling original number for CMD_NUMBER here, since
+            // that was introduced after we'd stopped writing the in-memory
+            // representations of programs to state files.
             command |= (argtype & 240) << 4;
             argtype &= 15;
 
@@ -4037,6 +4318,9 @@ static void update_decimal_in_programs() {
         while (true) {
             int command = prgm->text[pc++];
             int argtype = prgm->text[pc++];
+            // Note: not handling original number for CMD_NUMBER here, since
+            // that was introduced after we'd stopped writing the in-memory
+            // representations of programs to state files.
             command |= (argtype & 240) << 4;
             argtype &= 15;
 

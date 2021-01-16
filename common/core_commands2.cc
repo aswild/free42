@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -16,10 +16,12 @@
  *****************************************************************************/
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "core_commands1.h"
 #include "core_commands2.h"
 #include "core_display.h"
+#include "core_globals.h"
 #include "core_helpers.h"
 #include "core_main.h"
 #include "core_math1.h"
@@ -32,10 +34,6 @@
 /********************************************************/
 /* Implementations of HP-42S built-in functions, part 2 */
 /********************************************************/
-
-static const char *virtual_flags =
-    /* 00-49 */ "00000000000000000000000000010000000000000000111111"
-    /* 50-99 */ "00010000000000010000000001000000000000000000000000";
 
 int docmd_sf(arg_struct *arg) {
     if (arg->type == ARGTYPE_STK)
@@ -382,30 +380,15 @@ int docmd_lbl(arg_struct *arg) {
 }
 
 int docmd_rtn(arg_struct *arg) {
-    if (program_running()) {
-        int newprgm;
-        int4 newpc;
-        bool stop;
-        pop_rtn_addr(&newprgm, &newpc, &stop);
-        if (newprgm == -3)
-            return return_to_integ(0, stop);
-        else if (newprgm == -2)
-            return return_to_solve(0, stop);
-        else if (newprgm == -1) {
-            if (pc >= prgms[current_prgm].size)
-                /* It's an END; go to line 0 */
-                pc = -1;
-            return ERR_STOP;
-        } else {
-            current_prgm = newprgm;
-            pc = newpc;
-            return stop ? ERR_STOP : ERR_NONE;
-        }
-    } else {
+    if (!program_running()) {
         clear_all_rtns();
         pc = -1;
         return ERR_NONE;
     }
+    int err = pop_func_state(false);
+    if (err != ERR_NONE)
+        return err;
+    return rtn(ERR_NONE);
 }
 
 int docmd_input(arg_struct *arg) {
@@ -960,7 +943,7 @@ int docmd_varmenu(arg_struct *arg) {
         return ERR_LABEL_NOT_FOUND;
     pc += get_command_length(prgm, pc);
     current_prgm = prgm;
-    get_next_command(&pc, &command, &arg2, 0);
+    get_next_command(&pc, &command, &arg2, 0, NULL);
     current_prgm = saved_prgm;
     if (command != CMD_MVAR)
         return ERR_NO_MENU_VARIABLES;
@@ -974,11 +957,14 @@ int docmd_varmenu(arg_struct *arg) {
 
 int docmd_getkey(arg_struct *arg) {
     mode_getkey = true;
+    mode_getkey1 = false;
     mode_disable_stack_lift = flags.f.stack_lift_disable;
     return ERR_NONE;
 }
 
 int docmd_menu(arg_struct *arg) {
+    if (!program_running())
+        return ERR_RESTRICTED_OPERATION;
     set_menu(MENULEVEL_PLAIN, MENU_PROGRAMMABLE);
     mode_plainmenu_sticky = true;
     return ERR_NONE;
@@ -1366,12 +1352,14 @@ static int prv_worker(int interrupted) {
 int docmd_prstk(arg_struct *arg) {
     char buf[100];
     int len;
-    if (!flags.f.printer_enable && program_running())
+    // arg == NULL if we're called to do TRACE mode auto-print
+    if (arg != NULL && !flags.f.printer_enable && program_running())
         return ERR_NONE;
     if (!flags.f.printer_exists)
         return ERR_PRINTING_IS_DISABLED;
     shell_annunciators(-1, -1, 1, -1, -1, -1);
-    print_text(NULL, 0, 1);
+    if (arg != NULL)
+        print_text(NULL, 0, 1);
     len = vartype2string(reg_t, buf, 100);
     print_wide("T=", 2, buf, len);
     len = vartype2string(reg_z, buf, 100);
@@ -1488,7 +1476,7 @@ static int prusr_worker(int interrupted) {
             prusr_index = 0;
             goto state1;
         }
-        if (!vars[prusr_index].hidden) {
+        if ((vars[prusr_index].flags & (VAR_HIDDEN | VAR_PRIVATE)) == 0) {
             llen = 0;
             string2buf(lbuf, 8, &llen, vars[prusr_index].name,
                                        vars[prusr_index].length);
@@ -1670,11 +1658,15 @@ int docmd_gto(arg_struct *arg) {
     return ERR_INTERNAL_ERROR;
 }
 
-int docmd_end(arg_struct *arg) {
-    return docmd_rtn(arg);
-}
-
 int docmd_number(arg_struct *arg) {
+    if (p_isnan(arg->val_d)) {
+        if (memcmp(&arg->val_d, &NAN_1_PHLOAT, sizeof(phloat)) == 0)
+            return ERR_NUMBER_TOO_LARGE;
+        else if (memcmp(&arg->val_d, &NAN_2_PHLOAT, sizeof(phloat)) == 0)
+            return ERR_NUMBER_TOO_SMALL;
+        else
+            return ERR_INTERNAL_ERROR;
+    }
     vartype *new_x = new_real(arg->val_d);
     if (new_x == NULL)
         return ERR_INSUFFICIENT_MEMORY;
@@ -1785,8 +1777,7 @@ int docmd_rup(arg_struct *arg) {
     reg_t = reg_z;
     reg_z = reg_y;
     reg_y = temp;
-    if (flags.f.trace_print && flags.f.printer_exists)
-        docmd_prx(NULL);
+    print_trace();
     return ERR_NONE;
 }
 
@@ -1833,8 +1824,7 @@ int docmd_dim_t(arg_struct *arg) {
     reg_z = reg_y;
     reg_y = new_y;
     reg_x = new_x;
-    if (flags.f.trace_print && flags.f.printer_exists)
-        docmd_prx(NULL);
+    print_trace();
     return ERR_NONE;
 }
 

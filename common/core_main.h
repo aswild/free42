@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -301,12 +301,6 @@ typedef struct {
     bool matrix_singularmatrix;
     bool matrix_outofrange;
     bool auto_repeat;
-    bool enable_ext_accel;
-    bool enable_ext_locat;
-    bool enable_ext_heading;
-    bool enable_ext_time;
-    bool enable_ext_fptest;
-    bool enable_ext_prog;
 } core_settings_struct;
 
 extern core_settings_struct core_settings;
@@ -345,6 +339,7 @@ void finish_xeq();
 void start_alpha_prgm_line();
 void finish_alpha_prgm_line();
 int shiftcharacter(char c);
+void set_old_pc(int4 pc);
 
 
 #endif

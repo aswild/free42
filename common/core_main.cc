@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -41,6 +41,14 @@
 #include "bid_functions.h"
 #endif
 
+#ifdef WINDOWS
+FILE *my_fopen(const char *name, const char *mode);
+int my_rename(const char *oldname, const char *newname);
+#else
+#define my_fopen fopen
+#define my_rename rename
+#endif
+
 
 static void set_shift(bool state) {
     if (mode_shift != state) {
@@ -71,23 +79,6 @@ void core_init(int read_saved_state, int4 version, const char *state_file_name, 
 
     phloat_init();
 
-    #if defined(ANDROID) || defined(IPHONE)
-        core_settings.enable_ext_accel = true;
-        core_settings.enable_ext_locat = true;
-        core_settings.enable_ext_heading = true;
-    #else
-        core_settings.enable_ext_accel = false;
-        core_settings.enable_ext_locat = false;
-        core_settings.enable_ext_heading = false;
-    #endif
-    #ifdef FREE42_FPTEST
-        core_settings.enable_ext_fptest = true;
-    #else
-        core_settings.enable_ext_fptest = false;
-    #endif
-    core_settings.enable_ext_time = true;
-    core_settings.enable_ext_prog = true;
-
     char *state_file_name_crash = NULL;
     if (read_saved_state == 1) {
         // Before loading state, rename the state file by appending .crash
@@ -103,10 +94,10 @@ void core_init(int read_saved_state, int4 version, const char *state_file_name, 
             int weekday;
             shell_get_time_date(&time, &date, &weekday);
             sprintf(state_file_name_crash, "%s.%08u%08u.crash", state_file_name, date, time);
-            rename(state_file_name, state_file_name_crash);
-            gfile = fopen(state_file_name_crash, "rb");
+            my_rename(state_file_name, state_file_name_crash);
+            gfile = my_fopen(state_file_name_crash, "rb");
         } else
-            gfile = fopen(state_file_name, "rb");
+            gfile = my_fopen(state_file_name, "rb");
         if (gfile == NULL)
             read_saved_state = 0;
         else if (offset > 0)
@@ -125,16 +116,16 @@ void core_init(int read_saved_state, int4 version, const char *state_file_name, 
     if (state_file_name != NULL) {
         if (reason == 0) {
             if (state_file_name_crash != NULL)
-                rename(state_file_name_crash, state_file_name);
+                my_rename(state_file_name_crash, state_file_name);
         } else {
             char *tmp = (char *) malloc(strlen(state_file_name) + 9);
             if (tmp != NULL) {
                 strcpy(tmp, state_file_name);
                 strcat(tmp, reason == 1 ? ".corrupt" : ".too_new");
                 if (state_file_name_crash != NULL)
-                    rename(state_file_name_crash, tmp);
+                    my_rename(state_file_name_crash, tmp);
                 else
-                    rename(state_file_name, tmp);
+                    my_rename(state_file_name, tmp);
                 free(tmp);
             }
         }
@@ -146,7 +137,7 @@ void core_init(int read_saved_state, int4 version, const char *state_file_name, 
                        mode_shift,
                        0 /*print*/,
                        mode_running,
-                       flags.f.grad,
+                       !flags.f.rad && flags.f.grad,
                        flags.f.rad || flags.f.grad);
 }
 
@@ -154,7 +145,7 @@ void core_save_state(const char *state_file_name) {
     if (mode_interruptible != NULL)
         stop_interruptible();
     set_running(false);
-    gfile = fopen(state_file_name, "wb");
+    gfile = my_fopen(state_file_name, "wb");
     if (gfile != NULL) {
         save_state();
         fclose(gfile);
@@ -567,7 +558,7 @@ int core_keyup() {
         oldpc = pc;
         if (pc == -1)
             pc = 0;
-        get_next_command(&pc, &cmd, &arg, 1);
+        get_next_command(&pc, &cmd, &arg, 1, NULL);
         if (pending_command == CMD_SST_RT
                 && (cmd == CMD_XEQ || cmd == CMD_SOLVE || cmd == CMD_INTEG)) {
             pc = oldpc;
@@ -575,8 +566,11 @@ int core_keyup() {
             goto do_run;
         }
         if ((flags.f.trace_print || flags.f.normal_print)
-                && flags.f.printer_exists)
+                && flags.f.printer_exists) {
+            if (cmd == CMD_LBL)
+                print_text(NULL, 0, 1);
             print_program_line(current_prgm, oldpc);
+        }
         mode_disable_stack_lift = false;
         set_running(true);
         error = cmdlist(cmd)->handler(&arg);
@@ -652,7 +646,8 @@ int core_powercycle() {
                 arg_struct arg;
                 arg.type = ARGTYPE_DOUBLE;
                 arg.val_d = entered_number;
-                store_command(pc, CMD_NUMBER, &arg);
+                cmdline[cmdline_length] = 0;
+                store_command(pc, CMD_NUMBER, &arg, cmdline);
                 prgm_highlight_row = 1;
             }
             flags.f.prgm_mode = false;
@@ -822,7 +817,8 @@ static void export_hp42s(int index) {
 
     current_prgm = index;
     do {
-        get_next_command(&pc, &cmd, &arg, 0);
+        const char *orig_num;
+        get_next_command(&pc, &cmd, &arg, 0, &orig_num);
         hp42s_code = cmdlist(cmd)->hp42s_code;
         code_flags = hp42s_code >> 24;
         code_name = hp42s_code >> 16;
@@ -929,13 +925,16 @@ static void export_hp42s(int index) {
                     cmdbuf[cmdlen++] = 0x00;
                     cmdbuf[cmdlen++] = 0x0D;
                 } else if (cmd == CMD_NUMBER) {
-                    char *p = phloat2program(arg.val_d);
-                    char dot = flags.f.decimal_point ? '.' : ',';
+                    const char *p;
+                    if (orig_num != NULL)
+                        p = orig_num;
+                    else
+                        p = phloat2program(arg.val_d);
                     char c;
                     while ((c = *p++) != 0) {
                         if (c >= '0' && c <= '9')
                             cmdbuf[cmdlen++] = 0x10 + c - '0';
-                        else if (c == dot)
+                        else if (c == '.' || c == ',')
                             cmdbuf[cmdlen++] = 0x1A;
                         else if (c == 24)
                             cmdbuf[cmdlen++] = 0x1B;
@@ -1093,7 +1092,8 @@ int4 core_program_size(int prgm_index) {
 
     current_prgm = prgm_index;
     do {
-        get_next_command(&pc, &cmd, &arg, 0);
+        const char *orig_num;
+        get_next_command(&pc, &cmd, &arg, 0, &orig_num);
         hp42s_code = cmdlist(cmd)->hp42s_code;
         code_flags = hp42s_code >> 24;
         //code_name = hp42s_code >> 16;
@@ -1150,10 +1150,12 @@ int4 core_program_size(int prgm_index) {
                 } else if (cmd == CMD_END) {
                     /* Not counted for the line 00 total */
                 } else if (cmd == CMD_NUMBER) {
-                    char *p = phloat2program(arg.val_d);
-                    while (*p++ != 0)
-                        size += 1;
-                    size += 1;
+                    const char *p;
+                    if (orig_num != NULL)
+                        p = orig_num;
+                    else
+                        p = phloat2program(arg.val_d);
+                    size += strlen(p) + 1;
                 } else if (cmd == CMD_STRING) {
                     size += arg.length + 1;
                 } else if (cmd >= CMD_ASGN01 && cmd <= CMD_ASGN18) {
@@ -1213,7 +1215,7 @@ void core_export_programs(int count, const int *indexes, const char *raw_file_na
         } else {
             raw_buf = NULL;
 #endif
-            gfile = fopen(raw_file_name, "wb");
+            gfile = my_fopen(raw_file_name, "wb");
             if (gfile == NULL) {
                 char msg[1024];
                 int err = errno;
@@ -1522,7 +1524,7 @@ static int hp42tofree42[] = {
 
     /* F0-FF */
     /* Strings + 42S ext */
-    CMD_NULL  | 0x3000,
+    CMD_NOP  | 0x0000,
     CMD_NULL  | 0x3000,
     CMD_NULL  | 0x3000,
     CMD_NULL  | 0x3000,
@@ -1624,7 +1626,7 @@ static int hp42ext[] = {
     CMD_INPUT   | 0x0000,
     CMD_EDITN   | 0x0000,
     CMD_LSTO    | 0x0000,
-    CMD_NULL    | 0x4000,
+    CMD_LASTO   | 0x2000,
     CMD_VARMENU | 0x1000,
     CMD_NULL    | 0x3000, /* KEYX IND name */
     CMD_NULL    | 0x3000, /* KEYG IND name */
@@ -1652,7 +1654,7 @@ static int hp42ext[] = {
     CMD_TONE     | 0x1000,
 
     /* E0-EF */
-    CMD_NULL   | 0x4000,
+    CMD_FUNC   | 0x2000,
     CMD_NULL   | 0x4000,
     CMD_NULL   | 0x3000, /* KEYX suffix */
     CMD_NULL   | 0x3000, /* KEYG suffix */
@@ -1675,7 +1677,7 @@ static int hp42ext[] = {
     CMD_NULL    | 0x4000, /* GTO . nnnn */
     CMD_NULL    | 0x4000, /* GTO .. */
     CMD_NULL    | 0x4000, /* GTO . "name" */
-    CMD_NULL    | 0x4000,
+    CMD_LASTO   | 0x0000,
     CMD_NULL    | 0x4000, /* DEL */
     CMD_NULL    | 0x3000, /* SIZE */
     CMD_VARMENU | 0x2000,
@@ -1683,11 +1685,22 @@ static int hp42ext[] = {
     CMD_NULL    | 0x4000,
     CMD_NULL    | 0x4000,
     CMD_NULL    | 0x4000,
-    CMD_NULL    | 0x4000,
+    CMD_LASTO   | 0x1000,
     CMD_NULL    | 0x4000,
     CMD_NULL    | 0x4000
 };
 
+
+static bool looks_like_zero(const char *buf) {
+    char c;
+    while ((c = *buf++) != 0) {
+        if (c >= '1' && c <= '9')
+            return false;
+        if (c == 'E')
+            return true;
+    }
+    return true;
+}
 
 static phloat parse_number_line(char *buf) {
     phloat res;
@@ -1709,36 +1722,15 @@ static phloat parse_number_line(char *buf) {
     }
 #ifdef BCD_MATH
     res = Phloat(buf);
-    int s = p_isinf(res);
-    if (s > 0)
-        res = POS_HUGE_PHLOAT;
-    else if (s < 0)
-        res = NEG_HUGE_PHLOAT;
 #else
     BID_UINT128 d;
     bid128_from_string(&d, buf);
     bid128_to_binary64(&res, &d);
-    if (res == 0) {
-        int zero = 0;
-        BID_UINT128 z;
-        bid128_from_int32(&z, &zero);
-        int r;
-        bid128_quiet_equal(&r, &d, &z);
-        if (!r) {
-            bid128_isSigned(&r, &d);
-            if (r)
-                res = NEG_TINY_PHLOAT;
-            else
-                res = POS_TINY_PHLOAT;
-        }
-    } else {
-        int s = p_isinf(res);
-        if (s > 0)
-            res = POS_HUGE_PHLOAT;
-        else if (s < 0)
-            res = NEG_HUGE_PHLOAT;
-    }
 #endif
+    if (p_isinf(res) != 0)
+        res = NAN_1_PHLOAT;
+    else if (res == 0 && !looks_like_zero(buf))
+        res = NAN_2_PHLOAT;
     return res;
 }
 
@@ -1765,7 +1757,7 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
         } else {
             raw_buf = NULL;
 #endif
-            gfile = fopen(raw_file_name, "rb");
+            gfile = my_fopen(raw_file_name, "rb");
             if (gfile == NULL) {
                 char msg[1024];
                 int err = errno;
@@ -1801,6 +1793,8 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
         pending_end = pc > 0;
     }
 
+    char numbuf[50];
+
     while (!done_flag) {
         skip:
         byte1 = raw_getc();
@@ -1829,7 +1823,6 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                 goto skip;
             else if (byte1 >= 0x10 && byte1 <= 0x1C) {
                 /* Number */
-                char numbuf[50];
                 int numlen = 0;
                 do {
                     if (byte1 == 0x1A)
@@ -1877,6 +1870,18 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                 if (byte2 == EOF)
                     goto done;
                 code = (((unsigned int) byte1) << 8) | byte2;
+                if (code >= 0x0A7DB && code <= 0x0A7DD) {
+                    /* FUNC0, FUNC1, FUNC2: translate to FUNC nn */
+                    cmd = CMD_FUNC;
+                    arg.type = ARGTYPE_NUM;
+                    if (code == 0x0A7DB)
+                        arg.val.num = 0;
+                    else if (code == 0x0A7DC)
+                        arg.val.num = 11;
+                    else // code == 0x0A7DD
+                        arg.val.num = 21;
+                    goto store;
+                }
                 for (i = 0; i < CMD_SENTINEL; i++)
                     if (cmdlist(i)->hp42s_code == code) {
                         if ((cmdlist(i)->flags & FLAG_HIDDEN) != 0)
@@ -1948,23 +1953,8 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                 cmd = byte1 <= 0x0DF ? CMD_GTO : CMD_XEQ;
                 suffix &= 0x7F;
                 goto do_suffix;
-            } else /* byte1 >= 0xF0 && byte1 <= 0xFF */ {
+            } else /* byte1 >= 0xF1 && byte1 <= 0xFF */ {
                 /* Strings and parameterized HP-42S extensions */
-                if (byte1 == 0x0F0) {
-                    /* Zero-length strings can only be entered synthetically
-                     * on the HP-41; they act as NOPs and are sometimes used
-                     * right after ISG or DSE.
-                     * I would be within my rights to drop these instructions
-                     * on the floor -- the real 42S doesn't deal with them
-                     * all that gracefully either -- but I'm just too nice,
-                     * so I convert them to |-"", which is also a NOP.
-                     */
-                    cmd = CMD_STRING;
-                    arg.type = ARGTYPE_STR;
-                    arg.length = 1;
-                    arg.val.text[0] = 127;
-                    goto store;
-                }
                 byte2 = raw_getc();
                 if (byte2 == EOF)
                     goto done;
@@ -2156,7 +2146,7 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                 break;
             pending_end = true;
         } else {
-            store_command_after(&pc, cmd, &arg);
+            store_command_after(&pc, cmd, &arg, numbuf);
         }
     }
 
@@ -2383,27 +2373,72 @@ static bool parse_phloat(const char *p, int len, phloat *res) {
     // not allow the mantissa to be more than 34 or 16 digits long (including
     // leading zeroes). So, we massage the string a bit to make it
     // comply with those restrictions.
+    // Note that this function does not check well-formedness;
+    // that part should be checked beforehand using scan_number().
     char buf[100];
     bool in_mant = true;
+    bool leading_zero = true;
+    int exp_offset = 0;
+    int exp = 0;
+    bool neg_exp = false;
     int mant_digits = 0;
+    bool in_int_mant = true;
+    bool empty_mant = true;
     int i = 0, j = 0;
+    char decimal = flags.f.decimal_point ? '.' : ',';
+    char separator = flags.f.decimal_point ? ',' : '.';
     while (i < 100 && j < len) {
         char c = p[j++];
         if (c == 0)
             break;
-        if (c == '+' || c == ' ')
+        if (c == '+' || c == ' ' || c == separator) {
             continue;
-        else if (c == 'e' || c == 'E' || c == 24) {
+        } else if (c == 'e' || c == 'E' || c == 24) {
             in_mant = false;
-            buf[i++] = 24;
-        } else if (c >= '0' && c <= '9') {
-            if (!in_mant || mant_digits++ < MAX_MANT_DIGITS)
-                buf[i++] = c;
-        } else
+        } else if (c == decimal) {
+            in_int_mant = false;
             buf[i++] = c;
+        } else if (c >= '0' && c <= '9') {
+            if (in_mant) {
+                empty_mant = false;
+                if (in_int_mant) {
+                    if (mant_digits < MAX_MANT_DIGITS) {
+                        if (c != '0' || !leading_zero) {
+                            buf[i++] = c;
+                            leading_zero = false;
+                            mant_digits++;
+                        }
+                    } else {
+                        exp_offset++;
+                    }
+                } else {
+                    if (mant_digits < MAX_MANT_DIGITS) {
+                        if (c != '0' || !leading_zero) {
+                            buf[i++] = c;
+                            leading_zero = false;
+                            mant_digits++;
+                        } else {
+                            exp_offset--;
+                        }
+                    }
+                }
+            } else {
+                exp = exp * 10 + c - '0';
+            }
+        } else if (c == '-') {
+            if (in_mant)
+                buf[i++] = c;
+            else
+                neg_exp = true;
+        }
     }
-    if (in_mant && mant_digits == 0)
+    if (in_mant && empty_mant)
         return false;
+    if (neg_exp)
+        exp = -exp;
+    exp += exp_offset;
+    if (exp != 0)
+        i += sprintf(buf + i, "\030%d", exp);
     int err = string2phloat(buf, i, res);
     if (err == 0)
         return true;
@@ -2932,6 +2967,7 @@ static void paste_programs(const char *buf) {
     char hpbuf[1027];
     int cmd;
     arg_struct arg;
+    char numbuf[50];
 
     while (!done) {
         int end = pos;
@@ -2967,7 +3003,6 @@ static void paste_programs(const char *buf) {
             // line.
             if (hppos < hpend && (c = hpbuf[hppos], c == '.' || c == ','
                             || c == 'E' || c == 'e' || c == 24)) {
-                char numbuf[50];
                 int len = hpend - prev_hppos;
                 if (len > 50)
                     len = 50;
@@ -3041,7 +3076,8 @@ static void paste_programs(const char *buf) {
                 // I see a good reason to.
                 hpbuf[lineno_end] = 0;
                 cmd = CMD_NUMBER;
-                arg.val_d = parse_number_line(hpbuf + lineno_start);
+                strcpy(numbuf, hpbuf + lineno_start);
+                arg.val_d = parse_number_line(numbuf);
                 arg.type = ARGTYPE_DOUBLE;
                 goto store;
             }
@@ -3105,6 +3141,21 @@ static void paste_programs(const char *buf) {
                 }
                 arg.type = ARGTYPE_NUM;
                 arg.val.num = sz;
+                goto store;
+            } else if (cmd == CMD_FUNC) {
+                if (!nexttoken(hpbuf, cmd_end, hpend, &tok_start, &tok_end))
+                    goto line_done;
+                if (tok_end - tok_start != 2)
+                    goto line_done;
+                int io = 0;
+                for (int i = tok_start; i < tok_end; i++) {
+                    char c = hpbuf[i];
+                    if (c < '0' || c > '4')
+                        goto line_done;
+                    io = io * 10 + c - '0';
+                }
+                arg.type = ARGTYPE_NUM;
+                arg.val.num = io;
                 goto store;
             } else if (cmd == CMD_ASSIGNa) {
                 // What we're looking for is '".*"  *TO  *[0-9][0-9]'
@@ -3222,6 +3273,15 @@ static void paste_programs(const char *buf) {
                                 goto store;
                             }
                             goto line_done;
+                        }
+                        if (!ind && argtype == ARG_NUM11 && tok_end - tok_start == 1
+                                && isdigit(hpbuf[tok_start])) {
+                            // Special case for FIX/SCI/ENG with 1-digit
+                            // non-indirect argument; needed for parsing
+                            // HP-41 code.
+                            arg.type = ARGTYPE_NUM;
+                            arg.val.num = hpbuf[tok_start] - '0';
+                            goto store;
                         }
                         if (tok_end - tok_start == 2 && isdigit(hpbuf[tok_start])
                                                      && isdigit(hpbuf[tok_start + 1])) {
@@ -3353,6 +3413,18 @@ static void paste_programs(const char *buf) {
                 arg.type = ARGTYPE_NUM;
                 arg.val.num = (a << 6) | b;
                 goto store;
+            } else if ((string_equals(hpbuf + hppos, cmd_end - hppos - 1, "FNC", 3)
+                    || string_equals(hpbuf + hppos, cmd_end - hppos - 1, "FUNC", 4))
+                    && hpbuf[cmd_end - 1] >= '0'
+                    && hpbuf[cmd_end - 1] <= '2') {
+                cmd = CMD_FUNC;
+                arg.type = ARGTYPE_NUM;
+                switch (hpbuf[cmd_end - 1]) {
+                    case '0': arg.val.num =  0; break;
+                    case '1': arg.val.num = 11; break;
+                    case '2': arg.val.num = 21; break;
+                }
+                goto store;
             } else {
                 // Number or bust!
                 if (nexttoken(hpbuf, hppos, hpend, &tok_start, &tok_end)) {
@@ -3365,7 +3437,6 @@ static void paste_programs(const char *buf) {
                         int len = tok_end - tok_start;
                         if (len > 49)
                             len = 49;
-                        char numbuf[50];
                         for (int i = 0; i < len; i++) {
                             c = hpbuf[tok_start + i];
                             if (c == 'e' || c == 24)
@@ -3421,7 +3492,7 @@ static void paste_programs(const char *buf) {
             goto_dot_dot(false);
         after_end = cmd == CMD_END;
         if (!after_end)
-            store_command_after(&pc, cmd, &arg);
+            store_command_after(&pc, cmd, &arg, numbuf);
 
         line_done:
         pos = end + 1;
@@ -3818,7 +3889,7 @@ void do_interactive(int command) {
         if (cmdlist(command)->argtype == ARG_NONE) {
             arg_struct arg;
             arg.type = ARGTYPE_NONE;
-            store_command_after(&pc, command, &arg);
+            store_command_after(&pc, command, &arg, NULL);
             if (command == CMD_END)
                 pc = 0;
             prgm_highlight_row = 1;
@@ -3859,9 +3930,12 @@ static void continue_running() {
             set_running(false);
             return;
         }
-        get_next_command(&pc, &cmd, &arg, 1);
-        if (flags.f.trace_print && flags.f.printer_exists)
+        get_next_command(&pc, &cmd, &arg, 1, NULL);
+        if (flags.f.trace_print && flags.f.printer_exists) {
+            if (cmd == CMD_LBL)
+                print_text(NULL, 0, 1);
             print_program_line(current_prgm, oldpc);
+        }
         mode_disable_stack_lift = false;
         error = cmdlist(cmd)->handler(&arg);
         if (mode_pause) {
@@ -3941,12 +4015,6 @@ int find_builtin(const char *name, int namelen, bool strict) {
 
     for (i = 0; true; i++) {
         if (i == CMD_OPENF) i += 15; // Skip COPAN and BIGSTACK
-        if (i == CMD_ACCEL && !core_settings.enable_ext_accel) i++;
-        if (i == CMD_LOCAT && !core_settings.enable_ext_locat) i++;
-        if (i == CMD_HEADING && !core_settings.enable_ext_heading) i++;
-        if (i == CMD_ADATE && !core_settings.enable_ext_time) i += 34;
-        if (i == CMD_FPTEST && !core_settings.enable_ext_fptest) i++;
-        if (i == CMD_SST_UP && !core_settings.enable_ext_prog) i += 2;
         if (i == CMD_SENTINEL)
             break;
         if ((cmdlist(i)->flags & FLAG_HIDDEN) != 0)
@@ -4152,7 +4220,7 @@ void finish_command_entry(bool refresh) {
             int inserting_an_end = pending_command == CMD_END;
             if ((cmdlist(pending_command)->flags & FLAG_IMMED) != 0)
                 goto do_it_now;
-            store_command(pc, pending_command, &pending_command_arg);
+            store_command(pc, pending_command, &pending_command_arg, NULL);
             if (inserting_an_end)
                 /* current_prgm was already incremented by store_command() */
                 pc = 0;
@@ -4278,7 +4346,7 @@ void finish_alpha_prgm_line() {
         arg.length = entered_string_length;
         for (i = 0; i < entered_string_length; i++)
             arg.val.text[i] = entered_string[i];
-        store_command(pc, CMD_STRING, &arg);
+        store_command(pc, CMD_STRING, &arg, NULL);
         prgm_highlight_row = 1;
     }
     mode_alpha_entry = false;
@@ -4296,6 +4364,10 @@ static void stop_interruptible() {
     redisplay();
 }
 
+void set_old_pc(int4 pc) {
+    oldpc = pc;
+}
+
 static int handle_error(int error) {
     if (mode_running) {
         if (error == ERR_RUN)
@@ -4311,6 +4383,11 @@ static int handle_error(int error) {
                 pc = -1;
             set_running(false);
             return 0;
+        } else if (error == ERR_NUMBER_TOO_LARGE
+                || error == ERR_NUMBER_TOO_SMALL) {
+            // Handling these separately because they shouldn't be
+            // suppressed by flag 25, nor trapped by SOLVE
+            goto handle_it;
         } else if (error != ERR_NONE && error != ERR_YES) {
             if (flags.f.error_ignore && error != ERR_SUSPICIOUS_OFF) {
                 flags.f.error_ignore = 0;
@@ -4327,6 +4404,7 @@ static int handle_error(int error) {
                 if (error == ERR_NONE || error == ERR_RUN || error == ERR_STOP)
                     return 0;
             }
+            handle_it:
             pc = oldpc;
             display_error(error, 1);
             set_running(false);

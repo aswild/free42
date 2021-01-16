@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -33,9 +33,8 @@
 /////////////////////////////////////////////////////////////////
 
 #if defined(ANDROID) || defined(IPHONE)
+
 int docmd_accel(arg_struct *arg) {
-    if (!core_settings.enable_ext_accel)
-        return ERR_NONEXISTENT;
     double x, y, z;
     int err = shell_get_acceleration(&x, &y, &z);
     if (err == 0)
@@ -61,14 +60,11 @@ int docmd_accel(arg_struct *arg) {
     reg_z = new_z;
     reg_y = new_y;
     reg_x = new_x;
-    if (flags.f.trace_print && flags.f.printer_exists)
-        docmd_prx(NULL);
+    print_trace();
     return ERR_NONE;
 }
 
 int docmd_locat(arg_struct *arg) {
-    if (!core_settings.enable_ext_locat)
-        return ERR_NONEXISTENT;
     double lat, lon, lat_lon_acc, elev, elev_acc;
     int err = shell_get_location(&lat, &lon, &lat_lon_acc, &elev, &elev_acc);
     if (err == 0)
@@ -95,14 +91,11 @@ int docmd_locat(arg_struct *arg) {
     reg_z = new_z;
     reg_y = new_y;
     reg_x = new_x;
-    if (flags.f.trace_print && flags.f.printer_exists)
-        docmd_prx(NULL);
+    print_trace();
     return ERR_NONE;
 }
 
 int docmd_heading(arg_struct *arg) {
-    if (!core_settings.enable_ext_heading)
-        return ERR_NONEXISTENT;
     double mag_heading, true_heading, acc, x, y, z;
     int err = shell_get_heading(&mag_heading, &true_heading, &acc, &x, &y, &z);
     if (err == 0)
@@ -130,10 +123,24 @@ int docmd_heading(arg_struct *arg) {
     reg_z = new_z;
     reg_y = new_y;
     reg_x = new_x;
-    if (flags.f.trace_print && flags.f.printer_exists)
-        docmd_prx(NULL);
+    print_trace();
     return ERR_NONE;
 }
+
+#else
+
+int docmd_accel(arg_struct *arg) {
+    return ERR_NONEXISTENT;
+}
+
+int docmd_locat(arg_struct *arg) {
+    return ERR_NONEXISTENT;
+}
+
+int docmd_heading(arg_struct *arg) {
+    return ERR_NONEXISTENT;
+}
+
 #endif
 
 /////////////////////////////////////////////////
@@ -168,7 +175,7 @@ static int date2comps(phloat x, int4 *yy, int4 *mm, int4 *dd) {
     }
 #endif
 
-    if (flags.f.dmy) {
+    if (!flags.f.ymd && flags.f.dmy) {
         int4 t = m;
         m = d;
         d = t;
@@ -231,8 +238,6 @@ static int jd2greg(int4 jd, int4 *y, int4 *m, int4 *d) {
 
 
 int docmd_adate(arg_struct *arg) {
-    if (!core_settings.enable_ext_time)
-        return ERR_NONEXISTENT;
     if (reg_x->type == TYPE_STRING)
         return ERR_ALPHA_DATA_IS_INVALID;
     if (reg_x->type != TYPE_REAL)
@@ -331,8 +336,6 @@ int docmd_adate(arg_struct *arg) {
 }
 
 int docmd_atime(arg_struct *arg) {
-    if (!core_settings.enable_ext_time)
-        return ERR_NONEXISTENT;
     if (reg_x->type == TYPE_STRING)
         return ERR_ALPHA_DATA_IS_INVALID;
     if (reg_x->type != TYPE_REAL)
@@ -416,8 +419,6 @@ int docmd_atime(arg_struct *arg) {
 }
 
 int docmd_atime24(arg_struct *arg) {
-    if (!core_settings.enable_ext_time)
-        return ERR_NONEXISTENT;
     bool saved_clk24 = mode_time_clk24;
     mode_time_clk24 = true;
     int res = docmd_atime(arg);
@@ -426,15 +427,11 @@ int docmd_atime24(arg_struct *arg) {
 }
 
 int docmd_clk12(arg_struct *arg) {
-    if (!core_settings.enable_ext_time)
-        return ERR_NONEXISTENT;
     mode_time_clk24 = false;
     return ERR_NONE;
 }
 
 int docmd_clk24(arg_struct *arg) {
-    if (!core_settings.enable_ext_time)
-        return ERR_NONEXISTENT;
     mode_time_clk24 = true;
     return ERR_NONE;
 }
@@ -442,8 +439,6 @@ int docmd_clk24(arg_struct *arg) {
 static char weekdaynames[] = "SUNMONTUEWEDTHUFRISAT";
 
 int docmd_date(arg_struct *arg) {
-    if (!core_settings.enable_ext_time)
-        return ERR_NONEXISTENT;
     uint4 date;
     int weekday;
     shell_get_time_date(NULL, &date, &weekday);
@@ -509,8 +504,6 @@ int docmd_date(arg_struct *arg) {
 }
 
 int docmd_date_plus(arg_struct *arg) {
-    if (!core_settings.enable_ext_time)
-        return ERR_NONEXISTENT;
     // TODO: Accept real matrices as well?
     if (reg_x->type == TYPE_STRING)
         return ERR_ALPHA_DATA_IS_INVALID;
@@ -549,8 +542,6 @@ int docmd_date_plus(arg_struct *arg) {
 }
 
 int docmd_ddays(arg_struct *arg) {
-    if (!core_settings.enable_ext_time)
-        return ERR_NONEXISTENT;
     // TODO: Accept real matrices as well?
     if (reg_x->type == TYPE_STRING)
         return ERR_ALPHA_DATA_IS_INVALID;
@@ -589,16 +580,12 @@ int docmd_ddays(arg_struct *arg) {
 }
 
 int docmd_dmy(arg_struct *arg) {
-    if (!core_settings.enable_ext_time)
-        return ERR_NONEXISTENT;
     flags.f.dmy = true;
     flags.f.ymd = false;
     return ERR_NONE;
 }
 
 int docmd_dow(arg_struct *arg) {
-    if (!core_settings.enable_ext_time)
-        return ERR_NONEXISTENT;
     // TODO: Accept real matrices as well?
     if (reg_x->type == TYPE_STRING)
         return ERR_ALPHA_DATA_IS_INVALID;
@@ -637,16 +624,12 @@ int docmd_dow(arg_struct *arg) {
 }
 
 int docmd_mdy(arg_struct *arg) {
-    if (!core_settings.enable_ext_time)
-        return ERR_NONEXISTENT;
     flags.f.dmy = false;
     flags.f.ymd = false;
     return ERR_NONE;
 }
 
 int docmd_time(arg_struct *arg) {
-    if (!core_settings.enable_ext_time)
-        return ERR_NONEXISTENT;
     uint4 time;
     shell_get_time_date(&time, NULL, NULL);
     vartype *new_x = new_real((int4) time);
@@ -701,10 +684,15 @@ int docmd_time(arg_struct *arg) {
 // here anyway.
 
 int docmd_ymd(arg_struct *arg) {
-    if (!core_settings.enable_ext_prog)
-        return ERR_NONEXISTENT;
     flags.f.dmy = false;
     flags.f.ymd = true;
+    return ERR_NONE;
+}
+
+int docmd_getkey1(arg_struct *arg) {
+    mode_getkey = true;
+    mode_getkey1 = true;
+    mode_disable_stack_lift = flags.f.stack_lift_disable;
     return ERR_NONE;
 }
 
@@ -743,8 +731,6 @@ extern "C" {
 }
 
 int docmd_fptest(arg_struct *arg) {
-    if (!core_settings.enable_ext_fptest)
-        return ERR_NONEXISTENT;
     tests_lineno = 0;
     char *argv[] = { (char *) "readtest", NULL };
     int result = readtest_main(1, argv);
@@ -768,8 +754,6 @@ int docmd_fptest(arg_struct *arg) {
 /////////////////////////////////
 
 int docmd_lsto(arg_struct *arg) {
-    if (!core_settings.enable_ext_prog)
-        return ERR_NONEXISTENT;
     int err;
     if (arg->type == ARGTYPE_IND_NUM
             || arg->type == ARGTYPE_IND_STK
@@ -796,9 +780,29 @@ int docmd_lsto(arg_struct *arg) {
     return store_var(arg->val.text, arg->length, newval, true);
 }
 
+int docmd_lasto(arg_struct *arg) {
+    /* This relates to LSTO the same way ASTO relates to STO. */
+    vartype *s = new_string(reg_alpha, reg_alpha_length);
+    if (s == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    int err;
+    if (arg->type == ARGTYPE_IND_STK && arg->val.stk == 'X') {
+        // Special case for LASTO IND ST X
+        err = resolve_ind_arg(arg);
+        if (err != ERR_NONE) {
+            free_vartype(s);
+            return err;
+        }
+    }
+    vartype *saved_x = reg_x;
+    reg_x = s;
+    err = docmd_lsto(arg);
+    free_vartype(s);
+    reg_x = saved_x;
+    return err;
+}
+
 int docmd_wsize(arg_struct *arg) {
-    if (!core_settings.enable_ext_prog)
-        return ERR_NONEXISTENT;
     if (reg_x->type == TYPE_STRING)
         return ERR_ALPHA_DATA_IS_INVALID;
     if (reg_x->type != TYPE_REAL)
@@ -811,14 +815,11 @@ int docmd_wsize(arg_struct *arg) {
 #endif
         return ERR_INVALID_DATA;
     mode_wsize = to_int(x);
-    if (flags.f.trace_print && flags.f.printer_exists)
-        docmd_prx(NULL);
+    print_trace();
     return ERR_NONE;
 }
 
 int docmd_wsize_t(arg_struct *arg) {
-    if (!core_settings.enable_ext_prog)
-        return ERR_NONEXISTENT;
     vartype *new_x = new_real(effective_wsize());
     if (new_x == NULL)
         return ERR_INSUFFICIENT_MEMORY;
@@ -827,24 +828,120 @@ int docmd_wsize_t(arg_struct *arg) {
 }
 
 int docmd_bsigned(arg_struct *arg) {
-    if (!core_settings.enable_ext_prog)
-        return ERR_NONEXISTENT;
     flags.f.base_signed = !flags.f.base_signed;
     return ERR_NONE;
 }
 
 int docmd_bwrap(arg_struct *arg) {
-    if (!core_settings.enable_ext_prog)
-        return ERR_NONEXISTENT;
     flags.f.base_wrap = !flags.f.base_wrap;
     return ERR_NONE;
 }
 
 int docmd_breset(arg_struct *arg) {
-    if (!core_settings.enable_ext_prog)
-        return ERR_NONEXISTENT;
     mode_wsize = 36;
     flags.f.base_signed = 1;
     flags.f.base_wrap = 0;
     return ERR_NONE;
+}
+
+////////////////////////////////////////////////////////
+///// The NOP that's been missing since the HP-41C /////
+////////////////////////////////////////////////////////
+
+int docmd_nop(arg_struct *arg) {
+    return ERR_NONE;
+}
+
+//////////////////////////////
+///// Fused Multiply-Add /////
+//////////////////////////////
+
+int docmd_fma(arg_struct *arg) {
+    if (reg_x->type == TYPE_STRING
+            || reg_y->type == TYPE_STRING
+            || reg_z->type == TYPE_STRING)
+        return ERR_ALPHA_DATA_IS_INVALID;
+    if (reg_x->type != TYPE_REAL
+            || reg_y->type != TYPE_REAL
+            || reg_z->type != TYPE_REAL)
+        return ERR_INVALID_TYPE;
+    phloat x = ((vartype_real *) reg_x)->x;
+    phloat y = ((vartype_real *) reg_y)->x;
+    phloat z = ((vartype_real *) reg_z)->x;
+    phloat r = fma(z, y, x);
+    int inf = p_isinf(r);
+    if (inf != 0) {
+        if (flags.f.range_error_ignore)
+            r = inf == 1 ? POS_HUGE_PHLOAT : NEG_HUGE_PHLOAT;
+        else
+            return ERR_OUT_OF_RANGE;
+    }
+    vartype *res = new_real(r);
+    if (res == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    vartype *tt = dup_vartype(reg_t);
+    if (tt == NULL) {
+        free_vartype(res);
+        return ERR_INSUFFICIENT_MEMORY;
+    }
+    vartype *ttt = dup_vartype(reg_t);
+    if (ttt == NULL) {
+        free_vartype(res);
+        free_vartype(tt);
+        return ERR_INSUFFICIENT_MEMORY;
+    }
+    free_vartype(reg_lastx);
+    reg_lastx = reg_x;
+    free_vartype(reg_y);
+    free_vartype(reg_z);
+    reg_x = res;
+    reg_y = tt;
+    reg_z = ttt;
+    return ERR_NONE;
+}
+
+int docmd_func(arg_struct *arg) {
+    return push_func_state(arg->val.num);
+}
+
+int docmd_rtnyes(arg_struct *arg) {
+    if (!program_running())
+        return ERR_RESTRICTED_OPERATION;
+    int err = pop_func_state(false);
+    if (err != ERR_NONE)
+        return err;
+    return rtn(ERR_YES);
+}
+
+int docmd_rtnno(arg_struct *arg) {
+    if (!program_running())
+        return ERR_RESTRICTED_OPERATION;
+    int err = pop_func_state(false);
+    if (err != ERR_NONE)
+        return err;
+    return rtn(ERR_NO);
+}
+
+int docmd_rtnerr(arg_struct *arg) {
+    if (!program_running())
+        return ERR_RESTRICTED_OPERATION;
+    if (reg_x->type != TYPE_REAL)
+        return ERR_INVALID_TYPE;
+    phloat e = ((vartype_real *) reg_x)->x;
+    if (e < 0)
+        e = -e;
+    if (e >= ERR_SIZE_ERROR)
+        return ERR_INVALID_DATA;
+    int err = pop_func_state(true);
+    if (err != ERR_NONE)
+        return err;
+    err = to_int(e);
+    if (err != ERR_NONE && flags.f.error_ignore) {
+        flags.f.error_ignore = 0;
+        err = ERR_NONE;
+    }
+    if (err != ERR_NONE)
+        return rtn_with_error(err);
+    else
+        return rtn(ERR_NONE);
 }

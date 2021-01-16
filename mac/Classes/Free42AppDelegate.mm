@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -457,12 +457,15 @@ static void low_battery_checker(CFRunLoopTimerRef timer, void *info) {
         [NSApp stopModal];
         if (window == preferencesWindow)
             [instance getPreferences];
-    } else if (window == mainWindow)
+    } else if (window == mainWindow) {
         [NSApp terminate:nil];
-    else if (window == printWindow)
+    } else if (window == printWindow) {
         state.printWindowMapped = 0;
-    else if (window == loadSkinsWindow)
+    } else if (window == loadSkinsWindow) {
         loadSkinsWindowMapped = false;
+        [task[0] cancel];
+        [task[1] cancel];
+    }
 }
 
 - (void)windowDidBecomeKey:(NSNotification *)notification {
@@ -482,7 +485,7 @@ static void low_battery_checker(CFRunLoopTimerRef timer, void *info) {
 - (IBAction) showAbout:(id)sender {
     const char *version = [Free42AppDelegate getVersion];
     [aboutVersion setStringValue:[NSString stringWithFormat:@"Free42 %s", version]];
-    [aboutCopyright setStringValue:@"© 2004-2020 Thomas Okken"];
+    [aboutCopyright setStringValue:@"© 2004-2021 Thomas Okken"];
     [NSApp runModalForWindow:aboutWindow];
 }
 
@@ -613,8 +616,12 @@ static void low_battery_checker(CFRunLoopTimerRef timer, void *info) {
         NSRange range = [name rangeOfString:@"\"" options:0 range:NSMakeRange(1, [name length] - 1)];
         if (range.location == NSNotFound)
             name = @"Untitled";
-        else
+        else {
             name = [name substringWithRange:NSMakeRange(1, range.location - 1)];
+            name = [name stringByReplacingOccurrencesOfString:@"\n" withString:@"_"];
+            name = [name stringByReplacingOccurrencesOfString:@"/" withString:@"_"];
+            name = [name stringByReplacingOccurrencesOfString:@":" withString:@"_"];
+        }
     }
     FileSavePanel *saveDlg = [FileSavePanel panelWithTitle:@"Export Programs" types:@"Program Files;raw;All Files;*" path:name];
     if ([saveDlg runModal] == NSOKButton) {
@@ -631,7 +638,7 @@ static void low_battery_checker(CFRunLoopTimerRef timer, void *info) {
     }
 }
 
-- (IBAction) doCopy:(id)sender {
+- (IBAction) copy:(id)sender {
     NSPasteboard *pb = [NSPasteboard generalPasteboard];
     NSArray *types = [NSArray arrayWithObjects: NSStringPboardType, nil];
     [pb declareTypes:types owner:self];
@@ -646,7 +653,7 @@ static void low_battery_checker(CFRunLoopTimerRef timer, void *info) {
     [pb setString:txt forType:NSStringPboardType];
 }
 
-- (IBAction) doPaste:(id)sender {
+- (IBAction) paste:(id)sender {
     NSPasteboard *pb = [NSPasteboard generalPasteboard];
     NSArray *types = [NSArray arrayWithObjects: NSStringPboardType, nil];
     NSString *bestType = [pb availableTypeFromArray:types];
@@ -829,17 +836,6 @@ static void tbnonewliner() {
     [loadSkinButton setEnabled:[Free42AppDelegate skinUrlPair:url] != nil];
 }
 
-- (BOOL) tryLoad:(NSString *)url asFile:(NSString *)name {
-    NSURLRequest *req = [NSURLRequest requestWithURL:[NSURL URLWithString:url] cachePolicy:NSURLRequestReloadIgnoringCacheData timeoutInterval:60];
-    NSURLResponse *resp;
-    NSError *err;
-    NSData *data = [NSURLConnection sendSynchronousRequest:req returningResponse:&resp error:&err];
-    if (data == nil)
-        return NO;
-    NSString *fname = [NSString stringWithFormat:@"%s/%@", free42dirname, name];
-    return [data writeToFile:fname atomically:NO];
-}
-
 - (IBAction) loadSkinsLoad:(id)sender {
     NSString *url = [loadSkinsURL stringValue];
     NSArray *urls = [Free42AppDelegate skinUrlPair:url];
@@ -847,24 +843,52 @@ static void tbnonewliner() {
         show_message("Error", "Invalid Skin URL");
         return;
     }
-    if ([self tryLoad:[urls objectAtIndex:0] asFile:@"_temp_gif_"]
-        && [self tryLoad:[urls objectAtIndex:1] asFile:@"_temp_layout_"]) {
+    [loadSkinButton setEnabled:NO];
+    skinName = [urls[2] retain];
+    if (session == nil) {
+        NSURLSessionConfiguration *conf = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+        session = [[NSURLSession sessionWithConfiguration:conf] retain];
+    }
+    for (int t = 0; t < 2; t++) {
+        task[t] = [session dataTaskWithURL:[NSURL URLWithString:urls[t]] completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+            taskSuccess[t] = error == nil;
+            if (taskSuccess[t]) {
+                NSString *name = t == 0 ? @"_temp_gif_" : @"_temp_layout_";
+                NSString *fname = [NSString stringWithFormat:@"%s/%@", free42dirname, name];
+                [data writeToFile:fname atomically:NO];
+            }
+            task[t] = nil;
+            [self performSelectorOnMainThread:@selector(finishTask) withObject:nil waitUntilDone:NO];
+        }];
+    }
+    [task[0] resume];
+    [task[1] resume];
+}
+
+- (void) finishTask {
+    if (task[0] != nil || task[1] != nil)
+        return;
+    if (taskSuccess[0] && taskSuccess[1]) {
         char buf1[FILENAMELEN], buf2[FILENAMELEN];
         snprintf(buf1, FILENAMELEN, "%s/_temp_gif_", free42dirname);
-        snprintf(buf2, FILENAMELEN, "%s/%s.gif", free42dirname, [[urls objectAtIndex:2] UTF8String]);
+        snprintf(buf2, FILENAMELEN, "%s/%s.gif", free42dirname, [skinName UTF8String]);
         rename(buf1, buf2);
         snprintf(buf1, FILENAMELEN, "%s/_temp_layout_", free42dirname);
-        snprintf(buf2, FILENAMELEN, "%s/%s.layout", free42dirname, [[urls objectAtIndex:2] UTF8String]);
+        snprintf(buf2, FILENAMELEN, "%s/%s.layout", free42dirname, [skinName UTF8String]);
         rename(buf1, buf2);
-        show_message("Message", "Skin Loaded");
+        if (loadSkinsWindowMapped)
+            show_message("Message", "Skin Loaded");
     } else {
         char buf[FILENAMELEN];
         snprintf(buf, FILENAMELEN, "%s/_temp_gif_", free42dirname);
         remove(buf);
         snprintf(buf, FILENAMELEN, "%s/_temp_layout_", free42dirname);
         remove(buf);
-        show_message("Error", "Loading Skin Failed");
+        if (loadSkinsWindowMapped)
+            show_message("Error", "Loading Skin Failed");
     }
+    [skinName release];
+    [loadSkinButton setEnabled:YES];
 }
 
 + (NSArray *)skinUrlPair:(NSString *)url {

@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -147,8 +147,7 @@ void recall_result(vartype *v) {
         reg_y = reg_x;
     }
     reg_x = v;
-    if (flags.f.trace_print && flags.f.printer_exists)
-        docmd_prx(NULL);
+    print_trace();
 }
 
 void recall_two_results(vartype *x, vartype *y) {
@@ -165,16 +164,14 @@ void recall_two_results(vartype *x, vartype *y) {
     }
     reg_y = y;
     reg_x = x;
-    if (flags.f.trace_print && flags.f.printer_exists)
-        docmd_prx(NULL);
+    print_trace();
 }
 
 void unary_result(vartype *x) {
     free_vartype(reg_lastx);
     reg_lastx = reg_x;
     reg_x = x;
-    if (flags.f.trace_print && flags.f.printer_exists)
-        docmd_prx(NULL);
+    print_trace();
 }
 
 void binary_result(vartype *x) {
@@ -184,8 +181,7 @@ void binary_result(vartype *x) {
     free_vartype(reg_y);
     reg_y = reg_z;
     reg_z = dup_vartype(reg_t);
-    if (flags.f.trace_print && flags.f.printer_exists)
-        docmd_prx(NULL);
+    print_trace();
 }
 
 phloat rad_to_angle(phloat x) {
@@ -428,8 +424,8 @@ void set_base(int base) {
     if (mode_appmenu == MENU_BASE_A_THRU_F)
         set_menu(MENULEVEL_APP, MENU_BASE);
 
-    if (base != oldbase && flags.f.trace_print && flags.f.printer_exists)
-        docmd_prx(NULL);
+    if (base != oldbase)
+        print_trace();
 }
 
 int get_base_param(const vartype *v, int8 *n) {
@@ -485,7 +481,7 @@ int effective_wsize() {
 #ifdef BCD_MATH
     return mode_wsize;
 #else
-    return mode_wsize > 52 ? 52 : mode_wsize;
+    return mode_wsize > 53 ? 53 : mode_wsize;
 #endif
 }
 
@@ -737,6 +733,14 @@ void print_command(int cmd, const arg_struct *arg) {
     shell_annunciators(-1, -1, 0, -1, -1, -1);
 }
 
+void print_trace() {
+    if (flags.f.trace_print && flags.f.printer_exists)
+        if (flags.f.normal_print)
+            docmd_prstk(NULL);
+        else
+            docmd_prx(NULL);
+}
+
 void generic_r2p(phloat re, phloat im, phloat *r, phloat *phi) {
     if (im == 0) {
         if (re >= 0) {
@@ -744,15 +748,15 @@ void generic_r2p(phloat re, phloat im, phloat *r, phloat *phi) {
             *phi = 0;
         } else {
             *r = -re;
-            *phi = flags.f.grad ? 200 : flags.f.rad ? PI : 180;
+            *phi = flags.f.rad ? PI : flags.f.grad ? 200 : 180;
         }
     } else if (re == 0) {
         if (im > 0) {
             *r = im;
-            *phi = flags.f.grad ? 100 : flags.f.rad ? PI / 2 : 90;
+            *phi = flags.f.rad ? PI / 2 : flags.f.grad ? 100 : 90;
         } else {
             *r = -im;
-            *phi = flags.f.grad ? -100 : flags.f.rad ? -PI / 2: -90;
+            *phi = flags.f.rad ? -PI / 2 : flags.f.grad ? -100 : -90;
         }
     } else {
         *r = hypot(re, im);

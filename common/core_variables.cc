@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -372,7 +372,7 @@ int disentangle(vartype *v) {
 int lookup_var(const char *name, int namelength) {
     int i, j;
     for (i = vars_count - 1; i >= 0; i--) {
-        if (vars[i].hidden)
+        if ((vars[i].flags & (VAR_HIDDEN | VAR_PRIVATE)) != 0)
             continue;
         if (vars[i].length == namelength) {
             for (j = 0; j < namelength; j++)
@@ -422,8 +422,7 @@ int store_var(const char *name, int namelength, vartype *value, bool local) {
         for (i = 0; i < namelength; i++)
             vars[varindex].name[i] = name[i];
         vars[varindex].level = local ? get_rtn_level() : -1;
-        vars[varindex].hidden = false;
-        vars[varindex].hiding = false;
+        vars[varindex].flags = 0;
     } else if (local && vars[varindex].level < get_rtn_level()) {
         if (vars_count == vars_capacity) {
             int nc = vars_capacity + 25;
@@ -433,14 +432,13 @@ int store_var(const char *name, int namelength, vartype *value, bool local) {
             vars_capacity = nc;
             vars = nv;
         }
-        vars[varindex].hidden = true;
+        vars[varindex].flags |= VAR_HIDDEN;
         varindex = vars_count++;
         vars[varindex].length = namelength;
         for (i = 0; i < namelength; i++)
             vars[varindex].name[i] = name[i];
         vars[varindex].level = get_rtn_level();
-        vars[varindex].hidden = false;
-        vars[varindex].hiding = true;
+        vars[varindex].flags = VAR_HIDING;
         push_indexed_matrix(name, namelength);
     } else {
         if (matedit_mode == 1 &&
@@ -467,10 +465,10 @@ void purge_var(const char *name, int namelength) {
     if (matedit_mode == 1 && string_equals(matedit_name, matedit_length, name, namelength))
         matedit_mode = 0;
     free_vartype(vars[varindex].value);
-    if (vars[varindex].hiding) {
+    if ((vars[varindex].flags & VAR_HIDING) != 0) {
         for (int i = varindex - 1; i >= 0; i--)
-            if (vars[i].hidden && string_equals(vars[i].name, vars[i].length, name, namelength)) {
-                vars[i].hidden = false;
+            if ((vars[i].flags & VAR_HIDDEN) != 0 && string_equals(vars[i].name, vars[i].length, name, namelength)) {
+                vars[i].flags &= ~VAR_HIDDEN;
                 break;
             }
         pop_indexed_matrix(name, namelength);
@@ -491,7 +489,7 @@ void purge_all_vars() {
 int vars_exist(int real, int cpx, int matrix) {
     int i;
     for (i = 0; i < vars_count; i++) {
-        if (vars[i].hidden)
+        if ((vars[i].flags & (VAR_HIDDEN | VAR_PRIVATE)) != 0)
             continue;
         switch (vars[i].value->type) {
             case TYPE_REAL:
@@ -565,4 +563,70 @@ int matrix_copy(vartype *dst, const vartype *src) {
         return ERR_NONE;
     } else
         return ERR_INVALID_TYPE;
+}
+
+static int lookup_private_var(const char *name, int namelength) {
+    int level = get_rtn_level();
+    int i, j;
+    for (i = vars_count - 1; i >= 0; i--) {
+        int vlevel = vars[i].level;
+        if (vlevel == -1)
+            continue;
+        if (vlevel < level)
+            break;
+        if ((vars[i].flags & VAR_PRIVATE) == 0)
+            continue;
+        if (vars[i].length == namelength) {
+            for (j = 0; j < namelength; j++)
+                if (vars[i].name[j] != name[j])
+                    goto nomatch;
+            return i;
+        }
+        nomatch:;
+    }
+    return -1;
+}
+
+vartype *recall_private_var(const char *name, int namelength) {
+    int varindex = lookup_private_var(name, namelength);
+    if (varindex == -1)
+        return NULL;
+    else
+        return vars[varindex].value;
+}
+
+vartype *recall_and_purge_private_var(const char *name, int namelength) {
+    int varindex = lookup_private_var(name, namelength);
+    if (varindex == -1)
+        return NULL;
+    vartype *ret = vars[varindex].value;
+    for (int i = varindex; i < vars_count - 1; i++)
+        vars[i] = vars[i + 1];
+    vars_count--;
+    return ret;
+}
+
+int store_private_var(const char *name, int namelength, vartype *value) {
+    int varindex = lookup_private_var(name, namelength);
+    int i;
+    if (varindex == -1) {
+        if (vars_count == vars_capacity) {
+            int nc = vars_capacity + 25;
+            var_struct *nv = (var_struct *) realloc(vars, nc * sizeof(var_struct));
+            if (nv == NULL)
+                return ERR_INSUFFICIENT_MEMORY;
+            vars_capacity = nc;
+            vars = nv;
+        }
+        varindex = vars_count++;
+        vars[varindex].length = namelength;
+        for (i = 0; i < namelength; i++)
+            vars[varindex].name[i] = name[i];
+        vars[varindex].level = get_rtn_level();
+        vars[varindex].flags = VAR_PRIVATE;
+    } else {
+        free_vartype(vars[varindex].value);
+    }
+    vars[varindex].value = value;
+    return ERR_NONE;
 }

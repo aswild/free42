@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -975,7 +975,8 @@ void clear_row(int row) {
 }
 
 static int prgmline2buf(char *buf, int len, int4 line, int highlight,
-                        int cmd, arg_struct *arg, bool shift_left = false,
+                        int cmd, arg_struct *arg, const char *orig_num,
+                        bool shift_left = false,
                         bool highlight_final_end = true) {
     int bufptr = 0;
     if (line != -1) {
@@ -1008,7 +1009,11 @@ static int prgmline2buf(char *buf, int len, int4 line, int highlight,
                     && current_prgm == prgms_count - 1) {
         string2buf(buf, len, &bufptr, ".END.", 5);
     } else if (cmd == CMD_NUMBER) {
-        char *num = phloat2program(arg->val_d);
+        const char *num;
+        if (orig_num != NULL)
+            num = orig_num;
+        else
+            num = phloat2program(arg->val_d);
         int numlen = (int) strlen(num);
         if (bufptr + numlen <= len) {
             memcpy(buf + bufptr, num, numlen);
@@ -1081,12 +1086,13 @@ void tb_print_current_program(textbuf *tb) {
     char buf[100];
     char utf8buf[500];
     do {
+        const char *orig_num;
         if (line > 0) {
-            get_next_command(&pc, &cmd, &arg, 0);
+            get_next_command(&pc, &cmd, &arg, 0, &orig_num);
             if (cmd == CMD_END)
                 end = true;
         }
-        int len = prgmline2buf(buf, 100, line, cmd == CMD_LBL, cmd, &arg, false, false);
+        int len = prgmline2buf(buf, 100, line, cmd == CMD_LBL, cmd, &arg, orig_num, false, false);
         for (int i = 0; i < len; i++)
             if (buf[i] == 10)
                 buf[i] = 138;
@@ -1106,6 +1112,7 @@ void display_prgm_line(int row, int line_offset) {
     char buf[44];
     int bufptr;
     int len = 22;
+    const char *orig_num;
 
     if (row == -1)
         /* This means use both lines; used by SHOW */
@@ -1113,16 +1120,16 @@ void display_prgm_line(int row, int line_offset) {
 
     if (tmpline != 0) {
         if (line_offset == 0)
-            get_next_command(&tmppc, &cmd, &arg, 0);
+            get_next_command(&tmppc, &cmd, &arg, 0, &orig_num);
         else if (line_offset == 1) {
             tmppc += get_command_length(current_prgm, tmppc);
             tmpline++;
-            get_next_command(&tmppc, &cmd, &arg, 0);
+            get_next_command(&tmppc, &cmd, &arg, 0, &orig_num);
         } else /* line_offset == -1 */ {
             tmpline--;
             if (tmpline != 0) {
                 tmppc = line2pc(tmpline);
-                get_next_command(&tmppc, &cmd, &arg, 0);
+                get_next_command(&tmppc, &cmd, &arg, 0, &orig_num);
             }
         }
     } else {
@@ -1130,13 +1137,13 @@ void display_prgm_line(int row, int line_offset) {
             /* Nothing to do */
         } else if (line_offset == 1) {
             tmppc = 0;
-            get_next_command(&tmppc, &cmd, &arg, 0);
+            get_next_command(&tmppc, &cmd, &arg, 0, &orig_num);
             tmpline++;
         }
         /* Should not get offset == -1 when at line 0! */
     }
 
-    bufptr = prgmline2buf(buf, len, tmpline, line_offset == 0, cmd, &arg, row == -1);
+    bufptr = prgmline2buf(buf, len, tmpline, line_offset == 0, cmd, &arg, orig_num, row == -1);
 
     if (row == -1) {
         clear_display();
@@ -1396,7 +1403,7 @@ void draw_varmenu() {
     current_prgm = prgm;
     pc += get_command_length(prgm, pc);
     pc2 = pc;
-    while (get_next_command(&pc, &command, &arg, 0), command == CMD_MVAR)
+    while (get_next_command(&pc, &command, &arg, 0, NULL), command == CMD_MVAR)
         num_mvars++;
     if (num_mvars == 0) {
         current_prgm = saved_prgm;
@@ -1412,7 +1419,7 @@ void draw_varmenu() {
 
     row = 0;
     key = 0;
-    while (get_next_command(&pc2, &command, &arg, 0), command == CMD_MVAR) {
+    while (get_next_command(&pc2, &command, &arg, 0, NULL), command == CMD_MVAR) {
         if (row == varmenu_row) {
             varmenu_labellength[key] = arg.length;
             for (i = 0; i < arg.length; i++)
@@ -1479,23 +1486,6 @@ static int fcn_cat[] = {
     CMD_LEFT,     CMD_UP,        CMD_DOWN,     CMD_RIGHT,      CMD_PERCENT, CMD_PERCENT_CH
 };
 
-typedef struct {
-    int first_cmd;
-    int last_cmd;
-    bool *enable_flag;
-} extension_struct;
-
-static extension_struct extensions[] = {
-    { CMD_MAX,     CMD_FIND,    NULL                               },
-    { CMD_ACCEL,   CMD_ACCEL,   &core_settings.enable_ext_accel    },
-    { CMD_LOCAT,   CMD_LOCAT,   &core_settings.enable_ext_locat    },
-    { CMD_HEADING, CMD_HEADING, &core_settings.enable_ext_heading  },
-    { CMD_ADATE,   CMD_SWPT,    &core_settings.enable_ext_time     },
-    { CMD_FPTEST,  CMD_FPTEST,  &core_settings.enable_ext_fptest   },
-    { CMD_LSTO,    CMD_BRESET,  &core_settings.enable_ext_prog     },
-    { CMD_NULL,    CMD_NULL,    NULL                               }
-};
-
 // This defines the order in which extension functions should appear in
 // the FCN catalog. We need this mapping so that that order isn't determined
 // by the order in which the functions were added to the commands list.
@@ -1503,10 +1493,13 @@ static extension_struct extensions[] = {
 // the list until the number after it.
 static int ext_fcn_cat[] = {
     CMD_FIND, CMD_MAX, CMD_MIN,
+    CMD_ANUM, CMD_RCLFLAG, CMD_STOFLAG, CMD_X_SWAP_F,
     CMD_ADATE, -1, CMD_SWPT,
     CMD_YMD,
-    CMD_BRESET, CMD_BSIGNED, CMD_BWRAP,
-    CMD_LSTO, -1, CMD_WSIZE_T,
+    CMD_BRESET, CMD_BSIGNED, CMD_BWRAP, CMD_FMA, CMD_FUNC,
+    CMD_GETKEY1, CMD_LASTO, CMD_LSTO, CMD_NOP, CMD_RTNYES,
+    CMD_RTNNO, CMD_RTNERR, CMD_SST_UP, CMD_SST_RT,
+    CMD_WSIZE, CMD_WSIZE_T,
     CMD_ACCEL, CMD_LOCAT, CMD_HEADING,
     CMD_FPTEST,
     CMD_NULL
@@ -1621,15 +1614,14 @@ static void draw_catalog() {
                 }
                 if ((cmdlist(ext_fcn)->flags & FLAG_HIDDEN) != 0)
                     continue;
-                bool enabled = false;
-                for (int extno = 0; extensions[extno].first_cmd != CMD_NULL; extno++) {
-                    if (ext_fcn >= extensions[extno].first_cmd && ext_fcn <= extensions[extno].last_cmd) {
-                        enabled = extensions[extno].enable_flag == NULL || *extensions[extno].enable_flag;
-                        break;
-                    }
-                }
-                if (!enabled)
+                #ifndef FREE42_FPTEST
+                if (ext_fcn == CMD_FPTEST)
                     continue;
+                #endif
+                #if !defined(ANDROID) && !defined(IPHONE)
+                if (ext_fcn == CMD_ACCEL || ext_fcn == CMD_LOCAT || ext_fcn == CMD_HEADING)
+                    continue;
+                #endif
                 no_extensions = false;
                 if (curr_pos == 5) {
                     curr_pos = 0;
@@ -1683,7 +1675,7 @@ static void draw_catalog() {
 
         for (i = 0; i < vars_count; i++) {
             int type = vars[i].value->type;
-            if (vars[i].hidden)
+            if ((vars[i].flags & (VAR_HIDDEN | VAR_PRIVATE)) != 0)
                 continue;
             switch (type) {
                 case TYPE_REAL:
@@ -1721,7 +1713,7 @@ static void draw_catalog() {
             catalogmenu_row[catindex] = catalogmenu_rows[catindex] - 1;
         j = -1;
         for (i = vars_count - 1; i >= 0; i--) {
-            if (vars[i].hidden)
+            if ((vars[i].flags & (VAR_HIDDEN | VAR_PRIVATE)) != 0)
                 continue;
             int type = vars[i].value->type;
             switch (type) {
@@ -2032,10 +2024,10 @@ void redisplay() {
                             is_flag = !flags.f.rad && !flags.f.grad;
                             break;
                         case CMD_RAD:
-                            is_flag = flags.f.rad && !flags.f.grad;
+                            is_flag = flags.f.rad;
                             break;
                         case CMD_GRAD:
-                            is_flag = flags.f.grad;
+                            is_flag = !flags.f.rad && flags.f.grad;
                             break;
                         case CMD_POLAR:
                             is_flag = flags.f.polar;
@@ -2269,10 +2261,11 @@ static int print_program_worker(int interrupted) {
         goto done;
 
     do {
+        const char *orig_num;
         if (dat->line == 0)
             dat->pc = 0;
         else
-            get_next_command(&dat->pc, &dat->cmd, &dat->arg, 0);
+            get_next_command(&dat->pc, &dat->cmd, &dat->arg, 0, &orig_num);
 
         if (dat->trace) {
             if (dat->cmd == CMD_LBL || dat->first) {
@@ -2286,7 +2279,7 @@ static int print_program_worker(int interrupted) {
                 dat->buf[0] = ' ';
                 dat->len = 1 + prgmline2buf(dat->buf + 1, 100 - 1, dat->line,
                                             dat->cmd == CMD_LBL, dat->cmd,
-                                            &dat->arg);
+                                            &dat->arg, orig_num);
                 if (dat->cmd == CMD_LBL || dat->cmd == CMD_END
                         || dat->lines == 1) {
                     print_lines(dat->buf, dat->len, 1);
@@ -2300,7 +2293,7 @@ static int print_program_worker(int interrupted) {
                     dat->buf[dat->len++] = ' ';
                 }
                 len2 = prgmline2buf(dat->buf + dat->len, 100 - dat->len, -1, 0,
-                                                        dat->cmd, &dat->arg);
+                                                        dat->cmd, &dat->arg, orig_num);
                 if (dat->len > 0 && dat->len + len2 > dat->width) {
                     /* Break line before current instruction */
                     print_lines(dat->buf, dat->len - 2, 1);
@@ -2324,7 +2317,7 @@ static int print_program_worker(int interrupted) {
             }
         } else {
             dat->len = prgmline2buf(dat->buf, 100, dat->line,
-                                    dat->cmd == CMD_LBL, dat->cmd, &dat->arg);
+                                    dat->cmd == CMD_LBL, dat->cmd, &dat->arg, orig_num);
             if (dat->normal) {
                 /* In normal mode, programs are printed right-justified;
                  * we pad the instuctions to a minimum of 8 characters so
@@ -2368,13 +2361,7 @@ int command2buf(char *buf, int len, int cmd, const arg_struct *arg) {
     int bufptr = 0;
 
     int4 xrom_arg;
-    if (!core_settings.enable_ext_accel && cmd == CMD_ACCEL
-            || !core_settings.enable_ext_locat && cmd == CMD_LOCAT
-            || !core_settings.enable_ext_heading && cmd == CMD_HEADING
-            || !core_settings.enable_ext_time && cmd >= CMD_ADATE && cmd <= CMD_SWPT
-            || !core_settings.enable_ext_fptest && cmd == CMD_FPTEST
-            || !core_settings.enable_ext_prog && cmd >= CMD_LSTO && cmd <= CMD_YMD
-            || (cmdlist(cmd)->hp42s_code & 0xfffff800) == 0x0000a000 && (cmdlist(cmd)->flags & FLAG_HIDDEN) != 0) {
+    if ((cmdlist(cmd)->hp42s_code & 0xfffff800) == 0x0000a000 && (cmdlist(cmd)->flags & FLAG_HIDDEN) != 0) {
         xrom_arg = cmdlist(cmd)->hp42s_code;
         cmd = CMD_XROM;
     } else if (cmd == CMD_XROM)

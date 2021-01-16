@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -26,12 +26,6 @@
 #include "core_commands6.h"
 #include "core_commands7.h"
 
-
-#if !defined(ANDROID) && !defined(IPHONE)
-#define docmd_accel docmd_xrom
-#define docmd_locat docmd_xrom
-#define docmd_heading docmd_xrom
-#endif
 
 static const command_spec cmd_array[] =
 {
@@ -148,7 +142,7 @@ static const command_spec cmd_array[] =
     { /* MVAR */        "MVAR",                 4, docmd_mvar,        0x00900000, ARG_RVAR,  FLAG_NONE },
     { /* VARMENU */     "VARM\305\316\325",     7, docmd_varmenu,     0x00c1f2f8, ARG_PRGM,  FLAG_NONE },
     { /* GETKEY */      "GETK\305\331",         6, docmd_getkey,      0x0000a26e, ARG_NONE,  FLAG_NONE },
-    { /* MENU */        "MENU",                 4, docmd_menu,        0x0000a25e, ARG_NONE,  FLAG_PRGM_ONLY },
+    { /* MENU */        "MENU",                 4, docmd_menu,        0x0000a25e, ARG_NONE,  FLAG_NONE },
     { /* KEYG */        "KEYG",                 4, NULL,              0x02000000, ARG_MKEY,  FLAG_NONE },
     { /* KEYX */        "KEYX",                 4, NULL,              0x02000000, ARG_MKEY,  FLAG_NONE },
     { /* X_EQ_0 */      "X=0?",                 4, docmd_x_eq_0,      0x00000067, ARG_NONE,  FLAG_NONE },
@@ -182,7 +176,7 @@ static const command_spec cmd_array[] =
     { /* SIGMAADD */    "\005+",                2, docmd_sigmaadd,    0x00000047, ARG_NONE,  FLAG_NONE },
     { /* SIGMASUB */    "\005-",                2, docmd_sigmasub,    0x00000048, ARG_NONE,  FLAG_NONE },
     { /* GTO */         "GTO",                  3, docmd_gto,         0x01a60000, ARG_LBL,   FLAG_NONE },
-    { /* END */         "END",                  3, docmd_end,         0x01000000, ARG_NONE,  FLAG_NONE },
+    { /* END */         "END",                  3, docmd_rtn,         0x01000000, ARG_NONE,  FLAG_NONE },
     { /* NUMBER */      "",                     0, docmd_number,      0x01000000, ARG_NONE,  FLAG_HIDDEN },
     { /* STRING */      "",                     0, docmd_string,      0x01000000, ARG_NONE,  FLAG_HIDDEN },
     { /* RUN */         "RUN",                  3, NULL,              0x02000000, ARG_NONE,  FLAG_HIDDEN },
@@ -299,7 +293,7 @@ static const command_spec cmd_array[] =
     { /* MEAN */        "MEAN",                 4, docmd_mean,        0x0000007c, ARG_NONE,  FLAG_NONE },
     { /* NOT */         "NOT",                  3, docmd_not,         0x0000a587, ARG_NONE,  FLAG_NONE },
     { /* OCTM */        "OCTM",                 4, docmd_octm,        0x0000a0e4, ARG_NONE,  FLAG_NONE },
-    { /* OLD */         "OLD",                  3, docmd_old,         0x0000a6db, ARG_NONE,  FLAG_NONE },
+    { /* OLD */         "OLD",                  3, docmd_rclel,       0x0000a6db, ARG_NONE,  FLAG_NONE },
     { /* OR */          "OR",                   2, docmd_or,          0x0000a589, ARG_NONE,  FLAG_NONE },
     { /* PGMSLV */      "P\307\315SLV",         6, docmd_pgmslv,      0x00b5f2e9, ARG_PRGM,  FLAG_NONE },
     { /* PGMINT */      "P\307\315INT",         6, docmd_pgmint,      0x00b4f2e8, ARG_PRGM,  FLAG_NONE },
@@ -351,17 +345,7 @@ static const command_spec cmd_array[] =
     { /* FIND */        "[F\311ND]",            6, docmd_find,        0x0000a6ec, ARG_NONE,  FLAG_NONE },
     { /* XROM */        "XROM",                 4, docmd_xrom,        0x01000000, ARG_OTHER, FLAG_HIDDEN },
 
-    /* Here endeth the original Free42 function table.
-     * UPDATE: To support "pure" HP-42S behavior, all extensions can be
-     * disabled at runtime, using the core_settings.enable_ext_* flags.
-     * When an extension is disabled, its commands disappear from the FCN
-     * catalog, are not recognized by XEQ, are displayed as their XROM
-     * equivalents in programs, and raise a Nonexistent error when trying to
-     * execute them from programs.
-     * When a shell disables or enables an extension in response to the user
-     * changing a setting in the Preferences dialog, it should call redisplay()
-     * to make sure the display reflects the new setting.
-     */
+    /* Here endeth the original Free42 function table. */
 
     /* Underhill's COPAN (Obsolete) */
     { /* OPENF */       "OPENF",                5, docmd_xrom,        0x0000a7c1, ARG_NONE,  FLAG_NONE },
@@ -435,7 +419,30 @@ static const command_spec cmd_array[] =
     { /* YMD */        "YMD",                   3, docmd_ymd,         0x0000a7d5, ARG_NONE,  FLAG_NONE },
     { /* BSIGNED */    "BS\311GN\305\304",      7, docmd_bsigned,     0x0000a7d6, ARG_NONE,  FLAG_NONE },
     { /* BWRAP */      "BWR\301P",              5, docmd_bwrap,       0x0000a7d7, ARG_NONE,  FLAG_NONE },
-    { /* BRESET */     "BR\305S\305T",          6, docmd_breset,      0x0000a7d8, ARG_NONE,  FLAG_NONE }
+    { /* BRESET */     "BR\305S\305T",          6, docmd_breset,      0x0000a7d8, ARG_NONE,  FLAG_NONE },
+    { /* GETKEY1 */    "G\305TK\305\3311",      7, docmd_getkey1,     0x0000a7d9, ARG_NONE,  FLAG_NONE },
+    { /* LASTO */      "LASTO",                 5, docmd_lasto,       0x00f5f2c8, ARG_NAMED, FLAG_NONE },
+
+    /* Useful X-Fcn functions missing from the 42S */
+    { /* ANUM */       "ANUM",                  4, docmd_anum,        0x0000a642, ARG_NONE,  FLAG_NONE },
+    { /* X<>F */       "X<>F",                  4, docmd_x_swap_f,    0x0000a66e, ARG_NONE,  FLAG_NONE },
+    { /* RCLFLAG */    "RCLFLAG",               7, docmd_rclflag,     0x0000a660, ARG_NONE,  FLAG_NONE },
+    { /* STOFLAG */    "STOFLAG",               7, docmd_stoflag,     0x0000a66d, ARG_NONE,  FLAG_NONE },
+    
+    /* No-op, stored in raw files as 0xf0, a.k.a. TEXT 0 on the 41C */
+    { /* NOP */        "NOP",                   3, docmd_nop,         0x000000f0, ARG_NONE,  FLAG_NONE },
+
+    /* Fused Multiply-Add */
+    { /* FMA */        "FMA",                   3, docmd_fma,         0x0000a7da, ARG_NONE,  FLAG_NONE },
+
+    /* User-defined functions */
+    // Note: a7db-a7dd encode FUNC0-FUNC2, superseded by FUNC 00, FUNC 11, and FUNC 21
+    // So we don't need those three XROMs any more, but we can't safely use them, so
+    // they should be left unassigned.
+    { /* FUNC */       "FUNC",                  4, docmd_func,        0x0000f2e0, ARG_FUNC,  FLAG_PRGM_ONLY },
+    { /* RTNYES */     "RTNYES",                6, docmd_rtnyes,      0x0000a7de, ARG_NONE,  FLAG_NONE },
+    { /* RTNNO */      "RTNNO",                 5, docmd_rtnno,       0x0000a7df, ARG_NONE,  FLAG_NONE },
+    { /* RTNERR */     "RTNERR",                6, docmd_rtnerr,      0x0000a7e0, ARG_NONE,  FLAG_NONE }
 };
 
 /*

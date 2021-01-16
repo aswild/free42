@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -22,6 +22,7 @@
 #include "core_math2.h"
 #include "core_sto_rcl.h"
 #include "core_variables.h"
+#include "shell.h"
 
 /********************************************************/
 /* Implementations of HP-42S built-in functions, part 6 */
@@ -756,22 +757,47 @@ static int mappable_inv_r(phloat x, phloat *y) {
 }
 
 static int mappable_inv_c(phloat xre, phloat xim, phloat *yre, phloat *yim) {
+    phloat r, t, rre, rim;
     int inf;
-    phloat h = hypot(xre, xim);
-    if (h == 0)
+    if (xre == 0 && xim == 0)
         return ERR_DIVIDE_BY_0;
-    *yre = xre / h / h;
-    if ((inf = p_isinf(*yre)) != 0) {
-        if (!flags.f.range_error_ignore)
-            return ERR_OUT_OF_RANGE;
-        *yre = inf < 0 ? NEG_HUGE_PHLOAT : POS_HUGE_PHLOAT;
+    if (fabs(xim) <= fabs(xre)) {
+        r = xim / xre;
+        t = 1 / (xre + xim * r);
+        if (r == 0) {
+            rre = t;
+            rim = -xim * (1 / xre) * t;
+        } else {
+            rre = t;
+            rim = -r * t;
+        }
+    } else {
+        r = xre / xim;
+        t = 1 / (xre * r + xim);
+        if (r == 0) {
+            rre = xre * (1 / xim) * t;
+            rim = -t;
+        } else {
+            rre = r * t;
+            rim = -t;
+        }
     }
-    *yim = (-xim) / h / h;
-    if ((inf = p_isinf(*yim)) != 0) {
-        if (!flags.f.range_error_ignore)
+    inf = p_isinf(rre);
+    if (inf != 0) {
+        if (flags.f.range_error_ignore)
+            rre = inf == 1 ? POS_HUGE_PHLOAT : NEG_HUGE_PHLOAT;
+        else
             return ERR_OUT_OF_RANGE;
-        *yim = inf < 0 ? NEG_HUGE_PHLOAT : POS_HUGE_PHLOAT;
     }
+    inf = p_isinf(rim);
+    if (inf != 0) {
+        if (flags.f.range_error_ignore)
+            rim = inf == 1 ? POS_HUGE_PHLOAT : NEG_HUGE_PHLOAT;
+        else
+            return ERR_OUT_OF_RANGE;
+    }
+    *yre = rre;
+    *yim = rim;
     return ERR_NONE;
 }
 
@@ -997,4 +1023,213 @@ int docmd_y_pow_x(arg_struct *arg) {
             return ERR_NONE;
         }
     }
+}
+
+int docmd_anum(arg_struct *arg) {
+    char buf[50];
+    bool have_mant = false;
+    bool neg_mant = false;
+    bool have_radix = false;
+    bool have_exp = false;
+    bool neg_exp = false;
+    int exp_pos = 0;
+    int buf_pos = 0;
+    buf[buf_pos++] = '+';
+    for (int src_pos = 0; src_pos < reg_alpha_length; src_pos++) {
+        char c = reg_alpha[src_pos];
+        if (!flags.f.decimal_point)
+            if (c == '.')
+                c = ',';
+            else if (c == ',')
+                c = '.';
+        if (c == '+' || flags.f.thousands_separators && c == ',')
+            continue;
+        if (!have_mant) {
+            if (c == '-') {
+                neg_mant = !neg_mant;
+            } else if (c >= '0' && c <= '9') {
+                buf[buf_pos++] = c;
+                have_mant = true;
+            } else if (c == '.') {
+                buf[buf_pos++] = '0';
+                buf[buf_pos++] = '.';
+                have_mant = true;
+                have_radix = true;
+            } else {
+                neg_mant = false;
+            }
+        } else if (!have_exp) {
+            if (c == '-') {
+                neg_mant = !neg_mant;
+            } else if (c >= '0' && c <= '9') {
+                buf[buf_pos++] = c;
+            } else if (c == '.') {
+                if (!have_radix) {
+                    buf[buf_pos++] = c;
+                    have_radix = true;
+                }
+            } else if (c == 'E' || c == 'e' || c == 24) {
+                buf[buf_pos++] = 'e';
+                exp_pos = buf_pos;
+                buf[buf_pos++] = '+';
+                have_exp = true;
+            } else if (c == '.') {
+                /* ignore */
+            } else {
+                break;
+            }
+        } else {
+            if (c == '-') {
+                neg_exp = !neg_exp;
+            } else if (c >= '0' && c <= '9') {
+                buf[buf_pos++] = c;
+            } else if (c == '.' || c == 'E' || c == 'e' || c == 24) {
+                /* ignore */
+            } else {
+                break;
+            }
+        }
+    }
+    if (!have_mant)
+        return ERR_NONE;
+    if (neg_mant)
+        buf[0] = '-';
+    if (have_exp && buf_pos == exp_pos + 1) {
+        buf_pos -= 2;
+        have_exp = false;
+    }
+    if (have_exp && neg_exp)
+        buf[exp_pos] = '-';
+    buf[buf_pos++] = 0;
+    phloat p;
+#ifdef BCD_MATH
+    BID_UINT128 b;
+    bid128_from_string(&b, buf);
+    p = b;
+#else
+    sscanf(buf, "%le", &p);
+#endif
+    if (p_isnan(p))
+        return ERR_NONE;
+    if (p_isinf(p))
+        p = p > 0 ? POS_HUGE_PHLOAT : NEG_HUGE_PHLOAT;
+    vartype *v = new_real(p);
+    if (v == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    flags.f.numeric_data_input = 1;
+    recall_result(v);
+    return ERR_NONE;
+}
+
+int docmd_x_swap_f(arg_struct *arg) {
+    if (reg_x->type == TYPE_STRING)
+        return ERR_ALPHA_DATA_IS_INVALID;
+    if (reg_x->type != TYPE_REAL)
+        return ERR_INVALID_DATA;
+    phloat x = ((vartype_real *) reg_x)->x;
+    if (x < 0)
+        x = -x;
+    if (x >= 256)
+        return ERR_INVALID_DATA;
+    int f = 0;
+    for (int i = 7; i >= 0; i--)
+        f = (f << 1) | flags.farray[i];
+    int nf = to_int(x);
+    for (int i = 0; i < 8; i++) {
+        flags.farray[i] = nf & 1;
+        nf >>= 1;
+    }
+    ((vartype_real *) reg_x)->x = f;
+    return ERR_NONE;
+}
+
+int docmd_rclflag(arg_struct *arg) {
+    uint8 lfs = 0, hfs = 0;
+    uint8 p = 1;
+    for (int i = 0; i < 50; i++) {
+        int j = i + 50;
+        char lf = virtual_flags[i] == '1' ? virtual_flag_handler(FLAGOP_FS_T, i) == ERR_YES : flags.farray[i] != 0;
+        char hf = virtual_flags[j] == '1' ? virtual_flag_handler(FLAGOP_FS_T, j) == ERR_YES : flags.farray[j] != 0;
+        if (lf)
+            lfs += p;
+        if (hf)
+            hfs += p;
+        p <<= 1;
+    }
+    vartype *v = new_complex(lfs, hfs);
+    if (v == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    recall_result(v);
+    return ERR_NONE;
+}
+
+int docmd_stoflag(arg_struct *arg) {
+    if (reg_x->type == TYPE_STRING)
+        return ERR_ALPHA_DATA_IS_INVALID;
+    if (reg_x->type != TYPE_REAL && reg_x->type != TYPE_COMPLEX)
+        return ERR_INVALID_DATA;
+    vartype_complex *c;
+    int b, e;
+    if (reg_x->type == TYPE_COMPLEX) {
+        c = (vartype_complex *) reg_x;
+        b = 0;
+        e = 99;
+    } else {
+        if (reg_y->type == TYPE_STRING)
+            return ERR_ALPHA_DATA_IS_INVALID;
+        if (reg_y->type != TYPE_COMPLEX)
+            return ERR_INVALID_DATA;
+        c = (vartype_complex *) reg_y;
+        phloat x = ((vartype_real *) reg_x)->x;
+        if (x < 0)
+            x = -x;
+        if (x >= 100)
+            return ERR_INVALID_DATA;
+        b = to_int(x);
+        x = (x - b) * 100;
+        #ifndef BCD_MATH
+            x = x + 0.0000000005;
+        #endif
+        e = to_int(x);
+        if (e > 99)
+            e = 99;
+        if (e < b)
+            e = b;
+    }
+
+    char old_g = !flags.f.rad && flags.f.grad;
+    char old_rad = flags.f.rad || flags.f.grad;
+
+    phloat lo = c->re;
+    phloat hi = c->im;
+    if (lo < 0)
+        lo = -lo;
+    if (hi < 0)
+        hi = -hi;
+    if (lo >= 1LL << 50 || hi >= 1LL << 50)
+        return ERR_INVALID_DATA;
+    uint8 lfs = to_int8(lo);
+    uint8 hfs = to_int8(hi);
+    uint8 p = 1;
+    for (int i = 0; i < 50; i++) {
+        int j = i + 50;
+        char lf = virtual_flags[i] == '1' ? 0 : (lfs & p) != 0;
+        char hf = virtual_flags[j] == '1' ? 0 : (hfs & p) != 0;
+        if (i >= b && i <= e)
+            flags.farray[i] = lf;
+        if (j >= b && j <= e)
+            flags.farray[j] = hf;
+        p <<= 1;
+    }
+
+    char new_g = !flags.f.rad && flags.f.grad;
+    char new_rad = flags.f.rad || flags.f.grad;
+    if (new_g == old_g)
+        new_g = -1;
+    if (new_rad == old_rad)
+        new_rad = -1;
+    if (new_g != -1 || new_rad != -1)
+        shell_annunciators(-1, -1, -1, -1, new_g, new_rad);
+
+    return ERR_NONE;
 }

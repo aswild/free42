@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -17,23 +17,26 @@
 
 #include <stdlib.h>
 
+#include "core_commands2.h"
 #include "core_helpers.h"
 #include "core_linalg1.h"
 #include "core_sto_rcl.h"
 #include "core_variables.h"
 
 
-static int apply_sto_operation(char operation, vartype *oldval);
+static int apply_sto_operation(char operation, vartype *oldval, bool trace_stk);
 static void generic_sto_completion(int error, vartype *res);
 
 static bool preserve_ij;
+static bool trace_stack;
 
 
-static int apply_sto_operation(char operation, vartype *oldval) {
+static int apply_sto_operation(char operation, vartype *oldval, bool trace_stk) {
     if (!ensure_var_space(1))
         return ERR_INSUFFICIENT_MEMORY;
     vartype *newval;
     int error;
+    trace_stack = trace_stk;
     switch (operation) {
         case '/':
             preserve_ij = true;
@@ -364,6 +367,8 @@ static void generic_sto_completion(int error, vartype *res) {
             matedit_j = j;
         }
     }
+    if (trace_stack)
+        docmd_prstk(NULL);
 }
 
 int generic_sto(arg_struct *arg, char operation) {
@@ -531,6 +536,7 @@ int generic_sto(arg_struct *arg, char operation) {
         }
         case ARGTYPE_STK: {
             vartype *newval;
+            bool trace_stk = arg->val.stk != 'L' && flags.f.trace_print && flags.f.normal_print && flags.f.printer_exists;
             if (operation == 0) {
                 if (arg->val.stk == 'X') {
                     /* STO ST X : no-op! */
@@ -557,6 +563,8 @@ int generic_sto(arg_struct *arg, char operation) {
                         reg_lastx = newval;
                         break;
                 }
+                if (trace_stk)
+                    docmd_prstk(NULL);
                 return ERR_NONE;
             } else {
                 vartype *oldval = NULL;
@@ -568,7 +576,7 @@ int generic_sto(arg_struct *arg, char operation) {
                     case 'L': oldval = reg_lastx; break;
                 }
                 temp_arg = *arg;
-                return apply_sto_operation(operation, oldval);
+                return apply_sto_operation(operation, oldval, trace_stk);
             }
         }
         case ARGTYPE_STR: {
@@ -608,7 +616,7 @@ int generic_sto(arg_struct *arg, char operation) {
                 if (oldval == NULL)
                     return ERR_NONEXISTENT;
                 temp_arg = *arg;
-                return apply_sto_operation(operation, oldval);
+                return apply_sto_operation(operation, oldval, false);
             }
         }
         default:
@@ -1148,14 +1156,37 @@ int div_rc(phloat x, phloat yre, phloat yim, phloat *zre, phloat *zim) {
     return ERR_NONE;
 }
 
+/*
+ * div_cr() and div_cc() algorithms based on this Scilab paper:
+ * http://forge.scilab.org/index.php/p/compdiv/source/tree/21/doc/improved_cdiv.pdf
+ */
+
 int div_cr(phloat xre, phloat xim, phloat y, phloat *zre, phloat *zim) {
-    phloat rre, rim, h;
+    phloat r, t, rre, rim;
     int inf;
-    /* TODO: overflows in intermediate results */
-    h = xre * xre + xim * xim;
-    if (h == 0)
+    if (xre == 0 && xim == 0)
         return ERR_DIVIDE_BY_0;
-    rre = y * xre / h;
+    if (fabs(xim) <= fabs(xre)) {
+        r = xim / xre;
+        t = 1 / (xre + xim * r);
+        if (r == 0) {
+            rre = y * t;
+            rim = -xim * (y / xre) * t;
+        } else {
+            rre = y * t;
+            rim = -y * r * t;
+        }
+    } else {
+        r = xre / xim;
+        t = 1 / (xre * r + xim);
+        if (r == 0) {
+            rre = xre * (y / xim) * t;
+            rim = -y * t;
+        } else {
+            rre = y * r * t;
+            rim = -y * t;
+        }
+    }
     inf = p_isinf(rre);
     if (inf != 0) {
         if (flags.f.range_error_ignore)
@@ -1163,7 +1194,6 @@ int div_cr(phloat xre, phloat xim, phloat y, phloat *zre, phloat *zim) {
         else
             return ERR_OUT_OF_RANGE;
     }
-    rim = -y * xim / h;
     inf = p_isinf(rim);
     if (inf != 0) {
         if (flags.f.range_error_ignore)
@@ -1178,13 +1208,31 @@ int div_cr(phloat xre, phloat xim, phloat y, phloat *zre, phloat *zim) {
 
 int div_cc(phloat xre, phloat xim, phloat yre, phloat yim,
                                                     phloat *zre, phloat *zim) {
-    phloat rre, rim, h;
+    phloat r, t, rre, rim;
     int inf;
-    /* TODO: overflows in intermediate results */
-    h = xre * xre + xim * xim;
-    if (h == 0)
+    if (xre == 0 && xim == 0)
         return ERR_DIVIDE_BY_0;
-    rre = (xre * yre + xim * yim) / h;
+    if (fabs(xim) <= fabs(xre)) {
+        r = xim / xre;
+        t = 1 / (xre + xim * r);
+        if (r == 0) {
+            rre = (yre + xim * (yim / xre)) * t;
+            rim = (yim - xim * (yre / xre)) * t;
+        } else {
+            rre = (yre + yim * r) * t;
+            rim = (yim - yre * r) * t;
+        }
+    } else {
+        r = xre / xim;
+        t = 1 / (xre * r + xim);
+        if (r == 0) {
+            rre = (xre * (yre / xim) + yim) * t;
+            rim = (xre * (yim / xim) - yre) * t;
+        } else {
+            rre = (yre * r + yim) * t;
+            rim = (yim * r - yre) * t;
+        }
+    }
     inf = p_isinf(rre);
     if (inf != 0) {
         if (flags.f.range_error_ignore)
@@ -1192,7 +1240,6 @@ int div_cc(phloat xre, phloat xim, phloat yre, phloat yim,
         else
             return ERR_OUT_OF_RANGE;
     }
-    rim = (xre * yim - yre * xim) / h;
     inf = p_isinf(rim);
     if (inf != 0) {
         if (flags.f.range_error_ignore)

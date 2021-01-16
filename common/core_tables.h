@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -418,8 +418,29 @@
 #define CMD_BSIGNED     374
 #define CMD_BWRAP       375
 #define CMD_BRESET      376
+/* The order up to and including BRESET is set in stone, because those       */
+/* functions can all appear in state files from before 2.5, when programs in */
+/* state files were still stored as memory dumps. From 2.5 onward, programs  */
+/* in state files are stored in "raw" format, so the details of how they are */
+/* stored in memory become a private implementation detail.                  */
+#define CMD_GETKEY1     377
+#define CMD_LASTO       378
+/* Useful X-Fcn functions missing from the 42S */
+#define CMD_ANUM        379
+#define CMD_X_SWAP_F    380
+#define CMD_RCLFLAG     381
+#define CMD_STOFLAG     382
+/* No-op, stored in raw files as 0xf0, a.k.a. TEXT 0 on the 41C */
+#define CMD_NOP         383
+/* Fused Multiply-Add */
+#define CMD_FMA         384
+/* User-defined functions */
+#define CMD_FUNC        385
+#define CMD_RTNYES      386
+#define CMD_RTNNO       387
+#define CMD_RTNERR      388
 
-#define CMD_SENTINEL    377
+#define CMD_SENTINEL    389
 
 
 /* command_spec.argtype */
@@ -432,13 +453,14 @@
 #define ARG_NUM11     5 /* num (0..11), ind */
 #define ARG_NUM99     6 /* num (0..99), ind */
 #define ARG_COUNT     7 /* numeric-only (SIMQ, DEL, SIZE, LIST) */
-#define ARG_LBL       8 /* Label: num, lclbl, global, ind */
-#define ARG_CKEY      9 /* Key in custom menu */
-#define ARG_MKEY     10 /* Key in programmable menu (KEYG/KEYX) */
-#define ARG_PRGM     11 /* Alpha label (CATSECT_PGM) */
-#define ARG_RVAR     12 /* Variable (real only) (MVAR, INTEG, SOLVE) */
-#define ARG_MAT      13 /* Variable (matrix only) (EDITN, INDEX) */
-#define ARG_OTHER    14 /* Weirdos */
+#define ARG_FUNC      8 /* numeric-only, [0-4][0-4] (FUNC) */
+#define ARG_LBL       9 /* Label: num, lclbl, global, ind */
+#define ARG_CKEY     10 /* Key in custom menu */
+#define ARG_MKEY     11 /* Key in programmable menu (KEYG/KEYX) */
+#define ARG_PRGM     12 /* Alpha label (CATSECT_PGM) */
+#define ARG_RVAR     13 /* Variable (real only) (MVAR, INTEG, SOLVE) */
+#define ARG_MAT      14 /* Variable (matrix only) (EDITN, INDEX) */
+#define ARG_OTHER    15 /* Weirdos */
 
 
 /* command_spec.flags */

@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -839,13 +839,13 @@ public class Free42Activity extends Activity {
     
     private void doProgramSelectionClick(DialogInterface dialog, int which) {
         if (which == DialogInterface.BUTTON_POSITIVE) {
-            boolean none = true;
+            String name = null;
             for (int i = 0; i < selectedProgramIndexes.length; i++)
                 if (selectedProgramIndexes[i]) {
-                    none = false;
+                    name = programNames[i];
                     break;
                 }
-            if (!none) {
+            if (name != null) {
                 if (exportShare) {
                     doShare();
                 } else {
@@ -855,6 +855,16 @@ public class Free42Activity extends Activity {
                             doExport2(path);
                         }
                     });
+                    if (name.startsWith("\"")) {
+                        int q = name.indexOf('"', 1);
+                        if (q != -1)
+                            name = name.substring(1, q).replaceAll("[/\n]", "_") + ".raw";
+                        else
+                            name = "Untitled.raw";
+                    } else {
+                        name = "Untitled.raw";
+                    }
+                    fsd.setPath(name);
                     fsd.show();
                 }
             }
@@ -1074,7 +1084,7 @@ public class Free42Activity extends Activity {
 
                 TextView label2 = new TextView(context);
                 label2.setId(3);
-                label2.setText("(C) 2004-2020 Thomas Okken");
+                label2.setText("\u00a9 2004-2021 Thomas Okken");
                 lp = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
                 lp.addRule(RelativeLayout.ALIGN_LEFT, label1.getId());
                 lp.addRule(RelativeLayout.BELOW, label1.getId());
@@ -2028,11 +2038,6 @@ public class Free42Activity extends Activity {
         public boolean matrix_singularmatrix;
         public boolean matrix_outofrange;
         public boolean auto_repeat;
-        @SuppressWarnings("unused") public boolean enable_ext_accel;
-        @SuppressWarnings("unused") public boolean enable_ext_locat;
-        @SuppressWarnings("unused") public boolean enable_ext_heading;
-        @SuppressWarnings("unused") public boolean enable_ext_time;
-        @SuppressWarnings("unused") public boolean enable_ext_fptest;
     }
 
     ///////////////////////////////////////////////////

@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -33,38 +33,40 @@ extern FILE *gfile;
 
 #define ERR_NONE                    0
 #define ERR_ALPHA_DATA_IS_INVALID   1
-#define ERR_INSUFFICIENT_MEMORY     2
-#define ERR_NOT_YET_IMPLEMENTED     3
-#define ERR_OUT_OF_RANGE            4
-#define ERR_DIVIDE_BY_0             5
-#define ERR_INVALID_TYPE            6
-#define ERR_INVALID_DATA            7
-#define ERR_DIMENSION_ERROR         8
-#define ERR_SIZE_ERROR              9
-#define ERR_INTERNAL_ERROR         10
-#define ERR_NONEXISTENT            11
-#define ERR_RESTRICTED_OPERATION   12
-#define ERR_YES                    13
-#define ERR_NO                     14
-#define ERR_STOP                   15
-#define ERR_LABEL_NOT_FOUND        16
-#define ERR_NO_REAL_VARIABLES      17
-#define ERR_NO_COMPLEX_VARIABLES   18
-#define ERR_NO_MATRIX_VARIABLES    19
-#define ERR_NO_MENU_VARIABLES      20
-#define ERR_STAT_MATH_ERROR        21
-#define ERR_INVALID_FORECAST_MODEL 22
-#define ERR_SOLVE_INTEG_RTN_LOST   23
-#define ERR_SINGULAR_MATRIX        24
-#define ERR_SOLVE_SOLVE            25
-#define ERR_INTEG_INTEG            26
-#define ERR_RUN                    27
-#define ERR_INTERRUPTED            28
-#define ERR_PRINTING_IS_DISABLED   29
-#define ERR_INTERRUPTIBLE          30
-#define ERR_NO_VARIABLES           31
+#define ERR_OUT_OF_RANGE            2
+#define ERR_DIVIDE_BY_0             3
+#define ERR_INVALID_TYPE            4
+#define ERR_INVALID_DATA            5
+#define ERR_NONEXISTENT             6
+#define ERR_DIMENSION_ERROR         7
+#define ERR_SIZE_ERROR              8
+#define ERR_RESTRICTED_OPERATION    9
+#define ERR_YES                    10
+#define ERR_NO                     11
+#define ERR_STOP                   12
+#define ERR_LABEL_NOT_FOUND        13
+#define ERR_NO_REAL_VARIABLES      14
+#define ERR_NO_COMPLEX_VARIABLES   15
+#define ERR_NO_MATRIX_VARIABLES    16
+#define ERR_NO_MENU_VARIABLES      17
+#define ERR_STAT_MATH_ERROR        18
+#define ERR_INVALID_FORECAST_MODEL 19
+#define ERR_SOLVE_INTEG_RTN_LOST   20
+#define ERR_SINGULAR_MATRIX        21
+#define ERR_SOLVE_SOLVE            22
+#define ERR_INTEG_INTEG            23
+#define ERR_RUN                    24
+#define ERR_INTERRUPTED            25
+#define ERR_PRINTING_IS_DISABLED   26
+#define ERR_INTERRUPTIBLE          27
+#define ERR_NO_VARIABLES           28
+#define ERR_INSUFFICIENT_MEMORY    29
+#define ERR_NOT_YET_IMPLEMENTED    30
+#define ERR_INTERNAL_ERROR         31
 #define ERR_SUSPICIOUS_OFF         32
 #define ERR_RTN_STACK_FULL         33
+#define ERR_NUMBER_TOO_LARGE       34
+#define ERR_NUMBER_TOO_SMALL       35
 
 typedef struct {
     const char *text;
@@ -367,14 +369,19 @@ typedef union {
     } f;
 } flags_struct;
 extern flags_struct flags;
+extern const char *virtual_flags;
+
+/* For var_struct.flags */
+#define VAR_HIDDEN  1
+#define VAR_HIDING  2
+#define VAR_PRIVATE 4
 
 /* Variables */
 typedef struct {
     unsigned char length;
     char name[7];
     int2 level;
-    bool hidden;
-    bool hiding;
+    int2 flags;
     vartype *value;
 } var_struct;
 extern int vars_capacity;
@@ -439,6 +446,7 @@ extern int mode_alphamenu;
 extern int mode_commandmenu;
 extern bool mode_running;
 extern bool mode_getkey;
+extern bool mode_getkey1;
 extern bool mode_pause;
 extern bool mode_disable_stack_lift;
 extern bool mode_varmenu;
@@ -541,20 +549,25 @@ void goto_dot_dot(bool force_new);
 int mvar_prgms_exist();
 int label_has_mvar(int lblindex);
 int get_command_length(int prgm, int4 pc);
-void get_next_command(int4 *pc, int *command, arg_struct *arg, int find_target);
+void get_next_command(int4 *pc, int *command, arg_struct *arg, int find_target, const char **num_str);
 void rebuild_label_table();
 void delete_command(int4 pc);
-void store_command(int4 pc, int command, arg_struct *arg);
-void store_command_after(int4 *pc, int command, arg_struct *arg);
+void store_command(int4 pc, int command, arg_struct *arg, const char *num_str);
+void store_command_after(int4 *pc, int command, arg_struct *arg, const char *num_str);
 int4 pc2line(int4 pc);
 int4 line2pc(int4 line);
 int4 find_local_label(const arg_struct *arg);
 int find_global_label(const arg_struct *arg, int *prgm, int4 *pc);
+int find_global_label_index(const arg_struct *arg, int *idx);
 int push_rtn_addr(int prgm, int4 pc);
 int push_indexed_matrix(const char *name, int len);
+int push_func_state(int n);
+int pop_func_state(bool error);
 void step_out();
 void step_over();
 bool should_i_stop_at_this_level();
+int rtn(int err);
+int rtn_with_error(int err);
 void pop_rtn_addr(int *prgm, int4 *pc, bool *stop);
 void pop_indexed_matrix(const char *name, int namelen);
 void clear_all_rtns();

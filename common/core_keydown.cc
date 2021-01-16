@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -199,7 +199,7 @@ void keydown(int shift, int key) {
             display_error(ERR_INSUFFICIENT_MEMORY, 1);
             set_running(false);
         }
-        if (key == KEY_EXIT || (!shift && key == KEY_RUN))
+        if (key == KEY_RUN || !mode_getkey1 && (key == KEY_EXIT || key == KEY_EXIT + 37))
             set_running(false);
         mode_getkey = false;
         if (!mode_running)
@@ -224,7 +224,8 @@ void keydown(int shift, int key) {
                 arg_struct arg;
                 arg.type = ARGTYPE_DOUBLE;
                 arg.val_d = entered_number;
-                store_command(pc, CMD_NUMBER, &arg);
+                cmdline[cmdline_length] = 0;
+                store_command(pc, CMD_NUMBER, &arg, cmdline);
                 prgm_highlight_row = 1;
             }
         } else if (mode_alpha_entry) {
@@ -288,7 +289,8 @@ void keydown(int shift, int key) {
             arg_struct arg;
             arg.type = ARGTYPE_DOUBLE;
             arg.val_d = entered_number;
-            store_command(pc, CMD_NUMBER, &arg);
+            cmdline[cmdline_length] = 0;
+            store_command(pc, CMD_NUMBER, &arg, cmdline);
             prgm_highlight_row = 1;
         } else if ((flags.f.trace_print || flags.f.normal_print)
                 && flags.f.printer_exists)
@@ -1175,6 +1177,10 @@ void keydown_command_entry(int shift, int key) {
                 case KEY_8: digit = 8; break;
                 case KEY_9: digit = 9; break;
             }
+            if (incomplete_argtype == ARG_FUNC && digit > 4) {
+                squeak();
+                return;
+            }
             incomplete_num = incomplete_num * 10 + digit;
             incomplete_length++;
             if (incomplete_length == incomplete_maxdigits) {
@@ -1976,7 +1982,7 @@ void keydown_normal_mode(int shift, int key) {
                     if (flags.f.prgm_mode) {
                         pending_command = shift ? CMD_VIEW : CMD_STO;
                         store_command_after(&pc, pending_command,
-                                                        &pending_command_arg);
+                                                    &pending_command_arg, NULL);
                         prgm_highlight_row = 1;
                         pending_command = CMD_NONE;
                         redisplay();
@@ -2048,7 +2054,7 @@ void keydown_normal_mode(int shift, int key) {
                             pending_command_arg.val.lclbl = 'F' + menukey;
                         if (flags.f.prgm_mode) {
                             store_command_after(&pc, pending_command,
-                                                        &pending_command_arg);
+                                                    &pending_command_arg, NULL);
                             prgm_highlight_row = 1;
                             pending_command = CMD_NONE;
                             set_menu(MENULEVEL_COMMAND, MENU_NONE);
@@ -2267,7 +2273,7 @@ void keydown_normal_mode(int shift, int key) {
                 if (flags.f.prgm_mode &&
                         (cmdlist(pending_command)->flags & FLAG_IMMED) == 0) {
                     store_command_after(&pc, pending_command,
-                                            &pending_command_arg);
+                                            &pending_command_arg, NULL);
                     if (pending_command == CMD_END)
                         /* current_prgm was already incremented by store_command() */
                         pc = 0;
@@ -2300,7 +2306,7 @@ void keydown_normal_mode(int shift, int key) {
                         if (flags.f.prgm_mode) {
                             pending_command = shift ? CMD_VIEW : CMD_STO;
                             store_command_after(&pc, pending_command,
-                                                    &pending_command_arg);
+                                                    &pending_command_arg, NULL);
                             prgm_highlight_row = 1;
                             pending_command = CMD_NONE;
                             redisplay();

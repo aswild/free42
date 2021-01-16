@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -37,6 +37,6 @@ void get_integ_prgm(char *name, int *length);
 void set_integ_var(const char *name, int length);
 void get_integ_var(char *name, int *length);
 int start_integ(const char *name, int length);
-int return_to_integ(int failure, bool stop);
+int return_to_integ(bool stop);
 
 #endif

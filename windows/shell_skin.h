@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -20,7 +20,7 @@
 
 #include <windows.h>
 
-void skin_load(char *skinname, const char *basedir, long *width, long *height);
+void skin_load(wchar_t *skinname, const wchar_t *basedir, long *width, long *height);
 
 typedef struct {
     unsigned char r, g, b, pad;

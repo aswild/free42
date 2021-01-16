@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -719,8 +719,7 @@ int docmd_mean(arg_struct *arg) {
     free_vartype(reg_lastx);
     reg_lastx = reg_x;
     reg_x = mx;
-    if (flags.f.trace_print && flags.f.printer_enable)
-        docmd_prx(NULL);
+    print_trace();
     return ERR_NONE;
 }
 
@@ -757,8 +756,7 @@ int docmd_sdev(arg_struct *arg) {
     free_vartype(reg_lastx);
     reg_lastx = reg_x;
     reg_x = sx;
-    if (flags.f.trace_print && flags.f.printer_enable)
-        docmd_prx(NULL);
+    print_trace();
     return ERR_NONE;
 }
 
@@ -795,8 +793,7 @@ int docmd_sum(arg_struct *arg) {
     reg_y = sy;
     reg_lastx = reg_x;
     reg_x = sx;
-    if (flags.f.trace_print && flags.f.printer_enable)
-        docmd_prx(NULL);
+    print_trace();
     return ERR_NONE;
 }
 
@@ -945,12 +942,12 @@ int appmenu_exitcallback_3(int menuid, bool exitall) {
 }
 
 int docmd_pgmslvi(arg_struct *arg) {
-    /* This command can only be invoked from a menu; we assume that
-     * the menu handler only gives us valid arguments. We do check
-     * the argument type, but the existence of the named label, and
-     * whether it actually has MVAR instructions, we just assume.
-     */
     if (arg->type == ARGTYPE_STR) {
+        int idx;
+        if (!find_global_label_index(arg, &idx))
+            return ERR_LABEL_NOT_FOUND;
+        if (!label_has_mvar(idx))
+            return ERR_NO_MENU_VARIABLES;
         set_solve_prgm(arg->val.text, arg->length);
         string_copy(varmenu, &varmenu_length, arg->val.text, arg->length);
         varmenu_row = 0;
@@ -984,12 +981,12 @@ int appmenu_exitcallback_5(int menuid, bool exitall) {
 }
 
 int docmd_pgminti(arg_struct *arg) {
-    /* This command can only be invoked from a menu; we assume that
-     * the menu handler only gives us valid arguments. We do check
-     * the argument type, but the existence of the named label, and
-     * whether it actually has MVAR instructions, we just assume.
-     */
     if (arg->type == ARGTYPE_STR) {
+        int idx;
+        if (!find_global_label_index(arg, &idx))
+            return ERR_LABEL_NOT_FOUND;
+        if (!label_has_mvar(idx))
+            return ERR_NO_MENU_VARIABLES;
         set_integ_prgm(arg->val.text, arg->length);
         string_copy(varmenu, &varmenu_length, arg->val.text, arg->length);
         varmenu_row = 0;
@@ -1343,14 +1340,14 @@ static int sigma_helper_1(int weight) {
 
 int docmd_sigmaadd(arg_struct *arg) {
     int err = sigma_helper_1(1);
-    if (err == ERR_NONE && flags.f.trace_print && flags.f.printer_exists)
-        docmd_prx(NULL);
+    if (err == ERR_NONE)
+        print_trace();
     return err;
 }
 
 int docmd_sigmasub(arg_struct *arg) {
     int err = sigma_helper_1(-1);
-    if (err == ERR_NONE && flags.f.trace_print && flags.f.printer_exists)
-        docmd_prx(NULL);
+    if (err == ERR_NONE)
+        print_trace();
     return err;
 }

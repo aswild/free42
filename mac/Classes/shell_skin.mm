@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2020  Thomas Okken
+ * Copyright (C) 2004-2021  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -21,6 +21,7 @@
 #import "core_main.h"
 #import "Free42AppDelegate.h"
 #import "CalcView.h"
+#import "DisabledMenuItem.h"
 
 /**************************/
 /* Skin description stuff */
@@ -222,16 +223,21 @@ void skin_menu_update(NSMenu *skinMenu) {
         char *context;
         char *cname = strtok_r(buf, " \t\r\n", &context);
         NSString *name = [NSString stringWithUTF8String:cname];
-        NSMenuItem *item = [skinMenu addItemWithTitle:name action: @selector(selectSkin:) keyEquivalent: @""];
         bool overridden = false;
         for (int i = 0; i < nskins; i++)
             if (strcasecmp(cname, skinname[i]) == 0) {
                 overridden = true;
                 break;
             }
-        if (overridden)
-            [item setEnabled:NO];
-        else if (strcasecmp(cname, state.skinName) == 0)
+        NSMenuItem *item;
+        if (overridden) {
+            item = [[DisabledMenuItem alloc] initWithTitle:name action:@selector(selectSkin:) keyEquivalent: @""];
+            [skinMenu addItem:item];
+        } else {
+            item = [skinMenu addItemWithTitle:name action:@selector(selectSkin:) keyEquivalent: @""];
+        }
+        item.target = [NSApp delegate];
+        if (!overridden && strcasecmp(cname, state.skinName) == 0)
             [item setState:NSOnState];
     }
     fclose(builtins);
@@ -243,6 +249,7 @@ void skin_menu_update(NSMenu *skinMenu) {
         }
         NSString *name = [NSString stringWithUTF8String:skinname[i]];
         NSMenuItem *item = [skinMenu addItemWithTitle:name action: @selector(selectSkin:) keyEquivalent: @""];
+        item.target = [NSApp delegate];
         if (strcasecmp(skinname[i], state.skinName) == 0)
             [item setState:NSOnState];
         free(skinname[i]);
