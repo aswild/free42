@@ -62,7 +62,7 @@ class Phloat {
         BID_UINT128 val;
 
         Phloat() {}
-        Phloat(const Phloat &p) { val = p.val; }
+        Phloat(const Phloat &p) = default;
         Phloat(const BID_UINT128 &b) : val(b) {}
         Phloat(int numer, int denom);
         Phloat(int8 numer, int8 denom);
@@ -84,29 +84,26 @@ class Phloat {
             bid128_from_uint64(&val, &i);
         }
 
-        Phloat operator=(const Phloat &p) {
-            val = p.val;
-            return *this;
-        }
-        Phloat operator=(const BID_UINT128 &b) {
+        Phloat& operator=(const Phloat& p) = default;
+        Phloat& operator=(const BID_UINT128 &b) {
             val = b;
             return *this;
         }
-        Phloat operator=(int i) {
+        Phloat& operator=(int i) {
             bid128_from_int32(&val, &i);
             return *this;
         }
-        Phloat operator=(int8 i) {
+        Phloat& operator=(int8 i) {
             BID_SINT64 i64 = i;
             bid128_from_int64(&val, &i64);
             return *this;
         }
-        Phloat operator=(uint8 i) {
+        Phloat& operator=(uint8 i) {
             BID_UINT64 i64 = i;
             bid128_from_uint64(&val, &i64);
             return *this;
         }
-        Phloat operator=(double d) {
+        Phloat& operator=(double d) {
             BID_UINT64 tmp;
             binary64_to_bid64(&tmp, &d);
             bid64_to_bid128(&val, &tmp);

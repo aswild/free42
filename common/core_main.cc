@@ -3967,22 +3967,22 @@ void core_paste(const char *buf) {
         } else {
             // Matrix
             int n = rows * cols;
-            phloat *data = new phloat[n];
-            if (data == nullptr) {
+            phloat *data = (phloat *) malloc(n * sizeof(phloat));
+            if (data == NULL) {
                 display_error(ERR_INSUFFICIENT_MEMORY, false);
                 redisplay();
                 return;
             }
             char *is_string = (char *) malloc(n);
             if (is_string == NULL) {
-                delete[] data;
+                free(data);
                 display_error(ERR_INSUFFICIENT_MEMORY, false);
                 redisplay();
                 return;
             }
             char *hpbuf = (char *) malloc(max_cell_size + 5);
             if (hpbuf == NULL) {
-                delete[] data;
+                free(data);
                 free(is_string);
                 display_error(ERR_INSUFFICIENT_MEMORY, false);
                 redisplay();
@@ -4004,7 +4004,6 @@ void core_paste(const char *buf) {
                     spos = pos;
                     phloat re, im;
                     int slen;
-                    phloat *newdata = NULL;
                     int type = parse_scalar(hpbuf, hplen, true, &re, &im, &slen);
                     if (is_string != NULL) {
                         switch (type) {
@@ -4019,7 +4018,8 @@ void core_paste(const char *buf) {
                                         data[i] = 0;
                                 free(is_string);
                                 is_string = NULL;
-                                newdata = new phloat[2 * n];
+                                phloat *newdata;
+                                newdata = (phloat *) realloc(data, 2 * n * sizeof(phloat));
                                 if (newdata == NULL) {
                                     nomem:
                                     free(data);
@@ -4028,9 +4028,6 @@ void core_paste(const char *buf) {
                                     redisplay();
                                     return;
                                 }
-                                for (int i = 0; i < n; i++)
-                                    newdata[i] = data[i];
-                                delete[] data;
                                 data = newdata;
                                 for (int i = p - 1; i >= 0; i--) {
                                     data[i * 2] = data[i];
@@ -4113,7 +4110,7 @@ void core_paste(const char *buf) {
                                 malloc(sizeof(vartype_realmatrix));
                 if (rm == NULL) {
                     free_long_strings(is_string, data, p);
-                    delete[] data;
+                    free(data);
                     free(is_string);
                     display_error(ERR_INSUFFICIENT_MEMORY, false);
                     redisplay();
@@ -4124,7 +4121,7 @@ void core_paste(const char *buf) {
                 if (rm->array == NULL) {
                     free(rm);
                     free_long_strings(is_string, data, p);
-                    delete[] data;
+                    free(data);
                     free(is_string);
                     display_error(ERR_INSUFFICIENT_MEMORY, false);
                     redisplay();
@@ -4141,7 +4138,7 @@ void core_paste(const char *buf) {
                 vartype_complexmatrix *cm = (vartype_complexmatrix *)
                                 malloc(sizeof(vartype_complexmatrix));
                 if (cm == NULL) {
-                    delete[] data;
+                    free(data);
                     display_error(ERR_INSUFFICIENT_MEMORY, false);
                     redisplay();
                     return;
@@ -4150,7 +4147,7 @@ void core_paste(const char *buf) {
                                 malloc(sizeof(complexmatrix_data));
                 if (cm->array == NULL) {
                     free(cm);
-                    delete[] data;
+                    free(data);
                     display_error(ERR_INSUFFICIENT_MEMORY, false);
                     redisplay();
                     return;
