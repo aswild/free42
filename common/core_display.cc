@@ -39,12 +39,6 @@
  */
 #pragma warning(push)
 #pragma warning(disable:4838)
-//#elif defined(__GNUC__)
-/* disables:
- *      narrowing conversion of ‘168’ from ‘int’ to ‘char’ [-Wnarrowing]
- */
-//#pragma GCC diagnostic push
-//#pragma GCC diagnostic ignored "-Wnarrowing"
 #endif
 
 
@@ -521,8 +515,6 @@ static char smallchars_map[128] =
 
 #if defined(WINDOWS) && !defined(__GNUC__)
 #pragma warning(pop)
-#elif defined(__GNUC__)
-#pragma GCC diagnostic pop
 #endif
 
 
