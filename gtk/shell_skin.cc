@@ -41,34 +41,34 @@ using std::set;
 /* Skin description stuff */
 /**************************/
 
-typedef struct {
+struct SkinPoint {
     int x, y;
-} SkinPoint;
+};
 
-typedef struct {
+struct SkinRect {
     int x, y, width, height;
-} SkinRect;
+};
 
-typedef struct {
+struct SkinKey {
     int code, shifted_code;
     SkinRect sens_rect;
     SkinRect disp_rect;
     SkinPoint src;
-} SkinKey;
+};
 
 #define SKIN_MAX_MACRO_LENGTH 63
 
-typedef struct _SkinMacro {
+struct SkinMacro {
     int code;
     bool isName;
     unsigned char macro[SKIN_MAX_MACRO_LENGTH + 1];
-    struct _SkinMacro *next;
-} SkinMacro;
+    SkinMacro *next;
+};
 
-typedef struct {
+struct SkinAnnunciator {
     SkinRect disp_rect;
     SkinPoint src;
-} SkinAnnunciator;
+};
 
 static SkinRect skin;
 static SkinPoint display_loc;
@@ -106,11 +106,11 @@ static bool display_enabled = true;
 /**********************************************************/
 
 extern const int skin_count;
-extern const char *skin_name[];
+extern const char * const skin_name[];
 extern const long skin_layout_size[];
-extern const unsigned char *skin_layout_data[];
+extern const unsigned char * const skin_layout_data[];
 extern const long skin_bitmap_size[];
-extern const unsigned char *skin_bitmap_data[];
+extern const unsigned char * const skin_bitmap_data[];
 
 
 /*******************/

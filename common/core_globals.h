@@ -24,6 +24,7 @@
 #include "free42.h"
 #include "core_phloat.h"
 #include "core_tables.h"
+#include "core_variables.h"
 
 extern FILE *gfile;
 
@@ -39,19 +40,19 @@ extern FILE *gfile;
 #define ERR_INVALID_DATA            5
 #define ERR_NONEXISTENT             6
 #define ERR_DIMENSION_ERROR         7
-#define ERR_SIZE_ERROR              8
-#define ERR_RESTRICTED_OPERATION    9
-#define ERR_YES                    10
-#define ERR_NO                     11
-#define ERR_STOP                   12
-#define ERR_LABEL_NOT_FOUND        13
-#define ERR_NO_REAL_VARIABLES      14
-#define ERR_NO_COMPLEX_VARIABLES   15
-#define ERR_NO_MATRIX_VARIABLES    16
-#define ERR_NO_MENU_VARIABLES      17
-#define ERR_STAT_MATH_ERROR        18
-#define ERR_INVALID_FORECAST_MODEL 19
-#define ERR_SOLVE_INTEG_RTN_LOST   20
+#define ERR_TOO_FEW_ARGUMENTS       8
+#define ERR_SIZE_ERROR              9
+#define ERR_RESTRICTED_OPERATION   10
+#define ERR_YES                    11
+#define ERR_NO                     12
+#define ERR_STOP                   13
+#define ERR_LABEL_NOT_FOUND        14
+#define ERR_NO_REAL_VARIABLES      15
+#define ERR_NO_COMPLEX_VARIABLES   16
+#define ERR_NO_MATRIX_VARIABLES    17
+#define ERR_NO_MENU_VARIABLES      18
+#define ERR_STAT_MATH_ERROR        19
+#define ERR_INVALID_FORECAST_MODEL 20
 #define ERR_SINGULAR_MATRIX        21
 #define ERR_SOLVE_SOLVE            22
 #define ERR_INTEG_INTEG            23
@@ -67,13 +68,18 @@ extern FILE *gfile;
 #define ERR_RTN_STACK_FULL         33
 #define ERR_NUMBER_TOO_LARGE       34
 #define ERR_NUMBER_TOO_SMALL       35
+#define ERR_BIG_STACK_DISABLED     36
+#define ERR_INVALID_CONTEXT        37
+#define ERR_NAME_TOO_LONG          38
 
-typedef struct {
+#define RTNERR_MAX 8
+
+struct error_spec {
     const char *text;
     int length;
-} error_spec;
+};
 
-extern error_spec errors[];
+extern const error_spec errors[];
 
 
 /*************/
@@ -150,135 +156,82 @@ extern error_spec errors[];
 #define MENU_MODES1        22
 #define MENU_MODES2        23
 #define MENU_MODES3        24
-#define MENU_DISP          25
-#define MENU_CLEAR1        26
-#define MENU_CLEAR2        27
-#define MENU_CONVERT1      28
-#define MENU_CONVERT2      29
-#define MENU_FLAGS         30
-#define MENU_PROB          31
-#define MENU_CUSTOM1       32
-#define MENU_CUSTOM2       33
-#define MENU_CUSTOM3       34
-#define MENU_PGM_FCN1      35
-#define MENU_PGM_FCN2      36
-#define MENU_PGM_FCN3      37
-#define MENU_PGM_FCN4      38
-#define MENU_PGM_XCOMP0    39
-#define MENU_PGM_XCOMPY    40
-#define MENU_PRINT1        41
-#define MENU_PRINT2        42
-#define MENU_PRINT3        43
-#define MENU_TOP_FCN       44
-#define MENU_CATALOG       45
-#define MENU_BLANK         46
-#define MENU_PROGRAMMABLE  47
-#define MENU_VARMENU       48
-#define MENU_STAT1         49
-#define MENU_STAT2         50
-#define MENU_STAT_CFIT     51
-#define MENU_STAT_MODL     52
-#define MENU_MATRIX1       53
-#define MENU_MATRIX2       54
-#define MENU_MATRIX3       55
-#define MENU_MATRIX_SIMQ   56
-#define MENU_MATRIX_EDIT1  57
-#define MENU_MATRIX_EDIT2  58
-#define MENU_BASE          59
-#define MENU_BASE_A_THRU_F 60
-#define MENU_BASE_LOGIC    61
-#define MENU_SOLVE         62
-#define MENU_INTEG         63
-#define MENU_INTEG_PARAMS  64
+#define MENU_MODES4        25
+#define MENU_MODES5        26
+#define MENU_DISP          27
+#define MENU_CLEAR1        28
+#define MENU_CLEAR2        29
+#define MENU_CONVERT1      30
+#define MENU_CONVERT2      31
+#define MENU_FLAGS         32
+#define MENU_PROB          33
+#define MENU_CUSTOM1       34
+#define MENU_CUSTOM2       35
+#define MENU_CUSTOM3       36
+#define MENU_PGM_FCN1      37
+#define MENU_PGM_FCN2      38
+#define MENU_PGM_FCN3      39
+#define MENU_PGM_FCN4      40
+#define MENU_PGM_XCOMP0    41
+#define MENU_PGM_XCOMPY    42
+#define MENU_PRINT1        43
+#define MENU_PRINT2        44
+#define MENU_PRINT3        45
+#define MENU_TOP_FCN       46
+#define MENU_CATALOG       47
+#define MENU_BLANK         48
+#define MENU_PROGRAMMABLE  49
+#define MENU_VARMENU       50
+#define MENU_STAT1         51
+#define MENU_STAT2         52
+#define MENU_STAT_CFIT     53
+#define MENU_STAT_MODL     54
+#define MENU_MATRIX1       55
+#define MENU_MATRIX2       56
+#define MENU_MATRIX3       57
+#define MENU_MATRIX_SIMQ   58
+#define MENU_MATRIX_EDIT1  59
+#define MENU_MATRIX_EDIT2  60
+#define MENU_BASE          61
+#define MENU_BASE_A_THRU_F 62
+#define MENU_BASE_LOGIC    63
+#define MENU_SOLVE         64
+#define MENU_INTEG         65
+#define MENU_INTEG_PARAMS  66
 
 
-typedef struct {
-    int menuid;
+struct menu_item_spec {
+    int2 menuid;
     unsigned char title_length;
-    char title[7];
-} menu_item_spec;
+    const char *title;
+};
 
-typedef struct {
-    int parent;
-    int next;
-    int prev;
+struct menu_spec {
+    int2 parent;
+    int2 next;
+    int2 prev;
     menu_item_spec child[6];
-} menu_spec;
+};
 
-extern menu_spec menus[];
+extern const menu_spec menus[];
 
-
-/***********************/
-/* Variable data types */
-/***********************/
-
-#define TYPE_NULL 0
-#define TYPE_REAL 1
-#define TYPE_COMPLEX 2
-#define TYPE_REALMATRIX 3
-#define TYPE_COMPLEXMATRIX 4
-#define TYPE_STRING 5
-
-typedef struct {
-    int type;
-} vartype;
-
-
-typedef struct {
-    int type;
-    phloat x;
-} vartype_real;
-
-
-typedef struct {
-    int type;
-    phloat re, im;
-} vartype_complex;
-
-
-typedef struct {
-    int refcount;
-    phloat *data;
-    char *is_string;
-} realmatrix_data;
-
-typedef struct {
-    int type;
-    int4 rows;
-    int4 columns;
-    realmatrix_data *array;
-} vartype_realmatrix;
-
-
-typedef struct {
-    int refcount;
-    phloat *data;
-} complexmatrix_data;
-
-typedef struct {
-    int type;
-    int4 rows;
-    int4 columns;
-    complexmatrix_data *array;
-} vartype_complexmatrix;
-
-
-typedef struct {
-    int type;
-    int length;
-    char text[6];
-} vartype_string;
 
 /******************/
 /* Emulator state */
 /******************/
 
+/* Suppress menu updates while state loading is in progress */
+extern bool loading_state;
+
 /* Registers */
-extern vartype *reg_x;
-extern vartype *reg_y;
-extern vartype *reg_z;
-extern vartype *reg_t;
-extern vartype *reg_lastx;
+#define REG_T 0
+#define REG_Z 1
+#define REG_Y 2
+#define REG_X 3
+extern vartype **stack;
+extern int sp;
+extern int stack_capacity;
+extern vartype *lastx;
 extern int reg_alpha_length;
 extern char reg_alpha[44];
 
@@ -362,7 +315,8 @@ typedef union {
         char matrix_end_wrap;
         char base_signed; /* Programming extension */
         char base_wrap; /* Programming extension */
-        char f80; char f81; char f82; char f83; char f84;
+        char big_stack; /* Big Stack extension */
+        char f81; char f82; char f83; char f84;
         char f85; char f86; char f87; char f88; char f89;
         char f90; char f91; char f92; char f93; char f94;
         char f95; char f96; char f97; char f98; char f99;
@@ -377,39 +331,39 @@ extern const char *virtual_flags;
 #define VAR_PRIVATE 4
 
 /* Variables */
-typedef struct {
+struct var_struct {
     unsigned char length;
     char name[7];
     int2 level;
     int2 flags;
     vartype *value;
-} var_struct;
+};
 extern int vars_capacity;
 extern int vars_count;
 extern var_struct *vars;
 
 /* Programs */
-typedef struct {
+struct prgm_struct {
     int4 capacity;
     int4 size;
     int lclbl_invalid;
     unsigned char *text;
-} prgm_struct;
-typedef struct {
+};
+struct prgm_struct_32bit {
     int4 capacity;
     int4 size;
     int lclbl_invalid;
     int4 text;
-} prgm_struct_32bit;
+};
 extern int prgms_capacity;
 extern int prgms_count;
 extern prgm_struct *prgms;
-typedef struct {
+struct label_struct {
     unsigned char length;
     char name[7];
     int prgm;
     int4 pc;
-} label_struct;
+};
 extern int labels_capacity;
 extern int labels_count;
 extern label_struct *labels;
@@ -432,7 +386,7 @@ extern int varmenu_role;
 /****************/
 
 extern bool mode_clall;
-extern int (*mode_interruptible)(int);
+extern int (*mode_interruptible)(bool);
 extern bool mode_stoppable;
 extern bool mode_command_entry;
 extern bool mode_number_entry;
@@ -468,13 +422,13 @@ extern int xeq_invisible;
 /* Multi-keystroke commands -- edit state */
 /* Relevant when mode_command_entry != 0 */
 extern int incomplete_command;
-extern int incomplete_ind;
-extern int incomplete_alpha;
+extern bool incomplete_ind;
+extern bool incomplete_alpha;
 extern int incomplete_length;
 extern int incomplete_maxdigits;
 extern int incomplete_argtype;
 extern int incomplete_num;
-extern char incomplete_str[7];
+extern char incomplete_str[22];
 extern int4 incomplete_saved_pc;
 extern int4 incomplete_saved_highlight_row;
 
@@ -490,6 +444,16 @@ extern int4 incomplete_saved_highlight_row;
 #define CATSECT_VARS_ONLY 9
 #define CATSECT_PGM_SOLVE 10
 #define CATSECT_PGM_INTEG 11
+#define CATSECT_PGM_MENU 12
+#define CATSECT_EXT 13
+#define CATSECT_EXT_TIME 14
+#define CATSECT_EXT_XFCN 15
+#define CATSECT_EXT_BASE 16
+#define CATSECT_EXT_PRGM 17
+#define CATSECT_EXT_STK 18
+#define CATSECT_EXT_MISC 19
+#define CATSECT_EXT_0_CMP 20
+#define CATSECT_EXT_X_CMP 21
 
 /* Command line handling temporaries */
 extern char cmdline[100];
@@ -509,6 +473,11 @@ extern int matedit_prev_appmenu;
 extern char input_name[11];
 extern int input_length;
 extern arg_struct input_arg;
+
+/* ERRMSG/ERRNO */
+extern int lasterr;
+extern int lasterr_length;
+extern char lasterr_text[22];
 
 /* BASE application */
 extern int baseapp;
@@ -554,14 +523,17 @@ void rebuild_label_table();
 void delete_command(int4 pc);
 void store_command(int4 pc, int command, arg_struct *arg, const char *num_str);
 void store_command_after(int4 *pc, int command, arg_struct *arg, const char *num_str);
+int x2line();
+int a2line();
 int4 pc2line(int4 pc);
 int4 line2pc(int4 line);
 int4 find_local_label(const arg_struct *arg);
 int find_global_label(const arg_struct *arg, int *prgm, int4 *pc);
 int find_global_label_index(const arg_struct *arg, int *idx);
 int push_rtn_addr(int prgm, int4 pc);
-int push_indexed_matrix(const char *name, int len);
+int push_indexed_matrix();
 int push_func_state(int n);
+int push_stack_state(bool big);
 int pop_func_state(bool error);
 void step_out();
 void step_over();

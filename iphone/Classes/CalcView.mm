@@ -71,10 +71,10 @@ static int write_shell_state();
 state_type state;
 FILE* statefile;
 
-static int quit_flag = 0;
-static int enqueued;
-static int keep_running = 0;
-static int we_want_cpu = 0;
+static bool quit_flag = false;
+static bool enqueued;
+static bool keep_running = false;
+static bool we_want_cpu = false;
 
 static int ckey = 0;
 static int skey;
@@ -412,7 +412,8 @@ static struct timeval runner_end_time;
         runner_end_time.tv_usec -= 1000000;
         runner_end_time.tv_sec++;
     }
-    int dummy1, dummy2;
+    bool dummy1;
+    int dummy2;
     keep_running = core_keydown(0, &dummy1, &dummy2);
     if (quit_flag)
         [self quitB];
@@ -571,7 +572,7 @@ static struct timeval runner_end_time;
 - (void) timeout3_callback {
     TRACE("timeout3_callback");
     timeout3_active = false;
-    keep_running = core_timeout3(1);
+    keep_running = core_timeout3(true);
     if (keep_running)
         [self startRunner];
 }
@@ -720,6 +721,8 @@ static int read_shell_state(int *ver) {
         core_settings.matrix_outofrange = state.matrix_outofrange;
         core_settings.auto_repeat = state.auto_repeat;
     }
+    if (state_version >= 9)
+        core_settings.allow_big_stack = state.allow_big_stack;
     
     init_shell_state(state_version);
     *ver = version;
@@ -766,7 +769,10 @@ static void init_shell_state(int version) {
             core_settings.auto_repeat = true;
             /* fall through */
         case 8:
-            /* current version (SHELL_VERSION = 8),
+            core_settings.allow_big_stack = false;
+            /* fall through */
+        case 9:
+            /* current version (SHELL_VERSION = 9),
              * so nothing to do here since everything
              * was initialized from the state file.
              */
@@ -813,7 +819,7 @@ static void shell_keydown() {
     skin_set_pressed_key(skey, calcView);
     if (timeout3_active && (macro != NULL || ckey != 28 /* KEY_SHIFT */)) {
         [calcView cancelTimeout3];
-        core_timeout3(0);
+        core_timeout3(false);
     }
     
     // We temporarily set we_want_cpu to 'true', to force the calls
@@ -825,26 +831,38 @@ static void shell_keydown() {
         
     if (macro != NULL) {
         if (macro_is_name) {
-            we_want_cpu = 1;
+            we_want_cpu = true;
             keep_running = core_keydown_command((const char *) macro, &enqueued, &repeat);
-            we_want_cpu = 0;
+            we_want_cpu = false;
         } else {
             if (*macro == 0) {
                 squeak();
                 return;
             }
             bool one_key_macro = macro[1] == 0 || (macro[2] == 0 && macro[0] == 28);
-            if (!one_key_macro) {
+            if (one_key_macro) {
+                while (*macro != 0) {
+                    we_want_cpu = true;
+                    keep_running = core_keydown(*macro++, &enqueued, &repeat);
+                    we_want_cpu = false;
+                    if (*macro != 0 && !enqueued)
+                        core_keyup();
+                }
+            } else {
+                bool waitForProgram = !program_running();
                 skin_display_set_enabled(false);
-            }
-            while (*macro != 0) {
-                we_want_cpu = 1;
-                keep_running = core_keydown(*macro++, &enqueued, &repeat);
-                we_want_cpu = 0;
-                if (*macro != 0 && !enqueued)
-                    core_keyup();
-            }
-            if (!one_key_macro) {
+                while (*macro != 0) {
+                    we_want_cpu = true;
+                    keep_running = core_keydown(*macro++, &enqueued, &repeat);
+                    we_want_cpu = false;
+                    if (*macro != 0 && !enqueued)
+                        core_keyup();
+                    while (waitForProgram && keep_running) {
+                        we_want_cpu = true;
+                        keep_running = core_keydown(0, &enqueued, &repeat);
+                        we_want_cpu = false;
+                    }
+                }
                 skin_display_set_enabled(true);
                 skin_repaint_display(calcView);
                 /*
@@ -860,9 +878,9 @@ static void shell_keydown() {
             }
         }
     } else {
-        we_want_cpu = 1;
+        we_want_cpu = true;
         keep_running = core_keydown(ckey, &enqueued, &repeat);
-        we_want_cpu = 0;
+        we_want_cpu = false;
     }
     
     if (quit_flag)
@@ -920,6 +938,7 @@ static int write_shell_state() {
     state.matrix_singularmatrix = core_settings.matrix_singularmatrix;
     state.matrix_outofrange = core_settings.matrix_outofrange;
     state.auto_repeat = core_settings.auto_repeat;
+    state.allow_big_stack = core_settings.allow_big_stack;
     if (fwrite(&state, 1, sizeof(state), statefile) != sizeof(state))
         return 0;
     
@@ -981,8 +1000,8 @@ void shell_annunciators(int updn, int shf, int prt, int run, int g, int rad) {
     }
 }
 
-int shell_always_on(int ao) {
-    int ret = state.alwaysOn;
+bool shell_always_on(int ao) {
+    bool ret = state.alwaysOn;
     if (ao != -1) {
         state.alwaysOn = ao != 0;
         [UIApplication sharedApplication].idleTimerDisabled = state.alwaysOn ? YES : NO;
@@ -994,7 +1013,7 @@ void shell_log(const char *message) {
     NSLog(@"%s", message);
 }
 
-int shell_wants_cpu() {
+bool shell_wants_cpu() {
     TRACE("shell_wants_cpu");
     if (we_want_cpu)
         return true;
@@ -1035,8 +1054,8 @@ unsigned int shell_get_mem() {
 
 void shell_powerdown() {
     TRACE("shell_powerdown");
-    quit_flag = 1;
-    we_want_cpu = 1;
+    quit_flag = true;
+    we_want_cpu = true;
 }
 
 int8 shell_random_seed() {
@@ -1053,10 +1072,30 @@ unsigned int shell_milliseconds() {
     return (unsigned int) (tv.tv_sec * 1000L + tv.tv_usec / 1000);
 }
 
-int shell_decimal_point() {
+bool shell_decimal_point() {
     NSLocale *loc = [NSLocale currentLocale];
     NSString *dec = [loc objectForKey:NSLocaleDecimalSeparator];
-    return [dec isEqualToString:@","] ? 0 : 1;
+    return ![dec isEqualToString:@","];
+}
+
+int shell_date_format() {
+    NSLocale *loc = [NSLocale currentLocale];
+    NSString *dateFormat = [NSDateFormatter dateFormatFromTemplate:@"yyyy MM dd" options:0 locale:loc];
+    NSUInteger y = [dateFormat rangeOfString:@"y"].location;
+    NSUInteger m = [dateFormat rangeOfString:@"M"].location;
+    NSUInteger d = [dateFormat rangeOfString:@"d"].location;
+    if (d < m && m < y)
+        return 1;
+    else if (y < m && m < d)
+        return 2;
+    else
+        return 0;
+}
+
+bool shell_clk24() {
+    NSLocale *loc = [NSLocale currentLocale];
+    NSString *timeFormat = [NSDateFormatter dateFormatFromTemplate:@"j" options:0 locale:loc];
+    return [timeFormat rangeOfString:@"a"].location == NSNotFound;
 }
 
 void shell_get_time_date(uint4 *time, uint4 *date, int *weekday) {
@@ -1230,7 +1269,7 @@ void shell_print(const char *text, int length,
 /////   Accelerometer, Location Services, and Compass support    /////
 //////////////////////////////////////////////////////////////////////
 
-int shell_get_acceleration(double *x, double *y, double *z) {
+bool shell_get_acceleration(double *x, double *y, double *z) {
     static bool accelerometer_active = false;
     if (!accelerometer_active) {
         accelerometer_active = true;
@@ -1244,10 +1283,10 @@ int shell_get_acceleration(double *x, double *y, double *z) {
         *y = cmd.acceleration.y;
         *z = cmd.acceleration.z;
     }
-    return 1;
+    return true;
 }
 
-int shell_get_location(double *lat, double *lon, double *lat_lon_acc, double *elev, double *elev_acc) {
+bool shell_get_location(double *lat, double *lon, double *lat_lon_acc, double *elev, double *elev_acc) {
     static bool location_active = false;
     if (!location_active) {
         location_active = true;
@@ -1258,10 +1297,10 @@ int shell_get_location(double *lat, double *lon, double *lat_lon_acc, double *el
     *lat_lon_acc = loc_lat_lon_acc;
     *elev = loc_elev;
     *elev_acc = loc_elev_acc;
-    return 1;
+    return true;
 }
 
-int shell_get_heading(double *mag_heading, double *true_heading, double *acc, double *x, double *y, double *z) {
+bool shell_get_heading(double *mag_heading, double *true_heading, double *acc, double *x, double *y, double *z) {
     static bool heading_active = false;
     if (!heading_active) {
         heading_active = true;
@@ -1273,7 +1312,7 @@ int shell_get_heading(double *mag_heading, double *true_heading, double *acc, do
     *x = hdg_x;
     *y = hdg_y;
     *z = hdg_z;
-    return 1;
+    return true;
 }
 
 //////////////////////////////////////////////////////////////////////

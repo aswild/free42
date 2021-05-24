@@ -53,7 +53,7 @@ fi
 # it to x86_64 works when targeting arm64, a 64-bit platform.
 # Of course, proceed with caution. Your mileage may vary.
 case `uname -m` in
-  armv7|armv7l|ppc)
+  armv7|armv7l|i386|ppc)
       ARCH_ARG='_HOST_ARCH=x86'
     ;;
   arm64|aarch64|i86pc)

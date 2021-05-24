@@ -53,8 +53,46 @@ int docmd_breset(arg_struct *arg);
 int docmd_nop(arg_struct *arg);
 int docmd_fma(arg_struct *arg);
 int docmd_func(arg_struct *arg);
+int docmd_errmsg(arg_struct *arg);
+int docmd_errno(arg_struct *arg);
 int docmd_rtnyes(arg_struct *arg);
 int docmd_rtnno(arg_struct *arg);
 int docmd_rtnerr(arg_struct *arg);
+int docmd_strace(arg_struct *arg);
+int docmd_varmnu1(arg_struct *arg);
+int docmd_x2line(arg_struct *arg);
+int docmd_a2line(arg_struct *arg);
+
+int docmd_4stk(arg_struct *arg);
+int docmd_l4stk(arg_struct *arg);
+int docmd_nstk(arg_struct *arg);
+int docmd_lnstk(arg_struct *arg);
+int docmd_depth(arg_struct *arg);
+int docmd_drop(arg_struct *arg);
+int docmd_dropn(arg_struct *arg);
+int docmd_dup(arg_struct *arg);
+int docmd_dupn(arg_struct *arg);
+int docmd_pick(arg_struct *arg);
+int docmd_unpick(arg_struct *arg);
+int docmd_rdnn(arg_struct *arg);
+int docmd_rupn(arg_struct *arg);
+
+int docmd_pgmmenu(arg_struct *arg);
+int docmd_prmvar(arg_struct *arg);
+
+int docmd_x_eq_nn(arg_struct *arg);
+int docmd_x_ne_nn(arg_struct *arg);
+int docmd_x_lt_nn(arg_struct *arg);
+int docmd_x_gt_nn(arg_struct *arg);
+int docmd_x_le_nn(arg_struct *arg);
+int docmd_x_ge_nn(arg_struct *arg);
+int docmd_0_eq_nn(arg_struct *arg);
+int docmd_0_ne_nn(arg_struct *arg);
+int docmd_0_lt_nn(arg_struct *arg);
+int docmd_0_gt_nn(arg_struct *arg);
+int docmd_0_le_nn(arg_struct *arg);
+int docmd_0_ge_nn(arg_struct *arg);
+
+int docmd_xstr(arg_struct *arg);
 
 #endif

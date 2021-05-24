@@ -29,6 +29,7 @@
 #include <sys/types.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <time.h>
 
 #include "shell.h"
 #include "shell_main.h"
@@ -83,7 +84,7 @@ static int print_text_top;
 static int print_text_bottom;
 static int print_text_pixel_height;
 static bool quit_flag = false;
-static int enqueued;
+static bool enqueued;
 
 
 /* Private globals */
@@ -883,7 +884,7 @@ static void read_key_map(const char *keymapfilename) {
 
     if (keymapfile == NULL) {
         /* Try to create default keymap file */
-        extern long keymap_filesize;
+        extern const long keymap_filesize;
         extern const char keymap_filedata[];
         long n;
 
@@ -953,7 +954,10 @@ static void init_shell_state(int4 version) {
             state.old_repaint = true;
             /* fall through */
         case 7:
-            /* current version (SHELL_VERSION = 7),
+            core_settings.allow_big_stack = false;
+            /* fall through */
+        case 8:
+            /* current version (SHELL_VERSION = 8),
              * so nothing to do here since everything
              * was initialized from the state file.
              */
@@ -997,6 +1001,8 @@ static int read_shell_state(int4 *ver) {
         core_settings.matrix_outofrange = state.matrix_outofrange;
         core_settings.auto_repeat = state.auto_repeat;
     }
+    if (state_version >= 7)
+        core_settings.allow_big_stack = state.allow_big_stack;
 
     init_shell_state(state_version);
     *ver = version;
@@ -1020,6 +1026,7 @@ static int write_shell_state() {
     state.matrix_singularmatrix = core_settings.matrix_singularmatrix;
     state.matrix_outofrange = core_settings.matrix_outofrange;
     state.auto_repeat = core_settings.auto_repeat;
+    state.allow_big_stack = core_settings.allow_big_stack;
     if (fwrite(&state, 1, sizeof(state_type), statefile) != sizeof(int4))
         return 0;
 
@@ -2189,6 +2196,7 @@ static void preferencesCB() {
     static GtkWidget *singularmatrix;
     static GtkWidget *matrixoutofrange;
     static GtkWidget *autorepeat;
+    static GtkWidget *allowbigstack;
     static GtkWidget *repaintwholedisplay;
     static GtkWidget *printtotext;
     static GtkWidget *textpath;
@@ -2216,25 +2224,27 @@ static void preferencesCB() {
         gtk_grid_attach(GTK_GRID(grid), matrixoutofrange, 0, 1, 4, 1);
         autorepeat = gtk_check_button_new_with_label("Auto-repeat for number entry and ALPHA mode");
         gtk_grid_attach(GTK_GRID(grid), autorepeat, 0, 2, 4, 1);
+        allowbigstack = gtk_check_button_new_with_label("Allow Big Stack (NSTK) mode");
+        gtk_grid_attach(GTK_GRID(grid), allowbigstack, 0, 3, 4, 1);
         repaintwholedisplay = gtk_check_button_new_with_label("Always repaint entire display");
-        gtk_grid_attach(GTK_GRID(grid), repaintwholedisplay, 0, 3, 4, 1);
+        gtk_grid_attach(GTK_GRID(grid), repaintwholedisplay, 0, 4, 4, 1);
         printtotext = gtk_check_button_new_with_label("Print to text file:");
-        gtk_grid_attach(GTK_GRID(grid), printtotext, 0, 4, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), printtotext, 0, 5, 1, 1);
         textpath = gtk_entry_new();
-        gtk_grid_attach(GTK_GRID(grid), textpath, 1, 4, 2, 1);
+        gtk_grid_attach(GTK_GRID(grid), textpath, 1, 5, 2, 1);
         GtkWidget *browse1 = gtk_button_new_with_label("Browse...");
-        gtk_grid_attach(GTK_GRID(grid), browse1, 3, 4, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), browse1, 3, 5, 1, 1);
         printtogif = gtk_check_button_new_with_label("Print to GIF file:");
-        gtk_grid_attach(GTK_GRID(grid), printtogif, 0, 5, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), printtogif, 0, 6, 1, 1);
         gifpath = gtk_entry_new();
-        gtk_grid_attach(GTK_GRID(grid), gifpath, 1, 5, 2, 1);
+        gtk_grid_attach(GTK_GRID(grid), gifpath, 1, 6, 2, 1);
         GtkWidget *browse2 = gtk_button_new_with_label("Browse...");
-        gtk_grid_attach(GTK_GRID(grid), browse2, 3, 5, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), browse2, 3, 6, 1, 1);
         GtkWidget *label = gtk_label_new("Maximum GIF height (pixels):");
-        gtk_grid_attach(GTK_GRID(grid), label, 1, 6, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), label, 1, 7, 1, 1);
         gifheight = gtk_entry_new();
         gtk_entry_set_max_length(GTK_ENTRY(gifheight), 5);
-        gtk_grid_attach(GTK_GRID(grid), gifheight, 2, 6, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), gifheight, 2, 7, 1, 1);
 
         g_signal_connect(G_OBJECT(browse1), "clicked", G_CALLBACK(browse_file),
                 (gpointer) new browse_file_info("Select Text File Name",
@@ -2251,6 +2261,7 @@ static void preferencesCB() {
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(singularmatrix), core_settings.matrix_singularmatrix);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(matrixoutofrange), core_settings.matrix_outofrange);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(autorepeat), core_settings.auto_repeat);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(allowbigstack), core_settings.allow_big_stack);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(printtotext), state.printerToTxtFile);
     gtk_entry_set_text(GTK_ENTRY(textpath), state.printerTxtFileName);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(printtogif), state.printerToGifFile);
@@ -2265,6 +2276,10 @@ static void preferencesCB() {
         core_settings.matrix_singularmatrix = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(singularmatrix));
         core_settings.matrix_outofrange = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(matrixoutofrange));
         core_settings.auto_repeat = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(autorepeat));
+        bool oldBigStack = core_settings.allow_big_stack;
+        core_settings.allow_big_stack = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(allowbigstack));
+        if (oldBigStack != core_settings.allow_big_stack)
+            core_update_allow_big_stack();
 
         state.printerToTxtFile = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(printtotext));
         char *old = strclone(state.printerTxtFileName);
@@ -2484,14 +2499,15 @@ static gboolean print_key_cb(GtkWidget *w, GdkEventKey *event, gpointer cd) {
 static void shell_keydown() {
     GdkWindow *win = gtk_widget_get_window(calc_widget);
 
-    int repeat, keep_running = 0;
+    int repeat;
+    bool keep_running;
     if (skey == -1)
         skey = skin_find_skey(ckey);
     skin_invalidate_key(win, skey);
     if (timeout3_id != 0 && (macro != NULL || ckey != 28 /* KEY_SHIFT */)) {
         g_source_remove(timeout3_id);
         timeout3_id = 0;
-        core_timeout3(0);
+        core_timeout3(false);
     }
 
     if (macro != NULL) {
@@ -2503,14 +2519,22 @@ static void shell_keydown() {
                 return;
             }
             bool one_key_macro = macro[1] == 0 || (macro[2] == 0 && macro[0] == 28);
-            if (!one_key_macro)
+            if (one_key_macro) {
+                while (*macro != 0) {
+                    keep_running = core_keydown(*macro++, &enqueued, &repeat);
+                    if (*macro != 0 && !enqueued)
+                        core_keyup();
+                }
+            } else {
+                bool waitForProgram = !program_running();
                 skin_display_set_enabled(false);
-            while (*macro != 0) {
-                keep_running = core_keydown(*macro++, &enqueued, &repeat);
-                if (*macro != 0 && !enqueued)
-                    core_keyup();
-            }
-            if (!one_key_macro) {
+                while (*macro != 0) {
+                    keep_running = core_keydown(*macro++, &enqueued, &repeat);
+                    if (*macro != 0 && !enqueued)
+                        core_keyup();
+                    while (waitForProgram && keep_running)
+                        keep_running = core_keydown(0, &enqueued, &repeat);
+                }
                 skin_display_set_enabled(true);
                 skin_invalidate_display(win);
                 skin_invalidate_annunciator(win, 1);
@@ -2552,7 +2576,7 @@ static void shell_keyup() {
         timeout_id = 0;
     }
     if (!enqueued) {
-        int keep_running = core_keyup();
+        bool keep_running = core_keyup();
         if (quit_flag)
             quit();
         if (keep_running)
@@ -2770,7 +2794,7 @@ static gboolean timeout2(gpointer cd) {
 }
 
 static gboolean timeout3(gpointer cd) {
-    bool keep_running = core_timeout3(1);
+    bool keep_running = core_timeout3(true);
     timeout3_id = 0;
     if (keep_running)
         enable_reminder();
@@ -2824,8 +2848,9 @@ static void repaint_printout(cairo_t *cr) {
 }
 
 static gboolean reminder(gpointer cd) {
-    int dummy1, dummy2;
-    int keep_running = core_keydown(0, &dummy1, &dummy2);
+    bool dummy1;
+    int dummy2;
+    bool keep_running = core_keydown(0, &dummy1, &dummy2);
     if (quit_flag)
         quit();
     if (keep_running)
@@ -2967,8 +2992,8 @@ void shell_annunciators(int updn, int shf, int prt, int run, int g, int rad) {
     }
 }
 
-int shell_wants_cpu() {
-    return g_main_context_pending(NULL) ? 1 : 0;
+bool shell_wants_cpu() {
+    return g_main_context_pending(NULL);
 }
 
 void shell_delay(int duration) {
@@ -2985,22 +3010,24 @@ void shell_request_timeout3(int delay) {
 uint4 shell_get_mem() { 
     FILE *meminfo = fopen("/proc/meminfo", "r");
     char line[1024];
-    uint4 bytes = 0;
+    uint8 bytes = 0;
     if (meminfo == NULL)
         return 0;
     while (fgets(line, 1024, meminfo) != NULL) {
         if (strncmp(line, "MemFree:", 8) == 0) {
-            unsigned int kbytes;
-            if (sscanf(line + 8, "%u", &kbytes) == 1)
+            uint8 kbytes;
+            if (sscanf(line + 8, "%llu", &kbytes) == 1)
                 bytes = 1024 * kbytes;
+            if (bytes > 4294967295)
+                bytes = 4294967295;
             break;
         }
     }
     fclose(meminfo);
-    return bytes;
+    return (uint4) bytes;
 }
 
-int shell_low_battery() {
+bool shell_low_battery() {
          
     int lowbat = 0;
     FILE *apm = fopen("/proc/apm", "r");
@@ -3068,7 +3095,7 @@ int shell_low_battery() {
             skin_invalidate_annunciator(win, 5);
         }
     }
-    return lowbat;
+    return lowbat != 0;
 }
 
 void shell_powerdown() {
@@ -3096,8 +3123,53 @@ uint4 shell_milliseconds() {
     return (uint4) (tv.tv_sec * 1000L + tv.tv_usec / 1000);
 }
 
-int shell_decimal_point() {
-    return decimal_point ? 1 : 0;
+bool shell_decimal_point() {
+    return decimal_point;
+}
+
+int shell_date_format() {
+    struct tm t;
+    t.tm_sec = 0;
+    t.tm_min = 0;
+    t.tm_hour = 0;
+    t.tm_mday = 22; // 22
+    t.tm_mon = 10; // 11
+    t.tm_year = 1433; // 3333
+    t.tm_wday = 0;
+    t.tm_yday = 0;
+    t.tm_isdst = 0;
+
+    char buf[32];
+    strftime(buf, 32, "%x", &t);
+
+    int y = strstr(buf, "3") - buf;
+    int m = strstr(buf, "1") - buf;
+    int d = strstr(buf, "2") - buf;
+
+    if (d < m && m < y)
+        return 1;
+    else if (y < m && m < d)
+        return 2;
+    else
+        return 0;
+}
+
+bool shell_clk24() {
+    struct tm t;
+    t.tm_sec = 0;
+    t.tm_min = 0;
+    t.tm_hour = 0;
+    t.tm_mday = 22; // 22
+    t.tm_mon = 10; // 11
+    t.tm_year = 1433; // 3333
+    t.tm_wday = 0;
+    t.tm_yday = 0;
+    t.tm_isdst = 0;
+
+    char buf[32];
+    strftime(buf, 32, "%X", &t);
+
+    return strstr(buf, "A") == NULL;
 }
 
 struct print_growth_info {

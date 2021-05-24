@@ -20,7 +20,6 @@
 
 
 #ifndef BCD_MATH
-#define _REENTRANT 1
 #include <math.h>
 #endif
 
@@ -30,7 +29,6 @@ typedef int             int4;
 typedef unsigned int    uint4;
 typedef long long       int8;
 typedef unsigned long long uint8;
-typedef unsigned int    uint;
 
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 /* I have tested big-endian state file compatibility in Fedora 12

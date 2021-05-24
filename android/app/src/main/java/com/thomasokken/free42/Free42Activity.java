@@ -28,9 +28,11 @@ import java.io.RandomAccessFile;
 import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Method;
 import java.nio.IntBuffer;
+import java.text.DateFormat;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.List;
 
 import android.Manifest;
@@ -102,15 +104,13 @@ public class Free42Activity extends Activity {
 
     public static final String[] builtinSkinNames = new String[] { "Standard", "Landscape" };
     
-    private static final int SHELL_VERSION = 17;
+    private static final int SHELL_VERSION = 18;
     
     private static final int PRINT_BACKGROUND_COLOR = Color.LTGRAY;
     
     private static final int MY_PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION = 1;
     
     public static Free42Activity instance;
-    
-    public static final String MY_STORAGE_DIR = Environment.getExternalStorageDirectory() + "/Android/data/com.thomasokken.free42";
     
     static {
         System.loadLibrary("free42");
@@ -960,7 +960,8 @@ public class Free42Activity extends Activity {
         preferencesDialog.setSingularMatrixError(cs.matrix_singularmatrix);
         preferencesDialog.setMatrixOutOfRange(cs.matrix_outofrange);
         preferencesDialog.setAutoRepeat(cs.auto_repeat);
-        preferencesDialog.setAlwaysOn(shell_always_on(-1) != 0);
+        preferencesDialog.setAllowBigStack(cs.allow_big_stack);
+        preferencesDialog.setAlwaysOn(shell_always_on(-1));
         preferencesDialog.setKeyClicks(keyClicksLevel);
         preferencesDialog.setKeyVibration(keyVibration);
         preferencesDialog.setOrientation(preferredOrientation);
@@ -983,6 +984,11 @@ public class Free42Activity extends Activity {
         cs.matrix_singularmatrix = preferencesDialog.getSingularMatrixError();
         cs.matrix_outofrange = preferencesDialog.getMatrixOutOfRange();
         cs.auto_repeat = preferencesDialog.getAutoRepeat();
+        boolean oldBigStack = cs.allow_big_stack;
+        cs.allow_big_stack = preferencesDialog.getAllowBigStack();
+        putCoreSettings(cs);
+        if (oldBigStack != cs.allow_big_stack)
+            core_update_allow_big_stack();
         shell_always_on(preferencesDialog.getAlwaysOn() ? 1 : 0);
         keyClicksLevel = preferencesDialog.getKeyClicks();
         keyVibration = preferencesDialog.getKeyVibration();
@@ -990,7 +996,6 @@ public class Free42Activity extends Activity {
         preferredOrientation = preferencesDialog.getOrientation();
         style = preferencesDialog.getStyle();
         alwaysRepaintFullDisplay = preferencesDialog.getDisplayFullRepaint();
-        putCoreSettings(cs);
         setAlwaysRepaintFullDisplay(alwaysRepaintFullDisplay);
 
         ShellSpool.maxGifHeight = preferencesDialog.getMaxGifHeight();
@@ -1064,7 +1069,7 @@ public class Free42Activity extends Activity {
                 
                 ImageView icon = new ImageView(context);
                 icon.setId(1);
-                icon.setImageResource(R.drawable.icon);
+                icon.setImageResource(R.mipmap.icon);
                 addView(icon);
                 
                 TextView label1 = new TextView(context);
@@ -1199,7 +1204,7 @@ public class Free42Activity extends Activity {
                 Object macroObj = skin.find_macro(ckey);
                 if (timeout3_active && (macroObj != null || ckey != 28 /* SHIFT */)) {
                     cancelTimeout3();
-                    core_timeout3(0);
+                    core_timeout3(false);
                 }
                 Rect inval = skin.set_active_key(skey);
                 if (inval != null)
@@ -1215,18 +1220,27 @@ public class Free42Activity extends Activity {
                     String cmd = (String) macroObj;
                     running = core_keydown_command(cmd, enqueued, repeat, true);
                 } else {
+                    running = false;
                     byte[] macro = (byte[]) macroObj;
                     boolean one_key_macro = macro.length == 1 || (macro.length == 2 && macro[0] == 28);
-                    if (!one_key_macro)
+                    if (one_key_macro) {
+                        for (int i = 0; i < macro.length; i++) {
+                            running = core_keydown(macro[i] & 255, enqueued, repeat, true);
+                            if (!enqueued.value)
+                                core_keyup();
+                        }
+                    } else {
+                        boolean waitForProgram = !program_running();
                         skin.set_display_enabled(false);
-                    for (int i = 0; i < macro.length - 1; i++) {
-                        core_keydown(macro[i] & 255, enqueued, repeat, true);
-                        if (!enqueued.value)
-                            core_keyup();
-                    }
-                    running = core_keydown(macro[macro.length - 1] & 255, enqueued, repeat, true);
-                    if (!one_key_macro)
+                        for (int i = 0; i < macro.length; i++) {
+                            running = core_keydown(macro[i] & 255, enqueued, repeat, true);
+                            if (!enqueued.value)
+                                core_keyup();
+                            while (waitForProgram && running)
+                                running = core_keydown(0, null, null, true);
+                        }
                         skin.set_display_enabled(true);
+                    }
                 }
                 if (running)
                     startRunner();
@@ -1757,6 +1771,8 @@ public class Free42Activity extends Activity {
                 cs.matrix_singularmatrix = state_read_boolean();
                 cs.matrix_outofrange = state_read_boolean();
                 cs.auto_repeat = state_read_boolean();
+                if (shell_version >= 18)
+                    cs.allow_big_stack = state_read_boolean();
                 putCoreSettings(cs);
             }
             init_shell_state(shell_version);
@@ -1767,6 +1783,8 @@ public class Free42Activity extends Activity {
     }
     
     private void init_shell_state(int shell_version) {
+        CoreSettings cs = new CoreSettings();
+        getCoreSettings(cs);
         switch (shell_version) {
         case -1:
             ShellSpool.printToGif = false;
@@ -1781,11 +1799,11 @@ public class Free42Activity extends Activity {
             skinName[0] = "Standard";
             // fall through
         case 2:
-            externalSkinName[0] = topStorageDir() + "/Free42/" + skinName[0];
+            externalSkinName[0] = "";
             // fall through
         case 3:
             skinName[1] = "Landscape";
-            externalSkinName[1] = topStorageDir() + "/Free42/" + skinName[1];
+            externalSkinName[1] = "";
             keyClicksLevel = 3;
             // fall through
         case 4:
@@ -1821,17 +1839,20 @@ public class Free42Activity extends Activity {
             coreName = "Untitled";
             // fall through
         case 14:
-            CoreSettings cs = new CoreSettings();
-            getCoreSettings(cs);
             cs.matrix_singularmatrix = false;
             cs.matrix_outofrange = false;
             cs.auto_repeat = true;
-            putCoreSettings(cs);
             // fall through
         case 15:
             // fall through
         case 16:
-            // current version (SHELL_VERSION = 16),
+            // fall through
+        case 17:
+            cs.allow_big_stack = false;
+            putCoreSettings(cs);
+            // fall through
+        case 18:
+            // current version (SHELL_VERSION = 18),
             // so nothing to do here since everything
             // was initialized from the state file.
             ;
@@ -1870,6 +1891,7 @@ public class Free42Activity extends Activity {
             state_write_boolean(cs.matrix_singularmatrix);
             state_write_boolean(cs.matrix_outofrange);
             state_write_boolean(cs.auto_repeat);
+            state_write_boolean(cs.allow_big_stack);
         } catch (IllegalArgumentException e) {}
     }
     
@@ -1969,7 +1991,7 @@ public class Free42Activity extends Activity {
 
     private void timeout3() {
         cancelTimeout3();
-        core_timeout3(1);
+        core_timeout3(true);
         // Resume program after PSE
         startRunner();
     }
@@ -1988,10 +2010,6 @@ public class Free42Activity extends Activity {
 
     public void playSound(int index, int duration) {
         soundPool.play(soundIds[index], 1f, 1f, 0, 0, 1f);
-    }
-    
-    private static String topStorageDir() {
-        return Environment.getExternalStorageDirectory().getAbsolutePath();
     }
     
 
@@ -2020,7 +2038,7 @@ public class Free42Activity extends Activity {
     private native int core_repeat();
     private native void core_keytimeout1();
     private native void core_keytimeout2();
-    private native boolean core_timeout3(int repaint);
+    private native boolean core_timeout3(boolean repaint);
     private native boolean core_keyup();
     private native boolean core_powercycle();
     private native String[] core_list_programs();
@@ -2032,12 +2050,15 @@ public class Free42Activity extends Activity {
     private native void getCoreSettings(CoreSettings settings);
     private native void putCoreSettings(CoreSettings settings);
     private native void redisplay();
+    private native boolean program_running();
     private native void setAlwaysRepaintFullDisplay(boolean alwaysRepaint);
+    private native void core_update_allow_big_stack();
 
     private static class CoreSettings {
         public boolean matrix_singularmatrix;
         public boolean matrix_outofrange;
         public boolean auto_repeat;
+        public boolean allow_big_stack;
     }
 
     ///////////////////////////////////////////////////
@@ -2191,8 +2212,8 @@ public class Free42Activity extends Activity {
      * Callback to find out if the battery is low. Used to emulate flag 49 and the
      * battery annunciator.
      */
-    public int shell_low_battery() {
-        return low_battery ? 1 : 0;
+    public boolean shell_low_battery() {
+        return low_battery;
     }
     
     /**
@@ -2223,8 +2244,8 @@ public class Free42Activity extends Activity {
      * shell_always_on()
      * Callback for setting and querying the shell's Continuous On status.
      */
-    public int shell_always_on(int ao) {
-        int ret = alwaysOn ? 1 : 0;
+    public boolean shell_always_on(int ao) {
+        boolean ret = alwaysOn;
         if (ao != -1) {
             alwaysOn = ao != 0;
             runOnUiThread(new AlwaysOnSetter(alwaysOn));
@@ -2238,10 +2259,44 @@ public class Free42Activity extends Activity {
      * returns 1 if it uses dot or anything else.
      * Used to initialize flag 28 on hard reset.
      */
-    public int shell_decimal_point() {
+    public boolean shell_decimal_point() {
         DecimalFormat df = new DecimalFormat();
         DecimalFormatSymbols dfsym = df.getDecimalFormatSymbols();
-        return dfsym.getDecimalSeparator() == ',' ? 0 : 1;
+        return dfsym.getDecimalSeparator() != ',';
+    }
+    
+    /**
+     * shell_date_format()
+     * Returns 0 if the host's locale uses MDY date format;
+     * returns 1 if it uses DMY;
+     * returns 2 if it uses YMD.
+     * If the host's date format doesn't match any of these three component
+     * orders, returns 0.
+     * Used to initialize flags 31 and 67 on hard reset.
+     */
+    public int shell_date_format() {
+        Calendar cal = Calendar.getInstance();
+        cal.set(3333, 10, 22);
+        DateFormat fmt = DateFormat.getDateInstance(DateFormat.SHORT);
+        String date = fmt.format(cal.getTime());
+        int y = date.indexOf('3');
+        int m = date.indexOf('1');
+        int d = date.indexOf('2');
+        if (d < m && m < y)
+            return 1;
+        else if (y < m && m < d)
+            return 2;
+        else
+            return 0;
+    }
+
+    /* shell_clk24()
+     * Returns 0 if the host's locale uses a 12-hour clock
+     * returns 1 if it uses a 24-hour clock
+     * Used to initialize CLK12/CLK24 mode on hard reset.
+     */
+    public boolean shell_clk24() {
+        return android.text.format.DateFormat.is24HourFormat(this);
     }
     
     private OutputStream printTxtStream;
@@ -2373,13 +2428,13 @@ public class Free42Activity extends Activity {
     private boolean accel_inited, accel_exists;
     private double accel_x, accel_y, accel_z;
     
-    public int shell_get_acceleration(DoubleHolder x, DoubleHolder y, DoubleHolder z) {
+    public boolean shell_get_acceleration(DoubleHolder x, DoubleHolder y, DoubleHolder z) {
         if (!accel_inited) {
             accel_inited = true;
             SensorManager sm = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
             Sensor s = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
             if (s == null)
-                return 0;
+                return false;
             boolean success = sm.registerListener(new SensorEventListener() {
                         public void onAccuracyChanged(Sensor sensor, int accuracy) {
                             // Don't care
@@ -2394,7 +2449,7 @@ public class Free42Activity extends Activity {
                         }
                     }, s, SensorManager.SENSOR_DELAY_NORMAL);
             if (!success)
-                return 0;
+                return false;
             accel_exists = true;
         }
         
@@ -2402,20 +2457,20 @@ public class Free42Activity extends Activity {
             x.value = accel_x;
             y.value = accel_y;
             z.value = accel_z;
-            return 1;
+            return true;
         } else {
-            return 0;
+            return false;
         }
     }
 
     private boolean locat_inited, locat_exists;
     private double locat_lat, locat_lon, locat_lat_lon_acc, locat_elev, locat_elev_acc;
     
-    public int shell_get_location(DoubleHolder lat, DoubleHolder lon, DoubleHolder lat_lon_acc, DoubleHolder elev, DoubleHolder elev_acc) {
+    public boolean shell_get_location(DoubleHolder lat, DoubleHolder lon, DoubleHolder lat_lon_acc, DoubleHolder elev, DoubleHolder elev_acc) {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             locat_inited = false;
             ActivityCompat.requestPermissions(this, new String[] { Manifest.permission.ACCESS_FINE_LOCATION }, MY_PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION);
-            return 0;
+            return false;
         }
         if (!locat_inited) {
             locat_inited = true;
@@ -2425,7 +2480,7 @@ public class Free42Activity extends Activity {
             String provider = lm.getBestProvider(cr, true);
             if (provider == null) {
                 locat_exists = false;
-                return 0;
+                return false;
             }
             LocationListener ll = new LocationListener() {
                 public void onLocationChanged(Location location) {
@@ -2455,9 +2510,9 @@ public class Free42Activity extends Activity {
             try {
                 lm.requestLocationUpdates(provider, 5000, 1, ll, Looper.getMainLooper());
             } catch (IllegalArgumentException e) {
-                return 0;
+                return false;
             } catch (SecurityException e) {
-                return 0;
+                return false;
             }
             locat_exists = true;
         }
@@ -2468,9 +2523,9 @@ public class Free42Activity extends Activity {
             lat_lon_acc.value = locat_lat_lon_acc;
             elev.value = locat_elev;
             elev_acc.value = locat_elev_acc;
-            return 1;
+            return true;
         } else
-            return 0;
+            return false;
     }
     
     private boolean heading_inited, heading_exists;
@@ -2493,7 +2548,7 @@ public class Free42Activity extends Activity {
         }
     }
     
-    public int shell_get_heading(DoubleHolder mag_heading, DoubleHolder true_heading, DoubleHolder acc_heading, DoubleHolder x, DoubleHolder y, DoubleHolder z) {
+    public boolean shell_get_heading(DoubleHolder mag_heading, DoubleHolder true_heading, DoubleHolder acc_heading, DoubleHolder x, DoubleHolder y, DoubleHolder z) {
         if (!heading_inited) {
             heading_inited = true;
             SensorManager sm = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
@@ -2551,9 +2606,9 @@ public class Free42Activity extends Activity {
             x.value = geomagnetic[0];
             y.value = geomagnetic[1];
             z.value = geomagnetic[2];
-            return 1;
+            return true;
         } else {
-            return 0;
+            return false;
         }
     }
     
@@ -2567,8 +2622,7 @@ public class Free42Activity extends Activity {
     
     private boolean checkStorageAccess2() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
-            if (android.os.Build.VERSION.SDK_INT >= 19 /* KitKat; 4.4 */)
-                new File(MY_STORAGE_DIR).mkdirs();
+            getExternalFilesDir(null).mkdirs();
             return true;
         }
         ActivityCompat.requestPermissions(this, new String[] { Manifest.permission.WRITE_EXTERNAL_STORAGE }, MY_PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION);

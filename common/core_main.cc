@@ -24,6 +24,7 @@
 #include "core_main.h"
 #include "core_commands2.h"
 #include "core_commands4.h"
+#include "core_commands7.h"
 #include "core_display.h"
 #include "core_display.h"
 #include "core_helpers.h"
@@ -153,16 +154,14 @@ void core_save_state(const char *state_file_name) {
 }
 
 void core_cleanup() {
-    free_vartype(reg_x);
-    reg_x = NULL;
-    free_vartype(reg_y);
-    reg_y = NULL;
-    free_vartype(reg_z);
-    reg_z = NULL;
-    free_vartype(reg_t);
-    reg_t = NULL;
-    free_vartype(reg_lastx);
-    reg_lastx = NULL;
+    for (int i = 0; i <= sp; i++)
+        free_vartype(stack[i]);
+    sp = -1;
+    free(stack);
+    stack = NULL;
+    stack_capacity = 0;
+    free_vartype(lastx);
+    lastx = NULL;
     purge_all_vars();
     clear_all_prgms();
     if (vars != NULL) {
@@ -177,29 +176,28 @@ void core_repaint_display() {
     repaint_display();
 }
 
-int core_menu() {
-    return mode_clall || get_front_menu() != NULL;
+bool core_menu() {
+    return mode_clall || get_front_menu() != MENU_NONE;
 }
 
 bool alpha_active() {
-    int *menu = get_front_menu();
-    return menu != NULL && *menu >= MENU_ALPHA1 && *menu <= MENU_ALPHA_MISC2;
+    int menu = get_front_menu();
+    return menu >= MENU_ALPHA1 && menu <= MENU_ALPHA_MISC2;
 }
 
-int core_alpha_menu() {
+bool core_alpha_menu() {
     return !mode_getkey && alpha_active();
 }
 
-int core_hex_menu() {
-    int *menu = get_front_menu();
-    return menu != NULL && *menu == MENU_BASE_A_THRU_F;
+bool core_hex_menu() {
+    return get_front_menu() == MENU_BASE_A_THRU_F;
 }
 
-static int ascii2hp(char *dst, const char *src, int maxchars);
+static int ascii2hp(char *dst, int dstlen, const char *src, int srclen = -1);
 
-int core_keydown_command(const char *name, int *enqueued, int *repeat) {
+bool core_keydown_command(const char *name, bool *enqueued, int *repeat) {
     char hpname[70];
-    int len = ascii2hp(hpname, name, 63);
+    int len = ascii2hp(hpname, 63, name);
     int cmd = find_builtin(hpname, len, false);
     if (cmd == CMD_NONE) {
         set_shift(false);
@@ -208,7 +206,7 @@ int core_keydown_command(const char *name, int *enqueued, int *repeat) {
     return core_keydown(cmd == CMD_NONE ? 0 : cmd + 2048, enqueued, repeat);
 }
 
-int core_keydown(int key, int *enqueued, int *repeat) {
+bool core_keydown(int key, bool *enqueued, int *repeat) {
 
     *enqueued = 0;
     *repeat = 0;
@@ -254,7 +252,7 @@ int core_keydown(int key, int *enqueued, int *repeat) {
             }
             set_shift(false);
         }
-        error = mode_interruptible(0);
+        error = mode_interruptible(false);
         if (error == ERR_INTERRUPTIBLE)
             /* Still not done */
             return 1;
@@ -403,7 +401,7 @@ void core_keytimeout1() {
         flags.f.prgm_mode = 0;
         pending_command = saved_pending_command;
     } else if (pending_command != CMD_NONE && pending_command != CMD_CANCELLED
-            && (cmdlist(pending_command)->flags & FLAG_NO_SHOW) == 0) {
+            && (cmd_array[pending_command].flags & FLAG_NO_SHOW) == 0) {
         display_command(0);
         /* If the program catalog was left up by GTO or XEQ,
          * don't paint over it */
@@ -418,7 +416,7 @@ void core_keytimeout2() {
         return;
     remove_program_catalog = 0;
     if (pending_command != CMD_NONE && pending_command != CMD_CANCELLED
-            && (cmdlist(pending_command)->flags & FLAG_NO_SHOW) == 0) {
+            && (cmd_array[pending_command].flags & FLAG_NO_SHOW) == 0) {
         clear_row(0);
         draw_string(0, 0, "NULL", 4);
         display_x(1);
@@ -427,7 +425,7 @@ void core_keytimeout2() {
     }
 }
 
-bool core_timeout3(int repaint) {
+bool core_timeout3(bool repaint) {
     if (mode_pause) {
         if (repaint) {
             /* The PSE ended normally */
@@ -450,10 +448,10 @@ bool core_timeout3(int repaint) {
     return false;
 }
 
-int core_keyup() {
+bool core_keyup() {
     if (mode_pause) {
         /* The only way this can happen is if they key in question was Shift */
-        return 0;
+        return false;
     }
 
     int error = ERR_NONE;
@@ -477,7 +475,7 @@ int core_keyup() {
         shell_powerdown();
 #endif
         pending_command = CMD_NONE;
-        return 0;
+        return false;
     }
 
     if (pending_command == CMD_NONE)
@@ -513,13 +511,13 @@ int core_keyup() {
                 int llen, rlen;
                 string_copy(lbuf, &llen, input_name, input_length);
                 lbuf[llen++] = '=';
-                rlen = vartype2string(reg_x, rbuf, 100);
+                rlen = vartype2string(stack[sp], rbuf, 100);
                 print_wide(lbuf, llen, rbuf, rlen);
             }
             input_length = 0;
             if (err != ERR_NONE) {
                 pending_command = CMD_NONE;
-                display_error(err, 1);
+                display_error(err, true);
                 redisplay();
                 return mode_running || keybuf_head != keybuf_tail;
             }
@@ -533,7 +531,7 @@ int core_keyup() {
             input_length = 0;
     }
 
-    if (pending_command == CMD_VMEXEC) {
+    if (pending_command == CMD_VMEXEC || pending_command == CMD_PMEXEC) {
         string_copy(reg_alpha, &reg_alpha_length,
                     pending_command_arg.val.text, pending_command_arg.length);
         goto do_run;
@@ -549,7 +547,7 @@ int core_keyup() {
         if (pc == -1)
             pc = 0;
         set_running(true);
-        return 1;
+        return true;
     }
 
     if (pending_command == CMD_SST || pending_command == CMD_SST_RT) {
@@ -568,12 +566,12 @@ int core_keyup() {
         if ((flags.f.trace_print || flags.f.normal_print)
                 && flags.f.printer_exists) {
             if (cmd == CMD_LBL)
-                print_text(NULL, 0, 1);
+                print_text(NULL, 0, true);
             print_program_line(current_prgm, oldpc);
         }
         mode_disable_stack_lift = false;
         set_running(true);
-        error = cmdlist(cmd)->handler(&arg);
+        error = handle(cmd, &arg);
         set_running(false);
         mode_pause = false;
     } else {
@@ -581,14 +579,14 @@ int core_keyup() {
                 && flags.f.printer_exists)
             print_command(pending_command, &pending_command_arg);
         mode_disable_stack_lift = false;
-        error = cmdlist(pending_command)->handler(&pending_command_arg);
+        error = handle(pending_command, &pending_command_arg);
         mode_pause = false;
     }
 
     if (error == ERR_INTERRUPTIBLE) {
         shell_annunciators(-1, -1, -1, 1, -1, -1);
         pending_command = CMD_NONE;
-        return 1;
+        return true;
     }
 
     handle_error(error);
@@ -598,7 +596,7 @@ int core_keyup() {
     return (mode_running && !mode_getkey && !mode_pause) || keybuf_head != keybuf_tail;
 }
 
-int core_powercycle() {
+bool core_powercycle() {
     bool need_redisplay = false;
 
     if (mode_interruptible != NULL)
@@ -624,15 +622,23 @@ int core_powercycle() {
          */
         vartype *seventy = new_real(70);
         if (seventy != NULL) {
-            recall_result(seventy);
+            if (recall_result(seventy) != ERR_NONE)
+                goto nomem;
             flags.f.stack_lift_disable = 0;
         } else {
-            display_error(ERR_INSUFFICIENT_MEMORY, 1);
+            nomem:
+            display_error(ERR_INSUFFICIENT_MEMORY, true);
             flags.f.auto_exec = 0;
         }
         if (!flags.f.auto_exec)
             need_redisplay = true;
         mode_getkey = false;
+    }
+    
+    if (flags.f.big_stack && !core_settings.allow_big_stack) {
+        arg_struct dummy_arg;
+        docmd_4stk(&dummy_arg);
+        need_redisplay = true;
     }
 
     if (flags.f.auto_exec) {
@@ -674,6 +680,18 @@ int core_powercycle() {
 #endif
 
     return mode_running;
+}
+
+void core_update_allow_big_stack() {
+    if (prgms == NULL)
+        // Hack to deal with the Mac version calling this function
+        // after already having called core_quit()
+        return;
+    if (flags.f.big_stack && !core_settings.allow_big_stack) {
+        arg_struct dummy_arg;
+        docmd_4stk(&dummy_arg);
+    }
+    redisplay();
 }
 
 char *core_list_programs() {
@@ -807,7 +825,6 @@ static void export_hp42s(int index) {
     int cmd;
     arg_struct arg;
     int saved_prgm = current_prgm;
-    uint4 hp42s_code;
     unsigned char code_flags, code_name, code_std_1, code_std_2;
     char cmdbuf[50];
     int cmdlen;
@@ -819,11 +836,10 @@ static void export_hp42s(int index) {
     do {
         const char *orig_num;
         get_next_command(&pc, &cmd, &arg, 0, &orig_num);
-        hp42s_code = cmdlist(cmd)->hp42s_code;
-        code_flags = hp42s_code >> 24;
-        code_name = hp42s_code >> 16;
-        code_std_1 = hp42s_code >> 8;
-        code_std_2 = hp42s_code;
+        code_flags = (cmd_array[cmd].flags & (FLAG_SPECIAL | FLAG_ILLEGAL)) >> 5;
+        code_name = cmd_array[cmd].scode;
+        code_std_1 = cmd_array[cmd].code1;
+        code_std_2 = cmd_array[cmd].code2;
         cmdlen = 0;
         switch (code_flags) {
             case 1:
@@ -961,7 +977,7 @@ static void export_hp42s(int index) {
                          * actually used this in a program), we handle it
                          * anyway.
                          */
-                        const command_spec *cs = cmdlist(arg.val.cmd);
+                        const command_spec *cs = &cmd_array[arg.val.cmd];
                         cmdbuf[cmdlen++] = 0xF2 + cs->name_length;
                         cmdbuf[cmdlen++] = (char) 0xC0;
                         for (i = 0; i < cs->name_length; i++)
@@ -989,6 +1005,33 @@ static void export_hp42s(int index) {
                 } else if (cmd == CMD_XROM) {
                     cmdbuf[cmdlen++] = (char) (0xA0 + ((arg.val.num >> 8) & 7));
                     cmdbuf[cmdlen++] = (char) arg.val.num;
+                } else if (cmd == CMD_XSTR) {
+                    int len = arg.length;
+                    if (len == 0) {
+                        cmdbuf[cmdlen++] = (char) 0xF2;
+                        cmdbuf[cmdlen++] = (char) 0xA7;
+                        cmdbuf[cmdlen++] = (char) 0x41;
+                    } else {
+                        /* Writing directly to 'buf' here, not using 'cmdbuf', */
+                        /* since XSTR can be very long and may not fit in one  */
+                        /* piece.                                              */
+                        const char *ptr = arg.val.xstr;
+                        while (len > 0) {
+                            if (buflen + 16 > 1000 - 50) {
+                                if (raw_write(buf, buflen) != buflen)
+                                    goto done;
+                                buflen = 0;
+                            }
+                            int slen = len <= 13 ? len : 13;
+                            buf[buflen++] = (char) (0xF2 + slen);
+                            buf[buflen++] = (char) 0xA7;
+                            buf[buflen++] = (char) (slen < len ? 0x49 : 0x41);
+                            memcpy(buf + buflen, ptr, slen);
+                            buflen += slen;
+                            ptr += slen;
+                            len -= slen;
+                        }
+                    }
                 } else {
                     /* Shouldn't happen */
                     continue;
@@ -998,15 +1041,26 @@ static void export_hp42s(int index) {
             normal:
                 if (arg.type == ARGTYPE_STR || arg.type == ARGTYPE_IND_STR) {
                     int i;
-                    cmdbuf[cmdlen++] = 0xF0 + arg.length + 1;
+                    if ((code_name & 0x80) == 0) {
+                        cmdbuf[cmdlen++] = 0xf0 + arg.length + 2;
+                        cmdbuf[cmdlen++] = 0xa7;
+                    } else {
+                        cmdbuf[cmdlen++] = 0xf0 + arg.length + 1;
+                    }
                     cmdbuf[cmdlen++] = arg.type == ARGTYPE_STR ? code_name
                                                             : code_name + 8;
                     for (i = 0; i < arg.length; i++)
                         cmdbuf[cmdlen++] = arg.val.text[i];
                 } else {
                     unsigned char suffix;
-                    if (code_std_1 != 0)
-                        cmdbuf[cmdlen++] = code_std_1;
+                    if (code_std_1 != 0) {
+                        if (code_std_1 == 0xf2 && (code_std_2 & 0x80) == 0) {
+                            cmdbuf[cmdlen++] = 0xf3;
+                            cmdbuf[cmdlen++] = 0xa7;
+                        } else {
+                            cmdbuf[cmdlen++] = code_std_1;
+                        }
+                    }
                     cmdbuf[cmdlen++] = code_std_2;
 
                     non_string_suffix:
@@ -1066,7 +1120,7 @@ static void export_hp42s(int index) {
                 /* Illegal command */
                 continue;
         }
-        if (buflen + cmdlen > 1000) {
+        if (buflen + cmdlen > 1000 - 50) {
             if (raw_write(buf, buflen) != buflen)
                 goto done;
             buflen = 0;
@@ -1085,20 +1139,18 @@ int4 core_program_size(int prgm_index) {
     int cmd;
     arg_struct arg;
     int saved_prgm = current_prgm;
-    uint4 hp42s_code;
-    unsigned char code_flags, code_std_1;
-    //unsigned char code_name, code_std_2;
+    unsigned char code_flags, code_std_1, code_std_2;
+    //unsigned char code_name;
     int4 size = 0;
 
     current_prgm = prgm_index;
     do {
         const char *orig_num;
         get_next_command(&pc, &cmd, &arg, 0, &orig_num);
-        hp42s_code = cmdlist(cmd)->hp42s_code;
-        code_flags = hp42s_code >> 24;
-        //code_name = hp42s_code >> 16;
-        code_std_1 = hp42s_code >> 8;
-        //code_std_2 = hp42s_code;
+        code_flags = (cmd_array[cmd].flags & (FLAG_SPECIAL | FLAG_ILLEGAL)) >> 5;
+        //code_name = cmd_array[cmd].scode;
+        code_std_1 = cmd_array[cmd].code1;
+        code_std_2 = cmd_array[cmd].code2;
         switch (code_flags) {
             case 1:
                 /* A command that requires some special attention */
@@ -1167,7 +1219,7 @@ int4 core_program_size(int prgm_index) {
                          * actually used this in a program), we handle it
                          * anyway.
                          */
-                        size += cmdlist(arg.val.cmd)->name_length + 3;
+                        size += cmd_array[arg.val.cmd].name_length + 3;
                 } else if ((cmd >= CMD_KEY1G && cmd <= CMD_KEY9G) 
                             || (cmd >= CMD_KEY1X && cmd <= CMD_KEY9X)) {
                     if (arg.type == ARGTYPE_STR || arg.type == ARGTYPE_IND_STR)
@@ -1176,6 +1228,11 @@ int4 core_program_size(int prgm_index) {
                         size += 4;
                 } else if (cmd == CMD_XROM) {
                     size += 2;
+                } else if (cmd == CMD_XSTR) {
+                    int n = (arg.length + 12) / 13;
+                    if (n == 0)
+                        n = 1;
+                    size += arg.length + n * 3;
                 } else {
                     /* Shouldn't happen */
                     continue;
@@ -1190,6 +1247,9 @@ int4 core_program_size(int prgm_index) {
                     if (arg.type != ARGTYPE_NONE)
                         size += 1;
                 }
+                if (code_std_1 == 0xf2 && (code_std_2 & 0x80) == 0)
+                    /* Extra extension */
+                    size += 1;
                 break;
             case 2:
             default:
@@ -1544,7 +1604,160 @@ static int hp42tofree42[] = {
 
 static int hp42ext[] = {
     /* Flag values: 0 = string, 1 = IND string, 2 = suffix, 3 = special,
-     * 4 = illegal */
+     * 4 = illegal
+     * Values 80-ff are the space used on the HP-42S, that is, strings whose
+     * first character has its high bit set. Since the gaps left in that
+     * scheme ran out when development of Plus42 started, additional
+     * extensions had to be defined, and they are encoded using a7 as the
+     * first character, and the opcode in the second character. By keeping
+     * that second-character opcode in the range 00-7f, we can still
+     * use a single byte lookup for all these extensions.
+     */
+
+    /* 00-0F */
+    CMD_NULL    | 0x4000,
+    CMD_XASTO   | 0x0000,
+    CMD_LXASTO  | 0x0000,
+    CMD_HEAD    | 0x0000,
+    CMD_X_EQ_NN | 0x0000,
+    CMD_X_NE_NN | 0x0000,
+    CMD_X_LT_NN | 0x0000,
+    CMD_X_GT_NN | 0x0000,
+    CMD_NULL    | 0x4000,
+    CMD_XASTO   | 0x1000,
+    CMD_LXASTO  | 0x1000,
+    CMD_HEAD    | 0x1000,
+    CMD_X_EQ_NN | 0x1000,
+    CMD_X_NE_NN | 0x1000,
+    CMD_X_LT_NN | 0x1000,
+    CMD_X_GT_NN | 0x1000,
+
+    /* 10-1F */
+    CMD_NULL    | 0x4000,
+    CMD_XASTO   | 0x2000,
+    CMD_LXASTO  | 0x2000,
+    CMD_HEAD    | 0x2000,
+    CMD_X_EQ_NN | 0x2000,
+    CMD_X_NE_NN | 0x2000,
+    CMD_X_LT_NN | 0x2000,
+    CMD_X_GT_NN | 0x2000,
+    CMD_X_LE_NN | 0x2000,
+    CMD_X_GE_NN | 0x2000,
+    CMD_0_EQ_NN | 0x2000,
+    CMD_0_NE_NN | 0x2000,
+    CMD_0_LT_NN | 0x2000,
+    CMD_0_GT_NN | 0x2000,
+    CMD_0_LE_NN | 0x2000,
+    CMD_0_GE_NN | 0x2000,
+
+    /* 20-2F */
+    CMD_X_LE_NN | 0x0000,
+    CMD_X_GE_NN | 0x0000,
+    CMD_0_EQ_NN | 0x0000,
+    CMD_0_NE_NN | 0x0000,
+    CMD_0_LT_NN | 0x0000,
+    CMD_0_GT_NN | 0x0000,
+    CMD_0_LE_NN | 0x0000,
+    CMD_0_GE_NN | 0x0000,
+    CMD_X_LE_NN | 0x1000,
+    CMD_X_GE_NN | 0x1000,
+    CMD_0_EQ_NN | 0x1000,
+    CMD_0_NE_NN | 0x1000,
+    CMD_0_LT_NN | 0x1000,
+    CMD_0_GT_NN | 0x1000,
+    CMD_0_LE_NN | 0x1000,
+    CMD_0_GE_NN | 0x1000,
+
+    /* 30-3F */
+    CMD_PRMVAR  | 0x2000,
+    CMD_VARMNU1 | 0x2000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+
+    /* 40-4F */
+    CMD_PRMVAR  | 0x0000,
+    CMD_XSTR    | 0x0000,
+    CMD_VARMNU1 | 0x0000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_PRMVAR  | 0x1000,
+    CMD_XSTR    | 0x1000,
+    CMD_VARMNU1 | 0x1000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+    CMD_NULL    | 0x4000,
+
+    /* 50-5F */
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+
+    /* 60-6F */
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+
+    /* 70-7F */
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+    CMD_NULL | 0x4000,
+
     /* 80-8F */
     CMD_VIEW    | 0x0000,
     CMD_STO     | 0x0000,
@@ -1582,22 +1795,22 @@ static int hp42ext[] = {
     CMD_DSE     | 0x1000,
 
     /* A0-AF */
-    CMD_NULL  | 0x4000,
-    CMD_NULL  | 0x4000,
-    CMD_NULL  | 0x4000,
-    CMD_NULL  | 0x4000,
-    CMD_NULL  | 0x4000,
-    CMD_NULL  | 0x4000,
-    CMD_NULL  | 0x4000,
-    CMD_NULL  | 0x4000,
-    CMD_SF    | 0x1000,
-    CMD_CF    | 0x1000,
-    CMD_FSC_T | 0x1000,
-    CMD_FCC_T | 0x1000,
-    CMD_FS_T  | 0x1000,
-    CMD_FC_T  | 0x1000,
-    CMD_GTO   | 0x1000,
-    CMD_XEQ   | 0x1000,
+    CMD_RTNERR | 0x2000,
+    CMD_DROPN  | 0x2000,
+    CMD_DUPN   | 0x2000,
+    CMD_PICK   | 0x2000,
+    CMD_UNPICK | 0x2000,
+    CMD_RDNN   | 0x2000,
+    CMD_RUPN   | 0x2000,
+    CMD_NULL   | 0x3000, /* Extra extensions */
+    CMD_SF     | 0x1000,
+    CMD_CF     | 0x1000,
+    CMD_FSC_T  | 0x1000,
+    CMD_FCC_T  | 0x1000,
+    CMD_FS_T   | 0x1000,
+    CMD_FC_T   | 0x1000,
+    CMD_GTO    | 0x1000,
+    CMD_XEQ    | 0x1000,
 
     /* B0-BF */
     CMD_CLV    | 0x0000,
@@ -1658,7 +1871,7 @@ static int hp42ext[] = {
     CMD_NULL   | 0x4000,
     CMD_NULL   | 0x3000, /* KEYX suffix */
     CMD_NULL   | 0x3000, /* KEYG suffix */
-    CMD_NULL   | 0x4000,
+    CMD_RTNERR | 0x1000,
     CMD_NULL   | 0x4000, /* FIX 11 */
     CMD_NULL   | 0x4000, /* SCI 11 */
     CMD_NULL   | 0x4000, /* ENG 11 */
@@ -1681,13 +1894,13 @@ static int hp42ext[] = {
     CMD_NULL    | 0x4000, /* DEL */
     CMD_NULL    | 0x3000, /* SIZE */
     CMD_VARMENU | 0x2000,
-    CMD_NULL    | 0x4000,
-    CMD_NULL    | 0x4000,
-    CMD_NULL    | 0x4000,
-    CMD_NULL    | 0x4000,
+    CMD_DROPN   | 0x1000,
+    CMD_DUPN    | 0x1000,
+    CMD_PICK    | 0x1000,
+    CMD_UNPICK  | 0x1000,
     CMD_LASTO   | 0x1000,
-    CMD_NULL    | 0x4000,
-    CMD_NULL    | 0x4000
+    CMD_RDNN    | 0x1000,
+    CMD_RUPN    | 0x1000
 };
 
 
@@ -1794,6 +2007,8 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
     }
 
     char numbuf[50];
+    char *xstr_buf = NULL;
+    int xstr_len = 0;
 
     while (!done_flag) {
         skip:
@@ -1803,6 +2018,7 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
         cmd = hp42tofree42[byte1];
         flag = cmd >> 12;
         cmd &= 0x0FFF;
+        bool extra_extension = false;
         if (flag == 0) {
             arg.type = ARGTYPE_NONE;
             goto store;
@@ -1863,7 +2079,7 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                 /* XROM & parameterless HP-42S extensions.
                  * I don't want to build a reverse look-up table
                  * for these, so instead I just do a linear search
-                 * on the cmdlist table.
+                 * on the cmd_array table.
                  */
                 uint4 code;
                 byte2 = raw_getc();
@@ -1881,10 +2097,29 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                     else // code == 0x0A7DD
                         arg.val.num = 21;
                     goto store;
+                } else if (code == 0x0A7E0) {
+                    /* Unparameterized RTNERR: translate to RTNERR IND ST X */
+                    cmd = CMD_RTNERR;
+                    arg.type = ARGTYPE_IND_STK;
+                    arg.val.stk = 'X';
+                    goto store;
+                } else if (code >= 0x0a679 && code <= 0x0a67e) {
+                    /* HP-41CX: X=NN? etc. */
+                    switch (code & 0xf) {
+                        case 0x9: cmd = CMD_X_EQ_NN; break;
+                        case 0xa: cmd = CMD_X_NE_NN; break;
+                        case 0xb: cmd = CMD_X_LT_NN; break;
+                        case 0xc: cmd = CMD_X_LE_NN; break;
+                        case 0xd: cmd = CMD_X_GT_NN; break;
+                        case 0xe: cmd = CMD_X_GE_NN; break;
+                    }
+                    arg.type = ARGTYPE_IND_STK;
+                    arg.val.stk = 'Y';
+                    goto store;
                 }
                 for (i = 0; i < CMD_SENTINEL; i++)
-                    if (cmdlist(i)->hp42s_code == code) {
-                        if ((cmdlist(i)->flags & FLAG_HIDDEN) != 0)
+                    if (cmd_array[i].code1 == byte1 && cmd_array[i].code2 == byte2) {
+                        if ((cmd_array[i].flags & FLAG_HIDDEN) != 0)
                             break;
                         cmd = i;
                         arg.type = ARGTYPE_NONE;
@@ -1986,6 +2221,11 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                             goto done;
                         arg.val.text[i] = suffix;
                     }
+                    if (extra_extension) {
+                        memmove(arg.val.text + 1, arg.val.text, str_len);
+                        arg.val.text[0] = 0xa7;
+                        str_len++;
+                    }
                     arg.length = str_len;
                     if (assign) {
                         assign = 0;
@@ -2009,14 +2249,43 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                     goto store;
                 } else {
                     /* Parameterized HP-42S extension */
-                    cmd = hp42ext[byte2 - 0x080];
+                    if (byte2 == 0xa7) {
+                        byte2 = raw_getc();
+                        if (byte2 == EOF)
+                            goto done;
+                        byte1--;
+                        extra_extension = true;
+                    }
+                    cmd = hp42ext[byte2];
                     flag = cmd >> 12;
                     cmd &= 0x0FFF;
                     if (flag == 0 || flag == 1) {
                         arg.type = flag == 0 ? ARGTYPE_STR
                                                 : ARGTYPE_IND_STR;
                         str_len = byte1 - 0x0F1;
-                        goto do_string;
+                        extra_extension = false;
+                        if (cmd != CMD_XSTR)
+                            goto do_string;
+                        // XSTR is stored as a sequence of instructions, since
+                        // it may encode a string of up to 65535 characters, while
+                        // instructions are limited to 16 bytes, giving a payload
+                        // of up to 13 characters per instruction.
+                        char *newbuf = (char *) realloc(xstr_buf, xstr_len + str_len);
+                        if (newbuf == NULL)
+                            goto done;
+                        xstr_buf = newbuf;
+                        while (str_len-- > 0) {
+                            int b = raw_getc();
+                            if (b == EOF)
+                                goto done;
+                            xstr_buf[xstr_len++] = b;
+                        }
+                        if (arg.type == ARGTYPE_IND_STR)
+                            continue;
+                        arg.type = ARGTYPE_XSTR;
+                        arg.length = xstr_len;
+                        arg.val.xstr = xstr_buf;
+                        goto store;
                     } else if (flag == 2) {
                         int ind;
                         if (byte1 != 0x0F2)
@@ -2147,18 +2416,23 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
             pending_end = true;
         } else {
             store_command_after(&pc, cmd, &arg, numbuf);
+            free(xstr_buf);
+            xstr_buf = NULL;
+            xstr_len = 0;
         }
     }
 
     done:
     rebuild_label_table();
-    update_catalog();
+    if (!loading_state)
+        update_catalog();
 
     flags.f.trace_print = saved_trace;
     flags.f.normal_print = saved_normal;
 
     if (raw_file_name != NULL)
         raw_close("import");
+    free(xstr_buf);
 }
 
 static int real2buf(char *buf, phloat x) {
@@ -2213,7 +2487,7 @@ char *core_copy() {
         tb_write_null(&tb);
         if (tb.fail) {
             free(tb.buf);
-            display_error(ERR_INSUFFICIENT_MEMORY, 0);
+            display_error(ERR_INSUFFICIENT_MEMORY, false);
             redisplay();
             return NULL;
         } else
@@ -2223,25 +2497,29 @@ char *core_copy() {
         int bufptr = hp2ascii(buf, reg_alpha, reg_alpha_length);
         buf[bufptr] = 0;
         return buf;
-    } else if (reg_x->type == TYPE_REAL) {
+    } else if (sp == -1) {
+        char *buf = (char *) malloc(1);
+        buf[0] = 0;
+        return buf;
+    } else if (stack[sp]->type == TYPE_REAL) {
         char *buf = (char *) malloc(50);
-        int bufptr = real2buf(buf, ((vartype_real *) reg_x)->x);
+        int bufptr = real2buf(buf, ((vartype_real *) stack[sp])->x);
         buf[bufptr] = 0;
         return buf;
-    } else if (reg_x->type == TYPE_COMPLEX) {
+    } else if (stack[sp]->type == TYPE_COMPLEX) {
         char *buf = (char *) malloc(100);
-        vartype_complex *c = (vartype_complex *) reg_x;
+        vartype_complex *c = (vartype_complex *) stack[sp];
         int bufptr = complex2buf(buf, c->re, c->im, false);
         buf[bufptr] = 0;
         return buf;
-    } else if (reg_x->type == TYPE_STRING) {
-        vartype_string *s = (vartype_string *) reg_x;
+    } else if (stack[sp]->type == TYPE_STRING) {
+        vartype_string *s = (vartype_string *) stack[sp];
         char *buf = (char *) malloc(5 * s->length + 1);
-        int bufptr = hp2ascii(buf, s->text, s->length);
+        int bufptr = hp2ascii(buf, s->txt(), s->length);
         buf[bufptr] = 0;
         return buf;
-    } else if (reg_x->type == TYPE_REALMATRIX) {
-        vartype_realmatrix *rm = (vartype_realmatrix *) reg_x;
+    } else if (stack[sp]->type == TYPE_REALMATRIX) {
+        vartype_realmatrix *rm = (vartype_realmatrix *) stack[sp];
         phloat *data = rm->array->data;
         char *is_string = rm->array->is_string;
         textbuf tb;
@@ -2254,13 +2532,23 @@ char *core_copy() {
         for (int r = 0; r < rm->rows; r++) {
             for (int c = 0; c < rm->columns; c++) {
                 int bufptr;
-                if (is_string[n])
-                    bufptr = hp2ascii(buf, phloat_text(data[n]), phloat_length(data[n]));
-                else
+                if (is_string[n] == 0) {
                     bufptr = real2buf(buf, data[n]);
+                    tb_write(&tb, buf, bufptr);
+                } else {
+                    char *text;
+                    int4 len;
+                    get_matrix_string(rm, n, &text, &len);
+                    for (int4 i = 0; i < len; i += 10) {
+                        int4 seg_len = len - i;
+                        if (seg_len > 10)
+                            seg_len = 10;
+                        bufptr = hp2ascii(buf, text + i, seg_len);
+                        tb_write(&tb, buf, bufptr);
+                    }
+                }
                 if (c < rm->columns - 1)
-                    buf[bufptr++] = '\t';
-                tb_write(&tb, buf, bufptr);
+                    tb_write(&tb, "\t", 1);
                 n++;
             }
             if (r < rm->rows - 1)
@@ -2269,13 +2557,13 @@ char *core_copy() {
         tb_write_null(&tb);
         if (tb.fail) {
             free(tb.buf);
-            display_error(ERR_INSUFFICIENT_MEMORY, 0);
+            display_error(ERR_INSUFFICIENT_MEMORY, false);
             redisplay();
             return NULL;
         } else
             return tb.buf;
-    } else if (reg_x->type == TYPE_COMPLEXMATRIX) {
-        vartype_complexmatrix *cm = (vartype_complexmatrix *) reg_x;
+    } else if (stack[sp]->type == TYPE_COMPLEXMATRIX) {
+        vartype_complexmatrix *cm = (vartype_complexmatrix *) stack[sp];
         phloat *data = cm->array->data;
         textbuf tb;
         tb.buf = NULL;
@@ -2298,7 +2586,7 @@ char *core_copy() {
         tb_write_null(&tb);
         if (tb.fail) {
             free(tb.buf);
-            display_error(ERR_INSUFFICIENT_MEMORY, 0);
+            display_error(ERR_INSUFFICIENT_MEMORY, false);
             redisplay();
             return NULL;
         } else
@@ -2394,6 +2682,8 @@ static bool parse_phloat(const char *p, int len, phloat *res) {
         if (c == '+' || c == ' ' || c == separator) {
             continue;
         } else if (c == 'e' || c == 'E' || c == 24) {
+            if (!empty_mant && mant_digits == 0)
+                buf[i++] = '0';
             in_mant = false;
         } else if (c == decimal) {
             in_int_mant = false;
@@ -2434,6 +2724,8 @@ static bool parse_phloat(const char *p, int len, phloat *res) {
     }
     if (in_mant && empty_mant)
         return false;
+    if (in_mant && mant_digits == 0)
+        buf[i++] = '0';
     if (neg_exp)
         exp = -exp;
     exp += exp_offset;
@@ -2455,10 +2747,10 @@ static bool parse_phloat(const char *p, int len, phloat *res) {
         return false;
 }
 
-/* NOTE: The destination buffer should be able to store maxchars + 4
+/* NOTE: The destination buffer should be able to store dstlen + 4
  * characters, because of how we parse [LF] and [ESC].
  */
-static int ascii2hp(char *dst, const char *src, int maxchars) {
+static int ascii2hp(char *dst, int dstlen, const char *src, int srclen /* = -1 */) {
     int srcpos = 0, dstpos = 0;
     // state machine for detecting [LF] and [ESC]:
     // 0: ''
@@ -2470,8 +2762,8 @@ static int ascii2hp(char *dst, const char *src, int maxchars) {
     // 6: '[ESC'
     int state = 0;
     bool afterCR = false;
-    while (dstpos < maxchars + (state == 0 ? 1 : 4)) {
-        char c = src[srcpos++];
+    while (dstpos < dstlen + (state == 0 ? 1 : 4)) {
+        char c = srclen == -1 || srcpos < srclen ? src[srcpos++] : 0;
         retry:
         if (c == 0)
             break;
@@ -2497,7 +2789,7 @@ static int ascii2hp(char *dst, const char *src, int maxchars) {
                 continue;
             }
             while (len-- > 0) {
-                c = src[srcpos++];
+                c = srclen == -1 || srcpos < srclen ? src[srcpos++] : 0;
                 if ((c & 0xc0) != 0x80)
                     // Unexpected non-continuation byte
                     goto retry;
@@ -2679,14 +2971,14 @@ static int ascii2hp(char *dst, const char *src, int maxchars) {
         }
         dst[dstpos++] = (char) code;
     }
-    return dstpos > maxchars ? maxchars : dstpos;
+    return dstpos > dstlen ? dstlen : dstpos;
 }
 
-typedef struct {
+struct text_alias {
     char len;
     char equiv;
     char text[8];
-} text_alias;
+};
 
 static text_alias aliases[] = {
     { 5,    2, "\\sqrt"   },
@@ -2784,7 +3076,7 @@ static vartype *parse_base(const char *buf, int len) {
     return new_real((phloat) n);
 }
 
-static int parse_scalar(const char *buf, int len, bool strict, phloat *re, phloat *im, char *s, int *slen) {
+static int parse_scalar(const char *buf, int len, bool strict, phloat *re, phloat *im, int *slen) {
     int i, s1, e1, s2, e2;
     bool polar = false;
     bool empty_im = false;
@@ -2931,9 +3223,6 @@ static int parse_scalar(const char *buf, int len, bool strict, phloat *re, phloa
         return TYPE_REAL;
 
     finish_string:
-    if (len > 6)
-        len = 6;
-    memcpy(s, buf, len);
     *slen = len;
     return TYPE_STRING;
 }
@@ -2963,8 +3252,8 @@ static void paste_programs(const char *buf) {
     bool after_end = true;
     bool done = false;
     int pos = 0;
-    char asciibuf[1024];
-    char hpbuf[1027];
+    char hpbuf_s[259];
+    char *hpbuf = NULL;
     int cmd;
     arg_struct arg;
     char numbuf[50];
@@ -2980,10 +3269,20 @@ static void paste_programs(const char *buf) {
             goto line_done;
         // We now have a line between 'pos' and 'end', length 'end - pos'.
         // Convert to HP-42S encoding:
+        int alen;
+        alen = end - pos;
+        if (alen > 255) {
+            hpbuf = (char *) malloc(alen + 4);
+            if (hpbuf == NULL) {
+                display_error(ERR_INSUFFICIENT_MEMORY, false);
+                redisplay();
+                return;
+            }
+        } else {
+            hpbuf = hpbuf_s;
+        }
         int hpend;
-        strncpy(asciibuf, buf + pos, end - pos);
-        asciibuf[end - pos] = 0;
-        hpend = ascii2hp(hpbuf, asciibuf, 1023);
+        hpend = ascii2hp(hpbuf, alen, buf + pos, alen);
         // Perform additional translations, to support various 42S-to-text
         // and 41-to-text conversion schemes:
         hpend = text2hp(hpbuf, hpend);
@@ -3026,7 +3325,7 @@ static void paste_programs(const char *buf) {
                 arg.type = ARGTYPE_DOUBLE;
                 goto store;
             } else {
-                // Check for 1/X or 10^X
+                // Check for 1/X, 10^X, 4STK, and generalized comparisons with 0
                 int len = hpend - prev_hppos;
                 if (len == 3 && strncmp(hpbuf + prev_hppos, "1/X", 3) == 0) {
                     cmd = CMD_INV;
@@ -3036,9 +3335,29 @@ static void paste_programs(const char *buf) {
                     cmd = CMD_10_POW_X;
                     arg.type = ARGTYPE_NONE;
                     goto store;
+                } else if (len == 4 && strncmp(hpbuf + prev_hppos, "4STK", 4) == 0) {
+                    cmd = CMD_4STK;
+                    arg.type = ARGTYPE_NONE;
+                    goto store;
+                } else if (len >= 4 && hpbuf[prev_hppos] == '0'
+                                    && hpbuf[prev_hppos + 2] == '?'
+                                    && hpbuf[prev_hppos + 3] == ' ') {
+                    switch (hpbuf[prev_hppos + 1]) {
+                        case '=':    cmd = CMD_0_EQ_NN; goto parse_arg;
+                        case '\014': cmd = CMD_0_NE_NN; goto parse_arg;
+                        case '<':    cmd = CMD_0_LT_NN; goto parse_arg;
+                        case '>':    cmd = CMD_0_GT_NN; goto parse_arg;
+                        case '\011': cmd = CMD_0_LE_NN; goto parse_arg;
+                        case '\013': cmd = CMD_0_GE_NN; goto parse_arg;
+                        default: goto not_zero_comp;
+                    }
+                    parse_arg:
+                    hppos = prev_hppos;
+                    goto after_line_number;
+                    not_zero_comp:;
                 }
                 // No decimal or exponent following the digits, and it's
-                // not 1/X or 10^X; for now, assume it's a line number.
+                // not 1/X, 10^X, or 4STK; for now, assume it's a line number.
                 lineno_start = prev_hppos;
                 lineno_end = hppos;
             }
@@ -3063,6 +3382,7 @@ static void paste_programs(const char *buf) {
         }
         // Now hppos should be pointing at the first character of the
         // command.
+        after_line_number:
         if (hppos == hpend) {
             if (lineno_start == -1) {
                 // empty line
@@ -3122,6 +3442,23 @@ static void paste_programs(const char *buf) {
                 cmd_end++;
             if (cmd_end == hppos)
                 goto line_done;
+            if (cmd_end - hppos == 5 && hpbuf[hppos] == 'X' && strncmp(hpbuf + 2, "NN?", 3) == 0) {
+                // HP-41CX: X=NN? etc.
+                switch (hpbuf[hppos + 1]) {
+                    case '=': cmd = CMD_X_EQ_NN; goto cx_comp;
+                    case  12: cmd = CMD_X_NE_NN; goto cx_comp;
+                    case '<': cmd = CMD_X_LT_NN; goto cx_comp;
+                    case '>': cmd = CMD_X_GT_NN; goto cx_comp;
+                    case   9: cmd = CMD_X_LE_NN; goto cx_comp;
+                    case  11: cmd = CMD_X_GE_NN; goto cx_comp;
+                    default: goto not_cx_comp;
+                }
+                cx_comp:
+                arg.type = ARGTYPE_IND_STK;
+                arg.val.stk = 'Y';
+                goto store;
+                not_cx_comp:;
+            }
             cmd = find_builtin(hpbuf + hppos, cmd_end - hppos, false);
             int tok_start, tok_end;
             int argtype;
@@ -3207,12 +3544,29 @@ static void paste_programs(const char *buf) {
                 arg.length = len;
                 memcpy(arg.val.text, hpbuf + hppos + 1, len);
                 goto store;
+            } else if (cmd == CMD_XSTR) {
+                int q1 = -1, q2 = -1;
+                for (int i = hppos; i < hpend; i++) {
+                    if (hpbuf[i] == '"') {
+                        if (q1 == -1)
+                            q1 = i;
+                        else
+                            q2 = i;
+                    }
+                }
+                if (q2 == -1)
+                    goto line_done;
+                arg.type = ARGTYPE_XSTR;
+                arg.length = q2 - q1 - 1;
+                arg.val.xstr = hpbuf + q1 + 1;
+                goto store;
             } else if (cmd != CMD_NONE) {
                 int flags;
-                flags = cmdlist(cmd)->flags;
+                flags = cmd_array[cmd].flags;
+                arg.type = ARGTYPE_NONE;
                 if ((flags & (FLAG_IMMED | FLAG_HIDDEN | FLAG_NO_PRGM)) != 0)
                     goto line_done;
-                argtype = cmdlist(cmd)->argtype;
+                argtype = cmd_array[cmd].argtype;
                 bool ind;
                 switch (argtype) {
                     case ARG_NONE: {
@@ -3270,6 +3624,8 @@ static void paste_programs(const char *buf) {
                             if (tok_end - tok_start == 1 && isdigit(hpbuf[tok_start])) {
                                 arg.type = ARGTYPE_NUM;
                                 arg.val.num = hpbuf[tok_start] - '0';
+                                if (cmd == CMD_RTNERR && arg.val.num > 8)
+                                    goto line_done;
                                 goto store;
                             }
                             goto line_done;
@@ -3495,7 +3851,17 @@ static void paste_programs(const char *buf) {
             store_command_after(&pc, cmd, &arg, numbuf);
 
         line_done:
+        if (cmd == CMD_RTNERR && arg.type == ARGTYPE_NONE) {
+            // Hack to handle RTNERR with no argument as RTNERR IND ST X
+            arg.type = ARGTYPE_IND_STK;
+            arg.val.stk = 'X';
+            goto store;
+        }
         pos = end + 1;
+        if (hpbuf != hpbuf_s) {
+            free(hpbuf);
+            hpbuf = NULL;
+        }
     }
 }
 
@@ -3508,7 +3874,7 @@ void core_paste(const char *buf) {
         paste_programs(buf);
     } else if (alpha_active()) {
         char hpbuf[48];
-        int len = ascii2hp(hpbuf, buf, 44);
+        int len = ascii2hp(hpbuf, 44, buf);
         int tlen = len + reg_alpha_length;
         if (tlen > 44) {
             int off = tlen - 44;
@@ -3563,32 +3929,23 @@ void core_paste(const char *buf) {
         } else if (rows == 1 && cols == 1) {
             // Scalar
             int len = (int) strlen(buf);
-            char *asciibuf = strdup(buf);
-            if (asciibuf == NULL) {
-                display_error(ERR_INSUFFICIENT_MEMORY, 0);
-                redisplay();
-                return;
-            }
-            if (len > 0 && asciibuf[len - 1] == '\n') {
-                asciibuf[--len] = 0;
-                if (len > 0 && asciibuf[len - 1] == '\r')
-                    asciibuf[--len] = 0;
+            if (len > 0 && buf[len - 1] == '\n') {
+                len--;
+                if (len > 0 && buf[len - 1] == '\r')
+                    len--;
             }
             char *hpbuf = (char *) malloc(len + 4);
             if (hpbuf == NULL) {
-                free(asciibuf);
-                display_error(ERR_INSUFFICIENT_MEMORY, 0);
+                display_error(ERR_INSUFFICIENT_MEMORY, false);
                 redisplay();
                 return;
             }
-            len = ascii2hp(hpbuf, asciibuf, len);
-            free(asciibuf);
+            len = ascii2hp(hpbuf, len, buf, len);
             v = parse_base(hpbuf, len);
             if (v == NULL) {
                 phloat re, im;
-                char s[6];
                 int slen;
-                int type = parse_scalar(hpbuf, len, false, &re, &im, s, &slen);
+                int type = parse_scalar(hpbuf, len, false, &re, &im, &slen);
                 switch (type) {
                     case TYPE_REAL:
                         v = new_real(re);
@@ -3597,8 +3954,13 @@ void core_paste(const char *buf) {
                         v = new_complex(re, im);
                         break;
                     case TYPE_STRING:
-                        v = new_string(s, slen);
+                        v = new_string(hpbuf, slen);
                         break;
+                }
+                if (v == NULL) {
+                    display_error(ERR_INSUFFICIENT_MEMORY, false);
+                    redisplay();
+                    return;
                 }
             }
             free(hpbuf);
@@ -3607,31 +3969,22 @@ void core_paste(const char *buf) {
             int n = rows * cols;
             phloat *data = new phloat[n];
             if (data == nullptr) {
-                display_error(ERR_INSUFFICIENT_MEMORY, 0);
+                display_error(ERR_INSUFFICIENT_MEMORY, false);
                 redisplay();
                 return;
             }
             char *is_string = (char *) malloc(n);
             if (is_string == NULL) {
                 delete[] data;
-                display_error(ERR_INSUFFICIENT_MEMORY, 0);
-                redisplay();
-                return;
-            }
-            char *asciibuf = (char *) malloc(max_cell_size + 1);
-            if (asciibuf == NULL) {
-                delete[] data;
-                free(is_string);
-                display_error(ERR_INSUFFICIENT_MEMORY, 0);
+                display_error(ERR_INSUFFICIENT_MEMORY, false);
                 redisplay();
                 return;
             }
             char *hpbuf = (char *) malloc(max_cell_size + 5);
             if (hpbuf == NULL) {
-                free(asciibuf);
                 delete[] data;
                 free(is_string);
-                display_error(ERR_INSUFFICIENT_MEMORY, 0);
+                display_error(ERR_INSUFFICIENT_MEMORY, false);
                 redisplay();
                 return;
             }
@@ -3642,20 +3995,17 @@ void core_paste(const char *buf) {
                 c = buf[pos++];
                 if (c == 0 || c == '\t' || c == '\r' || c == '\n') {
                     int cellsize = pos - spos - 1;
-                    memcpy(asciibuf, buf + spos, cellsize);
                     if (c == '\r') {
                         c = '\n';
                         if (buf[pos] == '\n')
                             pos++;
                     }
+                    int hplen = ascii2hp(hpbuf, cellsize, buf + spos, cellsize);
                     spos = pos;
-                    asciibuf[cellsize] = 0;
-                    int hplen = ascii2hp(hpbuf, asciibuf, cellsize);
                     phloat re, im;
-                    char s[6];
                     int slen;
-                    int type = parse_scalar(hpbuf, hplen, true, &re, &im, s, &slen);
                     phloat *newdata = NULL;
+                    int type = parse_scalar(hpbuf, hplen, true, &re, &im, &slen);
                     if (is_string != NULL) {
                         switch (type) {
                             case TYPE_REAL:
@@ -3663,17 +4013,18 @@ void core_paste(const char *buf) {
                                 is_string[p] = 0;
                                 break;
                             case TYPE_COMPLEX:
+                                free_long_strings(is_string, data, p);
                                 for (int i = 0; i < p; i++)
-                                    if (is_string[i])
+                                    if (is_string[i] != 0)
                                         data[i] = 0;
                                 free(is_string);
                                 is_string = NULL;
                                 newdata = new phloat[2 * n];
                                 if (newdata == NULL) {
+                                    nomem:
                                     free(data);
-                                    free(asciibuf);
                                     free(hpbuf);
-                                    display_error(ERR_INSUFFICIENT_MEMORY, 0);
+                                    display_error(ERR_INSUFFICIENT_MEMORY, false);
                                     redisplay();
                                     return;
                                 }
@@ -3693,10 +4044,22 @@ void core_paste(const char *buf) {
                                 if (slen == 0) {
                                     data[p] = 0;
                                     is_string[p] = 0;
-                                } else {
-                                    memcpy(phloat_text(data[p]), s, slen);
-                                    phloat_length(data[p]) = slen;
+                                } else if (slen <= SSLENM) {
+                                    char *text = (char *) &data[p];
+                                    *text = slen;
+                                    memcpy(text + 1, hpbuf, slen);
                                     is_string[p] = 1;
+                                } else {
+                                    int4 *t = (int4 *) malloc(slen + 4);
+                                    if (t == NULL) {
+                                        free_long_strings(is_string, data, p);
+                                        free(is_string);
+                                        goto nomem;
+                                    }
+                                    *t = slen;
+                                    memcpy(t + 1, hpbuf, slen);
+                                    *(int4 **) &data[p] = t;
+                                    is_string[p] = 2;
                                 }
                                 break;
                         }
@@ -3744,15 +4107,15 @@ void core_paste(const char *buf) {
                     break;
             }
 
-            free(asciibuf);
             free(hpbuf);
             if (is_string != NULL) {
                 vartype_realmatrix *rm = (vartype_realmatrix *)
                                 malloc(sizeof(vartype_realmatrix));
                 if (rm == NULL) {
+                    free_long_strings(is_string, data, p);
                     delete[] data;
                     free(is_string);
-                    display_error(ERR_INSUFFICIENT_MEMORY, 0);
+                    display_error(ERR_INSUFFICIENT_MEMORY, false);
                     redisplay();
                     return;
                 }
@@ -3760,9 +4123,10 @@ void core_paste(const char *buf) {
                                 malloc(sizeof(realmatrix_data));
                 if (rm->array == NULL) {
                     free(rm);
+                    free_long_strings(is_string, data, p);
                     delete[] data;
                     free(is_string);
-                    display_error(ERR_INSUFFICIENT_MEMORY, 0);
+                    display_error(ERR_INSUFFICIENT_MEMORY, false);
                     redisplay();
                     return;
                 }
@@ -3778,7 +4142,7 @@ void core_paste(const char *buf) {
                                 malloc(sizeof(vartype_complexmatrix));
                 if (cm == NULL) {
                     delete[] data;
-                    display_error(ERR_INSUFFICIENT_MEMORY, 0);
+                    display_error(ERR_INSUFFICIENT_MEMORY, false);
                     redisplay();
                     return;
                 }
@@ -3787,7 +4151,7 @@ void core_paste(const char *buf) {
                 if (cm->array == NULL) {
                     free(cm);
                     delete[] data;
-                    display_error(ERR_INSUFFICIENT_MEMORY, 0);
+                    display_error(ERR_INSUFFICIENT_MEMORY, false);
                     redisplay();
                     return;
                 }
@@ -3799,8 +4163,13 @@ void core_paste(const char *buf) {
                 v = (vartype *) cm;
             }
         }
+        if (recall_result(v) != ERR_NONE) {
+            display_error(ERR_INSUFFICIENT_MEMORY, false);
+            redisplay();
+            return;
+        }
         mode_number_entry = false;
-        recall_result(v);
+        mode_varmenu = false;
         flags.f.stack_lift_disable = 0;
         flags.f.message = 0;
         flags.f.two_line_message = 0;
@@ -3831,18 +4200,20 @@ bool program_running() {
 
 void do_interactive(int command) {
     int err;
-    if ((cmdlist(command)->flags
+    if ((cmd_array[command].flags
                 & (flags.f.prgm_mode ? FLAG_NO_PRGM : FLAG_PRGM_ONLY)) != 0) {
-        display_error(ERR_RESTRICTED_OPERATION, 0);
+        display_error(ERR_RESTRICTED_OPERATION, false);
         redisplay();
         return;
     }
     if (command == CMD_GOTOROW) {
-        err = docmd_stoel(NULL);
-        if (err != ERR_NONE) {
-            display_error(err, 1);
-            redisplay();
-            return;
+        if (sp != -1) {
+            err = docmd_stoel(NULL);
+            if (err != ERR_NONE) {
+                display_error(err, true);
+                redisplay();
+                return;
+            }
         }
     } else if (command == CMD_A_THRU_F) {
         set_base(16);
@@ -3856,7 +4227,7 @@ void do_interactive(int command) {
         return;
     } else if (command == CMD_CLV || command == CMD_PRV) {
         if (!flags.f.prgm_mode && vars_count == 0) {
-            display_error(ERR_NO_VARIABLES, 0);
+            display_error(ERR_NO_VARIABLES, false);
             redisplay();
             return;
         }
@@ -3883,10 +4254,10 @@ void do_interactive(int command) {
         return;
     }
 
-    if (flags.f.prgm_mode && (cmdlist(command)->flags & FLAG_IMMED) == 0) {
+    if (flags.f.prgm_mode && (cmd_array[command].flags & FLAG_IMMED) == 0) {
         if (command == CMD_RUN)
             command = CMD_STOP;
-        if (cmdlist(command)->argtype == ARG_NONE) {
+        if (cmd_array[command].argtype == ARG_NONE) {
             arg_struct arg;
             arg.type = ARGTYPE_NONE;
             store_command_after(&pc, command, &arg, NULL);
@@ -3905,7 +4276,7 @@ void do_interactive(int command) {
             start_incomplete_command(command);
         }
     } else {
-        if (cmdlist(command)->argtype == ARG_NONE)
+        if (cmd_array[command].argtype == ARG_NONE)
             pending_command = command;
         else {
             if (flags.f.prgm_mode) {
@@ -3933,11 +4304,11 @@ static void continue_running() {
         get_next_command(&pc, &cmd, &arg, 1, NULL);
         if (flags.f.trace_print && flags.f.printer_exists) {
             if (cmd == CMD_LBL)
-                print_text(NULL, 0, 1);
+                print_text(NULL, 0, true);
             print_program_line(current_prgm, oldpc);
         }
         mode_disable_stack_lift = false;
-        error = cmdlist(cmd)->handler(&arg);
+        error = handle(cmd, &arg);
         if (mode_pause) {
             shell_request_timeout3(1000);
             return;
@@ -3951,12 +4322,12 @@ static void continue_running() {
     }
 }
 
-typedef struct {
+struct synonym_spec {
     char name[7];
     bool is_orig;
     int namelen;
     int cmd_id;
-} synonym_spec;
+};
 
 static synonym_spec hp41_synonyms[] =
 {
@@ -4014,19 +4385,24 @@ int find_builtin(const char *name, int namelen, bool strict) {
     }
 
     for (i = 0; true; i++) {
-        if (i == CMD_OPENF) i += 15; // Skip COPAN and BIGSTACK
+        // Skip COPAN
+        if (i == CMD_OPENF)
+            i += 14;
+        // Skip String & List functions. These are only implemented in Plus42.
+        if (i == CMD_XASTO)
+            i += 16;
         if (i == CMD_SENTINEL)
             break;
-        if ((cmdlist(i)->flags & FLAG_HIDDEN) != 0)
+        if ((cmd_array[i].flags & FLAG_HIDDEN) != 0)
             continue;
-        if (cmdlist(i)->name_length != namelen)
+        if (cmd_array[i].name_length != namelen)
             continue;
         for (j = 0; j < namelen; j++) {
             unsigned char c1, c2;
             c1 = name[j];
             if (c1 >= 130 && c1 != 138)
                 c1 &= 127;
-            c2 = cmdlist(i)->name[j];
+            c2 = cmd_array[i].name[j];
             if (c2 >= 130 && c2 != 138)
                 c2 &= 127;
             if (c1 != c2)
@@ -4119,19 +4495,20 @@ int find_menu_key(int key) {
 }
 
 void start_incomplete_command(int cmd_id) {
-    int argtype = cmdlist(cmd_id)->argtype;
-    if (!flags.f.prgm_mode && (cmdlist(cmd_id)->flags & FLAG_PRGM_ONLY) != 0) {
-        display_error(ERR_RESTRICTED_OPERATION, 0);
+    int argtype = cmd_array[cmd_id].argtype;
+    if (!flags.f.prgm_mode && (cmd_array[cmd_id].flags & FLAG_PRGM_ONLY) != 0) {
+        display_error(ERR_RESTRICTED_OPERATION, false);
         redisplay();
         return;
     }
     incomplete_command = cmd_id;
-    incomplete_ind = 0;
+    incomplete_ind = false;
     if (argtype == ARG_NAMED || argtype == ARG_PRGM
-            || argtype == ARG_RVAR || argtype == ARG_MAT)
-        incomplete_alpha = 1;
+            || argtype == ARG_RVAR || argtype == ARG_MAT
+            || argtype == ARG_XSTR)
+        incomplete_alpha = true;
     else
-        incomplete_alpha = 0;
+        incomplete_alpha = false;
     incomplete_length = 0;
     incomplete_num = 0;
     if (argtype == ARG_NUM9)
@@ -4150,7 +4527,7 @@ void start_incomplete_command(int cmd_id) {
     else if (argtype == ARG_MKEY)
         set_menu(MENULEVEL_COMMAND, MENU_BLANK);
     else if (argtype == ARG_VAR) {
-        if (mode_alphamenu != MENU_NONE)
+        if (mode_alphamenu != MENU_NONE || mode_plainmenu != MENU_NONE)
             set_catalog_menu(CATSECT_VARS_ONLY);
         else if (mode_appmenu == MENU_VARMENU)
             mode_commandmenu = MENU_VARMENU;
@@ -4161,32 +4538,34 @@ void start_incomplete_command(int cmd_id) {
     } else if (argtype == ARG_NAMED)
         set_catalog_menu(CATSECT_VARS_ONLY);
     else if (argtype == ARG_REAL) {
-        if (mode_appmenu == MENU_VARMENU)
+        if (mode_alphamenu != MENU_NONE || mode_plainmenu != MENU_NONE)
+            set_catalog_menu(CATSECT_REAL_ONLY);
+        else if (mode_appmenu == MENU_VARMENU)
             mode_commandmenu = MENU_VARMENU;
         else if (mode_appmenu == MENU_INTEG_PARAMS)
             mode_commandmenu = MENU_INTEG_PARAMS;
         else
             set_catalog_menu(CATSECT_REAL_ONLY);
     } else if (argtype == ARG_RVAR) {
-        if (vars_exist(1, 0, 0))
+        if (vars_exist(CATSECT_REAL))
             set_catalog_menu(CATSECT_REAL_ONLY);
         else if (flags.f.prgm_mode) {
             if (incomplete_command == CMD_MVAR)
                 mode_commandmenu = MENU_ALPHA1;
         } else {
             mode_command_entry = false;
-            display_error(ERR_NO_REAL_VARIABLES, 0);
+            display_error(ERR_NO_REAL_VARIABLES, false);
         }
     } else if (argtype == ARG_MAT) {
-        if (flags.f.prgm_mode || vars_exist(0, 0, 1))
+        if (flags.f.prgm_mode || vars_exist(CATSECT_MAT))
             set_catalog_menu(CATSECT_MAT_ONLY);
         else if (cmd_id != CMD_DIM) {
             mode_command_entry = false;
-            display_error(ERR_NO_MATRIX_VARIABLES, 0);
+            display_error(ERR_NO_MATRIX_VARIABLES, false);
         }
     } else if (argtype == ARG_LBL || argtype == ARG_PRGM)
         set_catalog_menu(CATSECT_PGM_ONLY);
-    else if (cmd_id == CMD_LBL)
+    else if (cmd_id == CMD_LBL || cmd_id == CMD_XSTR)
         set_menu(MENULEVEL_COMMAND, MENU_ALPHA1);
     redisplay();
 }
@@ -4218,7 +4597,7 @@ void finish_command_entry(bool refresh) {
             redisplay();
         } else {
             int inserting_an_end = pending_command == CMD_END;
-            if ((cmdlist(pending_command)->flags & FLAG_IMMED) != 0)
+            if ((cmd_array[pending_command].flags & FLAG_IMMED) != 0)
                 goto do_it_now;
             store_command(pc, pending_command, &pending_command_arg, NULL);
             if (inserting_an_end)
@@ -4300,7 +4679,7 @@ void finish_xeq() {
          */
         mode_command_entry = false;
         redisplay();
-        if (cmdlist(cmd)->argtype == ARG_NONE) {
+        if (cmd_array[cmd].argtype == ARG_NONE) {
             pending_command = cmd;
             pending_command_arg.type = ARGTYPE_NONE;
             finish_command_entry(false);
@@ -4311,7 +4690,7 @@ void finish_xeq() {
             set_menu(MENULEVEL_COMMAND, MENU_NONE);
             if ((cmd == CMD_CLV || cmd == CMD_PRV)
                     && !flags.f.prgm_mode && vars_count == 0) {
-                display_error(ERR_NO_VARIABLES, 0);
+                display_error(ERR_NO_VARIABLES, false);
                 pending_command = CMD_NONE;
                 redisplay();
             } else
@@ -4353,7 +4732,7 @@ void finish_alpha_prgm_line() {
 }
 
 static void stop_interruptible() {
-    int error = mode_interruptible(1);
+    int error = mode_interruptible(true);
     handle_error(error);
     mode_interruptible = NULL;
     if (mode_running)
@@ -4366,6 +4745,15 @@ static void stop_interruptible() {
 
 void set_old_pc(int4 pc) {
     oldpc = pc;
+}
+
+static void set_last_err(int error) {
+    if (error <= RTNERR_MAX) {
+        lasterr = error;
+    } else {
+        lasterr = -1;
+        string_copy(lasterr_text, &lasterr_length, errors[error].text, errors[error].length);
+    }
 }
 
 static int handle_error(int error) {
@@ -4391,6 +4779,7 @@ static int handle_error(int error) {
         } else if (error != ERR_NONE && error != ERR_YES) {
             if (flags.f.error_ignore && error != ERR_SUSPICIOUS_OFF) {
                 flags.f.error_ignore = 0;
+                set_last_err(error);
                 return 1;
             }
             if (solve_active() && (error == ERR_OUT_OF_RANGE
@@ -4406,7 +4795,7 @@ static int handle_error(int error) {
             }
             handle_it:
             pc = oldpc;
-            display_error(error, 1);
+            display_error(error, true);
             set_running(false);
             return 0;
         }
@@ -4426,9 +4815,15 @@ static int handle_error(int error) {
             error = ERR_NONE;
             if (pc > prgms[current_prgm].size)
                 pc = -1;
+        } else if (error == ERR_NUMBER_TOO_LARGE
+                || error == ERR_NUMBER_TOO_SMALL) {
+            // Handling these separately because they shouldn't be
+            // suppressed by flag 25, nor trapped by SOLVE
+            goto handle_it_2;
         } else {
             if (flags.f.error_ignore) {
                 flags.f.error_ignore = 0;
+                set_last_err(error);
                 goto noerr;
             }
             if (solve_active() && (error == ERR_OUT_OF_RANGE
@@ -4440,8 +4835,9 @@ static int handle_error(int error) {
                 if (error == ERR_NONE || error == ERR_RUN || error == ERR_STOP)
                     goto noerr;
             }
+            handle_it_2:
             pc = oldpc;
-            display_error(error, 1);
+            display_error(error, true);
         }
         return 0;
     } else {
@@ -4454,10 +4850,11 @@ static int handle_error(int error) {
             flags.f.stack_lift_disable = mode_disable_stack_lift;
         else if (flags.f.error_ignore) {
             flags.f.error_ignore = 0;
+            set_last_err(error);
             error = ERR_NONE;
         }
         if (error != ERR_NONE && error != ERR_STOP)
-            display_error(error, 1);
+            display_error(error, true);
         return 0;
     }
 }

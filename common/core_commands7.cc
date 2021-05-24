@@ -20,11 +20,14 @@
 #include <string.h>
 #include <stdarg.h>
 
+#include "core_commands1.h"
 #include "core_commands2.h"
 #include "core_commands7.h"
 #include "core_display.h"
+#include "core_globals.h"
 #include "core_helpers.h"
 #include "core_main.h"
+#include "core_sto_rcl.h"
 #include "core_variables.h"
 #include "shell.h"
 
@@ -36,9 +39,12 @@
 
 int docmd_accel(arg_struct *arg) {
     double x, y, z;
-    int err = shell_get_acceleration(&x, &y, &z);
-    if (err == 0)
+    bool success = shell_get_acceleration(&x, &y, &z);
+    if (!success)
         return ERR_NONEXISTENT;
+    if (flags.f.big_stack)
+        if (!ensure_stack_capacity(flags.f.stack_lift_disable ? 2 : 3))
+            return ERR_INSUFFICIENT_MEMORY;
     vartype *new_x = new_real(x);
     vartype *new_y = new_real(y);
     vartype *new_z = new_real(z);
@@ -48,27 +54,39 @@ int docmd_accel(arg_struct *arg) {
         free_vartype(new_z);
         return ERR_INSUFFICIENT_MEMORY;
     }
-    free_vartype(reg_t);
-    free_vartype(reg_z);
-    if (flags.f.stack_lift_disable) {
-        free_vartype(reg_x);
-        reg_t = reg_y;
+    if (flags.f.big_stack) {
+        if (flags.f.stack_lift_disable) {
+            free_vartype(stack[sp]);
+            sp += 2;
+        } else {
+            sp += 3;
+        }
     } else {
-        free_vartype(reg_y);
-        reg_t = reg_x;
+        free_vartype(stack[REG_T]);
+        free_vartype(stack[REG_Z]);
+        if (flags.f.stack_lift_disable) {
+            free_vartype(stack[REG_X]);
+            stack[REG_T] = stack[REG_Y];
+        } else {
+            free_vartype(stack[REG_Y]);
+            stack[REG_T] = stack[REG_X];
+        }
     }
-    reg_z = new_z;
-    reg_y = new_y;
-    reg_x = new_x;
+    stack[sp - 2] = new_z;
+    stack[sp - 1] = new_y;
+    stack[sp] = new_x;
     print_trace();
     return ERR_NONE;
 }
 
 int docmd_locat(arg_struct *arg) {
     double lat, lon, lat_lon_acc, elev, elev_acc;
-    int err = shell_get_location(&lat, &lon, &lat_lon_acc, &elev, &elev_acc);
-    if (err == 0)
+    bool success = shell_get_location(&lat, &lon, &lat_lon_acc, &elev, &elev_acc);
+    if (!success)
         return ERR_NONEXISTENT;
+    if (flags.f.big_stack)
+        if (!ensure_stack_capacity(flags.f.stack_lift_disable ? 3 : 4))
+            return ERR_INSUFFICIENT_MEMORY;
     vartype *new_x = new_real(lat);
     vartype *new_y = new_real(lon);
     vartype *new_z = new_real(elev);
@@ -83,23 +101,33 @@ int docmd_locat(arg_struct *arg) {
     vartype_realmatrix *rm = (vartype_realmatrix *) new_t;
     rm->array->data[0] = lat_lon_acc;
     rm->array->data[1] = elev_acc;
-    free_vartype(reg_t);
-    free_vartype(reg_z);
-    free_vartype(reg_y);
-    free_vartype(reg_x);
-    reg_t = new_t;
-    reg_z = new_z;
-    reg_y = new_y;
-    reg_x = new_x;
+    if (flags.f.big_stack) {
+        if (flags.f.stack_lift_disable) {
+            free_vartype(stack[sp]);
+            sp += 3;
+        } else {
+            sp += 4;
+        }
+    } else {
+        for (int i = 0; i < 4; i++)
+            free_vartype(stack[i]);
+    }
+    stack[sp - 3] = new_t;
+    stack[sp - 2] = new_z;
+    stack[sp - 1] = new_y;
+    stack[sp] = new_x;
     print_trace();
     return ERR_NONE;
 }
 
 int docmd_heading(arg_struct *arg) {
     double mag_heading, true_heading, acc, x, y, z;
-    int err = shell_get_heading(&mag_heading, &true_heading, &acc, &x, &y, &z);
-    if (err == 0)
+    bool success = shell_get_heading(&mag_heading, &true_heading, &acc, &x, &y, &z);
+    if (!success)
         return ERR_NONEXISTENT;
+    if (flags.f.big_stack)
+        if (!ensure_stack_capacity(flags.f.stack_lift_disable ? 3 : 4))
+            return ERR_INSUFFICIENT_MEMORY;
     vartype *new_x = new_real(mag_heading);
     vartype *new_y = new_real(true_heading);
     vartype *new_z = new_real(acc);
@@ -115,14 +143,21 @@ int docmd_heading(arg_struct *arg) {
     rm->array->data[0] = x;
     rm->array->data[1] = y;
     rm->array->data[2] = z;
-    free_vartype(reg_t);
-    free_vartype(reg_z);
-    free_vartype(reg_y);
-    free_vartype(reg_x);
-    reg_t = new_t;
-    reg_z = new_z;
-    reg_y = new_y;
-    reg_x = new_x;
+    if (flags.f.big_stack) {
+        if (flags.f.stack_lift_disable) {
+            free_vartype(stack[sp]);
+            sp += 3;
+        } else {
+            sp += 4;
+        }
+    } else {
+        for (int i = 0; i < 4; i++)
+            free_vartype(stack[i]);
+    }
+    stack[sp - 3] = new_t;
+    stack[sp - 2] = new_z;
+    stack[sp - 1] = new_y;
+    stack[sp] = new_x;
     print_trace();
     return ERR_NONE;
 }
@@ -238,12 +273,7 @@ static int jd2greg(int4 jd, int4 *y, int4 *m, int4 *d) {
 
 
 int docmd_adate(arg_struct *arg) {
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    if (reg_x->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-
-    phloat x = ((vartype_real *) reg_x)->x;
+    phloat x = ((vartype_real *) stack[sp])->x;
     if (x < 0)
         x = -x;
 
@@ -336,12 +366,7 @@ int docmd_adate(arg_struct *arg) {
 }
 
 int docmd_atime(arg_struct *arg) {
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    if (reg_x->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-
-    phloat x = ((vartype_real *) reg_x)->x;
+    phloat x = ((vartype_real *) stack[sp])->x;
     bool neg = x < 0;
     if (neg)
         x = -x;
@@ -497,27 +522,16 @@ int docmd_date(arg_struct *arg) {
         flags.f.message = 1;
         flags.f.two_line_message = 0;
         if (flags.f.trace_print && flags.f.printer_exists)
-            print_text(buf, bufptr, 1);
+            print_text(buf, bufptr, true);
     }
-    recall_result(new_x);
-    return ERR_NONE;
+    return recall_result(new_x);
 }
 
 int docmd_date_plus(arg_struct *arg) {
-    // TODO: Accept real matrices as well?
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    if (reg_x->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-    if (reg_y->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    if (reg_y->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-
-    phloat date = ((vartype_real *) reg_y)->x;
+    phloat date = ((vartype_real *) stack[sp - 1])->x;
     if (date < 0 || date > (flags.f.ymd ? 10000 : 100))
         return ERR_INVALID_DATA;
-    phloat days = ((vartype_real *) reg_x)->x;
+    phloat days = ((vartype_real *) stack[sp])->x;
     if (days < -1000000 || days > 1000000)
         return ERR_OUT_OF_RANGE;
 
@@ -537,25 +551,14 @@ int docmd_date_plus(arg_struct *arg) {
     vartype *new_x = new_real(date);
     if (new_x == NULL)
         return ERR_INSUFFICIENT_MEMORY;
-    binary_result(new_x);
-    return ERR_NONE;
+    return binary_result(new_x);
 }
 
 int docmd_ddays(arg_struct *arg) {
-    // TODO: Accept real matrices as well?
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    if (reg_x->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-    if (reg_y->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    if (reg_y->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-
-    phloat date1 = ((vartype_real *) reg_y)->x;
+    phloat date1 = ((vartype_real *) stack[sp - 1])->x;
     if (date1 < 0 || date1 > (flags.f.ymd ? 10000 : 100))
         return ERR_INVALID_DATA;
-    phloat date2 = ((vartype_real *) reg_x)->x;
+    phloat date2 = ((vartype_real *) stack[sp])->x;
     if (date2 < 0 || date2 > (flags.f.ymd ? 10000 : 100))
         return ERR_INVALID_DATA;
     int4 y, m, d, jd1, jd2;
@@ -575,8 +578,7 @@ int docmd_ddays(arg_struct *arg) {
     vartype *new_x = new_real(jd2 - jd1);
     if (new_x == NULL)
         return ERR_INSUFFICIENT_MEMORY;
-    binary_result(new_x);
-    return ERR_NONE;
+    return binary_result(new_x);
 }
 
 int docmd_dmy(arg_struct *arg) {
@@ -586,13 +588,7 @@ int docmd_dmy(arg_struct *arg) {
 }
 
 int docmd_dow(arg_struct *arg) {
-    // TODO: Accept real matrices as well?
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    if (reg_x->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-
-    phloat x = ((vartype_real *) reg_x)->x;
+    phloat x = ((vartype_real *) stack[sp])->x;
     if (x < 0 || x > (flags.f.ymd ? 10000 : 100))
         return ERR_INVALID_DATA;
 
@@ -616,7 +612,7 @@ int docmd_dow(arg_struct *arg) {
         flags.f.message = 1;
         flags.f.two_line_message = 0;
         if (flags.f.trace_print && flags.f.printer_exists)
-            print_text(weekdaynames + jd * 3, 3, 1);
+            print_text(weekdaynames + jd * 3, 3, true);
     }
 
     unary_result(new_x);
@@ -671,10 +667,9 @@ int docmd_time(arg_struct *arg) {
         flags.f.message = 1;
         flags.f.two_line_message = 0;
         if (flags.f.trace_print && flags.f.printer_exists)
-            print_text(buf, bufptr, 1);
+            print_text(buf, bufptr, true);
     }
-    recall_result(new_x);
-    return ERR_NONE;
+    return recall_result(new_x);
 }
 
 // The YMD function is not an original Time Module function, and in Free42,
@@ -737,8 +732,7 @@ int docmd_fptest(arg_struct *arg) {
     vartype *v = new_real(result);
     if (v == NULL)
         return ERR_INSUFFICIENT_MEMORY;
-    recall_result(v);
-    return ERR_NONE;
+    return recall_result(v);
 }
 
 #else
@@ -766,15 +760,15 @@ int docmd_lsto(arg_struct *arg) {
         return ERR_INVALID_TYPE;
     /* Only allow matrices to be stored in "REGS" */
     if (string_equals(arg->val.text, arg->length, "REGS", 4)
-            && reg_x->type != TYPE_REALMATRIX
-            && reg_x->type != TYPE_COMPLEXMATRIX)
+            && stack[sp]->type != TYPE_REALMATRIX
+            && stack[sp]->type != TYPE_COMPLEXMATRIX)
         return ERR_RESTRICTED_OPERATION;
     /* When EDITN is active, don't allow the matrix being
      * edited to be overwritten. */
     if (matedit_mode == 3 && string_equals(arg->val.text,
                 arg->length, matedit_name, matedit_length))
         return ERR_RESTRICTED_OPERATION;
-    vartype *newval = dup_vartype(reg_x);
+    vartype *newval = dup_vartype(stack[sp]);
     if (newval == NULL)
         return ERR_INSUFFICIENT_MEMORY;
     return store_var(arg->val.text, arg->length, newval, true);
@@ -782,7 +776,10 @@ int docmd_lsto(arg_struct *arg) {
 
 int docmd_lasto(arg_struct *arg) {
     /* This relates to LSTO the same way ASTO relates to STO. */
-    vartype *s = new_string(reg_alpha, reg_alpha_length);
+    int len = reg_alpha_length;
+    if (len > 6)
+        len = 6;
+    vartype *s = new_string(reg_alpha, len);
     if (s == NULL)
         return ERR_INSUFFICIENT_MEMORY;
     int err;
@@ -794,20 +791,25 @@ int docmd_lasto(arg_struct *arg) {
             return err;
         }
     }
-    vartype *saved_x = reg_x;
-    reg_x = s;
+    vartype *saved_x;
+    if (sp == -1) {
+        saved_x = NULL;
+        sp = 0;
+    } else {
+        saved_x = stack[sp];
+    }
+    stack[sp] = s;
     err = docmd_lsto(arg);
     free_vartype(s);
-    reg_x = saved_x;
+    if (saved_x == NULL)
+        sp = -1;
+    else
+        stack[sp] = saved_x;
     return err;
 }
 
 int docmd_wsize(arg_struct *arg) {
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    if (reg_x->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-    phloat x = ((vartype_real *) reg_x)->x;
+    phloat x = ((vartype_real *) stack[sp])->x;
 #ifdef BCD_MATH
     if (x >= 65 || x < 1)
 #else
@@ -823,8 +825,7 @@ int docmd_wsize_t(arg_struct *arg) {
     vartype *new_x = new_real(effective_wsize());
     if (new_x == NULL)
         return ERR_INSUFFICIENT_MEMORY;
-    recall_result(new_x);
-    return ERR_NONE;
+    return recall_result(new_x);
 }
 
 int docmd_bsigned(arg_struct *arg) {
@@ -857,17 +858,9 @@ int docmd_nop(arg_struct *arg) {
 //////////////////////////////
 
 int docmd_fma(arg_struct *arg) {
-    if (reg_x->type == TYPE_STRING
-            || reg_y->type == TYPE_STRING
-            || reg_z->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    if (reg_x->type != TYPE_REAL
-            || reg_y->type != TYPE_REAL
-            || reg_z->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-    phloat x = ((vartype_real *) reg_x)->x;
-    phloat y = ((vartype_real *) reg_y)->x;
-    phloat z = ((vartype_real *) reg_z)->x;
+    phloat x = ((vartype_real *) stack[sp])->x;
+    phloat y = ((vartype_real *) stack[sp - 1])->x;
+    phloat z = ((vartype_real *) stack[sp - 2])->x;
     phloat r = fma(z, y, x);
     int inf = p_isinf(r);
     if (inf != 0) {
@@ -879,29 +872,33 @@ int docmd_fma(arg_struct *arg) {
     vartype *res = new_real(r);
     if (res == NULL)
         return ERR_INSUFFICIENT_MEMORY;
-    vartype *tt = dup_vartype(reg_t);
-    if (tt == NULL) {
-        free_vartype(res);
-        return ERR_INSUFFICIENT_MEMORY;
-    }
-    vartype *ttt = dup_vartype(reg_t);
-    if (ttt == NULL) {
-        free_vartype(res);
-        free_vartype(tt);
-        return ERR_INSUFFICIENT_MEMORY;
-    }
-    free_vartype(reg_lastx);
-    reg_lastx = reg_x;
-    free_vartype(reg_y);
-    free_vartype(reg_z);
-    reg_x = res;
-    reg_y = tt;
-    reg_z = ttt;
-    return ERR_NONE;
+    return ternary_result(res);
 }
 
 int docmd_func(arg_struct *arg) {
     return push_func_state(arg->val.num);
+}
+
+int docmd_errmsg(arg_struct *arg) {
+    vartype *v;
+    if (lasterr != -1)
+        v = new_string(errors[lasterr].text, errors[lasterr].length);
+    else
+        v = new_string(lasterr_text, lasterr_length);
+    if (v == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    return recall_result(v);
+}
+
+int docmd_errno(arg_struct *arg) {
+    vartype *v;
+    if (lasterr != -1)
+        v = new_real(lasterr);
+    else
+        v = new_string(lasterr_text, lasterr_length);
+    if (v == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    return recall_result(v);
 }
 
 int docmd_rtnyes(arg_struct *arg) {
@@ -925,23 +922,518 @@ int docmd_rtnno(arg_struct *arg) {
 int docmd_rtnerr(arg_struct *arg) {
     if (!program_running())
         return ERR_RESTRICTED_OPERATION;
-    if (reg_x->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-    phloat e = ((vartype_real *) reg_x)->x;
-    if (e < 0)
-        e = -e;
-    if (e >= ERR_SIZE_ERROR)
-        return ERR_INVALID_DATA;
-    int err = pop_func_state(true);
-    if (err != ERR_NONE)
-        return err;
-    err = to_int(e);
+    int err;
+    int len;
+    if (arg->type == ARGTYPE_IND_NUM
+            || arg->type == ARGTYPE_IND_STK
+            || arg->type == ARGTYPE_IND_STR) {
+        len = 22;
+        err = resolve_ind_arg(arg, lasterr_text, &len);
+        if (err != ERR_NONE)
+            return err;
+    }
+    if (arg->type == ARGTYPE_STR) {
+        lasterr_length = len;
+        err = -1;
+    } else if (arg->type == ARGTYPE_NUM) {
+        err = arg->val.num;
+        if (err > RTNERR_MAX)
+            return ERR_INVALID_DATA;
+    } else {
+        return ERR_INTERNAL_ERROR;
+    }
+    int err2 = pop_func_state(true);
+    if (err2 != ERR_NONE)
+        return err2;
     if (err != ERR_NONE && flags.f.error_ignore) {
         flags.f.error_ignore = 0;
+        lasterr = err;
         err = ERR_NONE;
     }
     if (err != ERR_NONE)
         return rtn_with_error(err);
     else
         return rtn(ERR_NONE);
+}
+
+int docmd_strace(arg_struct *arg) {
+    flags.f.trace_print = 1;
+    flags.f.normal_print = 1;
+    return ERR_NONE;
+}
+
+int docmd_varmnu1(arg_struct *arg) {
+    int err = docmd_varmenu(arg);
+    if (err == ERR_NONE) {
+        mode_varmenu = true;
+        varmenu_role = 3;
+    }
+    return err;
+}
+
+int docmd_x2line(arg_struct *arg) {
+    return x2line();
+}
+
+int docmd_a2line(arg_struct *arg) {
+    return a2line();
+}
+
+/////////////////////
+///// Big Stack /////
+/////////////////////
+
+int docmd_4stk(arg_struct *arg) {
+    if (!flags.f.big_stack)
+        return core_settings.allow_big_stack ? ERR_NONE : ERR_BIG_STACK_DISABLED;
+    // Should be safe to assume the stack always has capacity >= 4
+    if (sp < 3) {
+        int off = 3 - sp;
+        memmove(stack + off, stack, (sp + 1) * sizeof(vartype *));
+        for (int i = 0; i < off; i++) {
+            stack[i] = new_real(0);
+            if (stack[i] == NULL) {
+                for (int j = 0; j < i; j++)
+                    free_vartype(stack[j]);
+                memmove(stack, stack + off, (sp + 1) * sizeof(vartype *));
+                return ERR_INSUFFICIENT_MEMORY;
+            }
+        }
+    } else if (sp > 3) {
+        int off = sp - 3;
+        for (int i = 0; i < off; i++)
+            free_vartype(stack[i]);
+        memmove(stack, stack + off, 4 * sizeof(vartype *));
+    }
+    sp = 3;
+    flags.f.big_stack = 0;
+    if (arg != NULL)
+        shrink_stack();
+    return ERR_NONE;
+}
+
+int docmd_l4stk(arg_struct *arg) {
+    if (!core_settings.allow_big_stack)
+        return ERR_BIG_STACK_DISABLED;
+    if (!program_running())
+        return ERR_RESTRICTED_OPERATION;
+    return push_stack_state(false);
+}
+
+int docmd_nstk(arg_struct *arg) {
+    if (!core_settings.allow_big_stack)
+        return ERR_BIG_STACK_DISABLED;
+    flags.f.big_stack = 1;
+    return ERR_NONE;
+}
+
+int docmd_lnstk(arg_struct *arg) {
+    if (!core_settings.allow_big_stack)
+        return ERR_BIG_STACK_DISABLED;
+    if (!program_running())
+        return ERR_RESTRICTED_OPERATION;
+    return push_stack_state(true);
+}
+
+int docmd_depth(arg_struct *arg) {
+    if (!core_settings.allow_big_stack)
+        return ERR_BIG_STACK_DISABLED;
+    vartype *v = new_real(sp + 1);
+    if (v == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    return recall_result(v);
+}
+
+int docmd_drop(arg_struct *arg) {
+    if (!core_settings.allow_big_stack)
+        return ERR_BIG_STACK_DISABLED;
+    if (sp == -1)
+        return ERR_NONE;
+    free_vartype(stack[sp]);
+    if (flags.f.big_stack) {
+        sp--;
+    } else {
+        memmove(stack + 1, stack, 3 * sizeof(vartype *));
+        stack[REG_T] = new_real(0);
+    }
+    print_trace();
+    return ERR_NONE;
+}
+
+int docmd_dropn(arg_struct *arg) {
+    if (!core_settings.allow_big_stack)
+        return ERR_BIG_STACK_DISABLED;
+    int4 n;
+    int err = arg_to_num(arg, &n);
+    if (err != ERR_NONE)
+        return err;
+    if (n > sp + 1)
+        return ERR_SIZE_ERROR;
+    for (int i = sp - n + 1; i <= sp; i++)
+        free_vartype(stack[i]);
+    if (flags.f.big_stack) {
+        sp -= n;
+    } else {
+        memmove(stack + n, stack, (4 - n) * sizeof(vartype *));
+        for (int i = 0; i < n; i++)
+            stack[i] = new_real(0);
+    }
+    print_trace();
+    return ERR_NONE;
+}
+
+int docmd_dup(arg_struct *arg) {
+    if (!core_settings.allow_big_stack)
+        return ERR_BIG_STACK_DISABLED;
+    vartype *v = dup_vartype(stack[sp]);
+    if (v == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    char prev_stack_lift = flags.f.stack_lift_disable;
+    flags.f.stack_lift_disable = 0;
+    if (recall_result_silently(v) != ERR_NONE) {
+        flags.f.stack_lift_disable = prev_stack_lift;
+        return ERR_INSUFFICIENT_MEMORY;
+    }
+    print_stack_trace();
+    return ERR_NONE;
+}
+
+int docmd_dupn(arg_struct *arg) {
+    if (!core_settings.allow_big_stack)
+        return ERR_BIG_STACK_DISABLED;
+    int4 n;
+    int err = arg_to_num(arg, &n);
+    if (err != ERR_NONE)
+        return err;
+    if (flags.f.big_stack) {
+        if (n > sp + 1)
+            return ERR_SIZE_ERROR;
+        if (!ensure_stack_capacity(n))
+            return ERR_INSUFFICIENT_MEMORY;
+        for (int i = 1; i <= n; i++) {
+            stack[sp + i] = dup_vartype(stack[sp + i - n]);
+            if (stack[sp + i] == NULL) {
+                while (--i >= 1)
+                    free_vartype(stack[sp + i]);
+                return ERR_INSUFFICIENT_MEMORY;
+            }
+        }
+        sp += n;
+    } else {
+        switch (n) {
+            case 0:
+                break;
+            case 1:
+                return docmd_dup(NULL);
+            case 2:
+                vartype *v0, *v1;
+                v0 = dup_vartype(stack[REG_X]);
+                if (v0 == NULL)
+                    return ERR_INSUFFICIENT_MEMORY;
+                v1 = dup_vartype(stack[REG_Y]);
+                if (v1 == NULL) {
+                    free_vartype(v0);
+                    return ERR_INSUFFICIENT_MEMORY;
+                }
+                free_vartype(stack[REG_Z]);
+                free_vartype(stack[REG_T]);
+                stack[REG_Z] = v1;
+                stack[REG_T] = v0;
+                break;
+            default:
+                return ERR_SIZE_ERROR;
+        }
+    }
+    print_stack_trace();
+    return ERR_NONE;
+}
+
+int docmd_pick(arg_struct *arg) {
+    if (!core_settings.allow_big_stack)
+        return ERR_BIG_STACK_DISABLED;
+    int4 n;
+    int err = arg_to_num(arg, &n);
+    if (err != ERR_NONE)
+        return err;
+    if (n == 0)
+        return ERR_NONEXISTENT;
+    n--;
+    if (n > sp)
+        return ERR_SIZE_ERROR;
+    vartype *v = dup_vartype(stack[sp - n]);
+    if (v == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    return recall_result(v);
+}
+
+int docmd_unpick(arg_struct *arg) {
+    if (!core_settings.allow_big_stack)
+        return ERR_BIG_STACK_DISABLED;
+    int4 n;
+    int err = arg_to_num(arg, &n);
+    if (err != ERR_NONE)
+        return err;
+    if (n == 0)
+        return ERR_NONEXISTENT;
+    n--;
+    if (n > (flags.f.big_stack ? sp - 1 : sp))
+        return ERR_SIZE_ERROR;
+    // Note: UNPICK consumes X, i.e. drops it from the stack. This is unlike
+    // any other STO-like function in Free42, but it is needed in order to make
+    // PICK and UNPICK work as a pair like they do in the RPL calculators.
+    vartype *v = stack[sp];
+    if (flags.f.big_stack) {
+        sp--;
+    } else {
+        vartype *t = dup_vartype(stack[REG_T]);
+        if (t == NULL)
+            return ERR_INSUFFICIENT_MEMORY;
+        memmove(stack + 1, stack, 3 * sizeof(vartype *));
+        stack[REG_T] = t;
+    }
+    free_vartype(stack[sp - n]);
+    stack[sp - n] = v;
+    print_stack_trace();
+    return ERR_NONE;
+}
+
+int docmd_rdnn(arg_struct *arg) {
+    if (!core_settings.allow_big_stack)
+        return ERR_BIG_STACK_DISABLED;
+    int4 n;
+    int err = arg_to_num(arg, &n);
+    if (err != ERR_NONE)
+        return err;
+    if (n > sp + 1)
+        return ERR_SIZE_ERROR;
+    if (n > 1) {
+        vartype *v = stack[sp];
+        memmove(stack + sp - n + 2, stack + sp - n + 1, (n - 1) * sizeof(vartype *));
+        stack[sp - n + 1] = v;
+    }
+    print_trace();
+    return ERR_NONE;
+}
+
+int docmd_rupn(arg_struct *arg) {
+    if (!core_settings.allow_big_stack)
+        return ERR_BIG_STACK_DISABLED;
+    int4 n;
+    int err = arg_to_num(arg, &n);
+    if (err != ERR_NONE)
+        return err;
+    if (n > sp + 1)
+        return ERR_SIZE_ERROR;
+    if (n > 1) {
+        vartype *v = stack[sp - n + 1];
+        memmove(stack + sp - n + 1, stack + sp - n + 2, (n - 1) * sizeof(vartype *));
+        stack[sp] = v;
+    }
+    print_trace();
+    return ERR_NONE;
+}
+
+////////////////////
+///// PGM Menu /////
+////////////////////
+
+int docmd_pgmmenu(arg_struct *arg) {
+    if (!mvar_prgms_exist())
+        return ERR_NO_MENU_VARIABLES;
+    int err = set_menu_return_err(MENULEVEL_APP, MENU_CATALOG, false);
+    if (err == ERR_NONE) {
+        set_cat_section(CATSECT_PGM_MENU);
+        move_cat_row(0);
+    }
+    return err;
+}
+
+int docmd_prmvar(arg_struct *arg) {
+    if (!flags.f.printer_enable && program_running())
+        return ERR_NONE;
+    if (!flags.f.printer_exists)
+        return ERR_PRINTING_IS_DISABLED;
+
+    int err;
+    if (arg->type == ARGTYPE_IND_NUM
+            || arg->type == ARGTYPE_IND_STK
+            || arg->type == ARGTYPE_IND_STR) {
+        err = resolve_ind_arg(arg);
+        if (err != ERR_NONE)
+            return err;
+    }
+    if (arg->type != ARGTYPE_STR)
+        return ERR_INVALID_TYPE;
+
+    int prgm;
+    int4 pc;
+    if (!find_global_label(arg, &prgm, &pc))
+        return ERR_LABEL_NOT_FOUND;
+    pc += get_command_length(prgm, pc);
+    int saved_prgm = current_prgm;
+    current_prgm = prgm;
+    bool found = false;
+
+    while (true) {
+        int command;
+        arg_struct arg2;
+        get_next_command(&pc, &command, &arg2, 0, NULL);
+        if (command != CMD_MVAR)
+            break;
+        if (!found) {
+            shell_annunciators(-1, -1, 1, -1, -1, -1);
+            print_text(NULL, 0, true);
+            found = true;
+        }
+
+        vartype *v = recall_var(arg2.val.text, arg2.length);
+        char lbuf[32], rbuf[100];
+        int llen = 0, rlen = 0;
+        string2buf(lbuf, 8, &llen, arg2.val.text, arg2.length);
+        char2buf(lbuf, 8, &llen, '=');
+
+        if (v == NULL) {
+            print_wide(lbuf, llen, "<Unset>", 7);
+        } else if (v->type == TYPE_STRING) {
+            vartype_string *s = (vartype_string *) v;
+            char *sbuf = (char *) malloc(s->length + 2);
+            if (sbuf == NULL) {
+                print_wide(lbuf, llen, "<Low Mem>", 9);
+            } else {
+                sbuf[0] = '"';
+                memcpy(sbuf + 1, s->txt(), s->length);
+                sbuf[s->length + 1] = '"';
+                print_wide(lbuf, llen, sbuf, s->length + 2);
+                free(sbuf);
+            }
+        } else {
+            rlen = vartype2string(v, rbuf, 100);
+            print_wide(lbuf, llen, rbuf, rlen);
+        }
+    }
+    current_prgm = saved_prgm;
+    if (found)
+        shell_annunciators(-1, -1, 0, -1, -1, -1);
+    else
+        return ERR_NO_MENU_VARIABLES;
+    return ERR_NONE;
+}
+
+////////////////////////////////////
+///// Generalized Comparisons //////
+////////////////////////////////////
+
+struct temp_vartype {
+    vartype *v;
+    int err;
+    temp_vartype(arg_struct *arg, bool require_real) {
+        v = NULL;
+        err = generic_rcl(arg, &v);
+        if (err == ERR_NONE && require_real) {
+            if (v->type == TYPE_STRING)
+                err = ERR_ALPHA_DATA_IS_INVALID;
+            if (v->type != TYPE_REAL)
+                err = ERR_INVALID_TYPE;
+        }
+    }
+    ~temp_vartype() {
+        free_vartype(v);
+    }
+};
+
+int docmd_x_eq_nn(arg_struct *arg) {
+    temp_vartype tv(arg, false);
+    if (tv.err != ERR_NONE)
+        return tv.err;
+    return vartype_equals(stack[sp], tv.v) ? ERR_YES : ERR_NO;
+}
+
+int docmd_x_ne_nn(arg_struct *arg) {
+    temp_vartype tv(arg, false);
+    if (tv.err != ERR_NONE)
+        return tv.err;
+    return vartype_equals(stack[sp], tv.v) ? ERR_NO : ERR_YES;
+}
+
+int docmd_x_lt_nn(arg_struct *arg) {
+    temp_vartype tv(arg, true);
+    if (tv.err != ERR_NONE)
+        return tv.err;
+    return ((vartype_real *) stack[sp])->x < ((vartype_real *) tv.v)->x ? ERR_YES : ERR_NO;
+}
+
+int docmd_x_gt_nn(arg_struct *arg) {
+    temp_vartype tv(arg, true);
+    if (tv.err != ERR_NONE)
+        return tv.err;
+    return ((vartype_real *) stack[sp])->x > ((vartype_real *) tv.v)->x ? ERR_YES : ERR_NO;
+}
+
+int docmd_x_le_nn(arg_struct *arg) {
+    temp_vartype tv(arg, true);
+    if (tv.err != ERR_NONE)
+        return tv.err;
+    return ((vartype_real *) stack[sp])->x <= ((vartype_real *) tv.v)->x ? ERR_YES : ERR_NO;
+}
+
+int docmd_x_ge_nn(arg_struct *arg) {
+    temp_vartype tv(arg, true);
+    if (tv.err != ERR_NONE)
+        return tv.err;
+    return ((vartype_real *) stack[sp])->x >= ((vartype_real *) tv.v)->x ? ERR_YES : ERR_NO;
+}
+
+int docmd_0_eq_nn(arg_struct *arg) {
+    temp_vartype tv(arg, true);
+    if (tv.err != ERR_NONE)
+        return tv.err;
+    return ((vartype_real *) tv.v)->x == 0 ? ERR_YES : ERR_NO;
+}
+
+int docmd_0_ne_nn(arg_struct *arg) {
+    temp_vartype tv(arg, true);
+    if (tv.err != ERR_NONE)
+        return tv.err;
+    return ((vartype_real *) tv.v)->x != 0 ? ERR_YES : ERR_NO;
+}
+
+int docmd_0_lt_nn(arg_struct *arg) {
+    temp_vartype tv(arg, true);
+    if (tv.err != ERR_NONE)
+        return tv.err;
+    return ((vartype_real *) tv.v)->x > 0 ? ERR_YES : ERR_NO;
+}
+
+int docmd_0_gt_nn(arg_struct *arg) {
+    temp_vartype tv(arg, true);
+    if (tv.err != ERR_NONE)
+        return tv.err;
+    return ((vartype_real *) tv.v)->x < 0 ? ERR_YES : ERR_NO;
+}
+
+int docmd_0_le_nn(arg_struct *arg) {
+    temp_vartype tv(arg, true);
+    if (tv.err != ERR_NONE)
+        return tv.err;
+    return ((vartype_real *) tv.v)->x >= 0 ? ERR_YES : ERR_NO;
+}
+
+int docmd_0_ge_nn(arg_struct *arg) {
+    temp_vartype tv(arg, true);
+    if (tv.err != ERR_NONE)
+        return tv.err;
+    return ((vartype_real *) tv.v)->x <= 0 ? ERR_YES : ERR_NO;
+}
+
+///////////////////////////////////
+///// String & List Functions /////
+///////////////////////////////////
+
+int docmd_xstr(arg_struct *arg) {
+    if (arg->type != ARGTYPE_XSTR)
+        return ERR_INTERNAL_ERROR;
+    vartype *v = new_string(arg->val.xstr, arg->length);
+    if (v == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    return recall_result(v);
 }

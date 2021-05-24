@@ -86,8 +86,21 @@ index d135291..561a7e4 100755
  
  ARCH_ALIAS := x86  ia64 EM64T x86_64 i686 amd64 Intel64 sun4u
  ARCH_LIST  := IA32 IA64 EFI2  EFI2   IA32 EFI2  EFI2    EFI2
+diff --git a/LIBRARY/src/bid128_hypot.c b/LIBRARY/src/bid128_hypot.c
+index e60ed96..929b516 100755
+--- a/LIBRARY/src/bid128_hypot.c
++++ b/LIBRARY/src/bid128_hypot.c
+@@ -126,7 +126,7 @@ else {
+ 	x.w[BID_HIGH_128W] &= 0x7fffffffffffffffull;
+ 	y.w[BID_HIGH_128W] &= 0x7fffffffffffffffull;
+ 
+-	if(exponent_x - exponent_y >= 35)
++	if(exponent_x - exponent_y >= 69)
+ 	{
+ 	 res.w[BID_HIGH_128W] = x.w[BID_HIGH_128W];
+ 	 res.w[BID_LOW_128W] = x.w[BID_LOW_128W];
 diff --git a/LIBRARY/src/bid_functions.h b/LIBRARY/src/bid_functions.h
-index 2b3f76d..1e025b1 100755
+index 2b3f76d..c001e59 100755
 --- a/LIBRARY/src/bid_functions.h
 +++ b/LIBRARY/src/bid_functions.h
 @@ -42,6 +42,7 @@
@@ -1105,7 +1118,7 @@ index afb77da..6f5a6db 100755
  
 +#endif /* FREE42_FPTEST */
 diff --git a/TESTS/test_bid_functions.h b/TESTS/test_bid_functions.h
-index 32fe7b8..2990360 100755
+index 32fe7b8..0d729d1 100755
 --- a/TESTS/test_bid_functions.h
 +++ b/TESTS/test_bid_functions.h
 @@ -156,7 +156,7 @@ typedef BID_UINT128 _Quad;

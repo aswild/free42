@@ -18,12 +18,12 @@
 #ifndef CORE_LINALG1_H
 #define CORE_LINALG1_H 1
 
-#include "core_globals.h"
+#include "core_variables.h"
 
 int linalg_div(const vartype *left, const vartype *right,
-                             void (*completion)(int, vartype *));
+                             int (*completion)(int, vartype *));
 int linalg_mul(const vartype *left, const vartype *right,
-                             void (*completion)(int, vartype *));
+                             int (*completion)(int, vartype *));
 int linalg_inv(const vartype *src, void (*completion)(int, vartype *));
 int linalg_det(const vartype *src, void (*completion)(int, vartype *));
 

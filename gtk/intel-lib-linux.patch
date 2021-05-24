@@ -144,6 +144,19 @@ index d135291..e698d64 100755
  AR_OUT     := $(call CselOsName,AR_OUT,$(_OS_CHOICE),        ,      ,      -o, /out:)$($(IML_TARGET_OS)__space)
  LD_CMD     := $(call CselOsName,LD_CMD,$(_OS_CHOICE),icc,icc,libtool,link /nologo)
  LD_OUT     := $(call CselOs, LD_OUT,   $(_OS_CHOICE),      -o,       /out:)$($(IML_TARGET_OS)__space)
+diff --git a/LIBRARY/src/bid128_hypot.c b/LIBRARY/src/bid128_hypot.c
+index e60ed96..929b516 100755
+--- a/LIBRARY/src/bid128_hypot.c
++++ b/LIBRARY/src/bid128_hypot.c
+@@ -126,7 +126,7 @@ else {
+ 	x.w[BID_HIGH_128W] &= 0x7fffffffffffffffull;
+ 	y.w[BID_HIGH_128W] &= 0x7fffffffffffffffull;
+ 
+-	if(exponent_x - exponent_y >= 35)
++	if(exponent_x - exponent_y >= 69)
+ 	{
+ 	 res.w[BID_HIGH_128W] = x.w[BID_HIGH_128W];
+ 	 res.w[BID_LOW_128W] = x.w[BID_LOW_128W];
 diff --git a/TESTS/readtest.c b/TESTS/readtest.c
 index afb77da..6f5a6db 100755
 --- a/TESTS/readtest.c

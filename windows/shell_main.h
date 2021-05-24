@@ -46,7 +46,7 @@ typedef std::basic_string<wchar_t, ci_char_traits> ci_string;
 
 #define FILENAMELEN 256
 
-typedef struct state {
+struct state_type {
     BOOL extras;
     WINDOWPLACEMENT mainPlacement;
     int mainPlacementValid;
@@ -66,7 +66,8 @@ typedef struct state {
     bool matrix_singularmatrix;
     bool matrix_outofrange;
     bool auto_repeat;
-} state_type;
+    bool allow_big_stack;
+};
 
 extern state_type state;
 

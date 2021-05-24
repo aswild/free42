@@ -1,3 +1,76 @@
+2021-04-28: release 3.0.3
+
+* Implemented VARMNU1. This is a variation on VARMENU, with two differences: It
+  allows selecting a variable without having to press its menu button twice;
+  and it catches EXIT, performing CLA RUN when it is pressed.
+* Implemented X2LINE and A2LINE functions. These non-programmable functions
+  create program lines containing the current contents of the X or ALPHA
+  registers, respectively.
+* When INDEX or EDITN are performed on a local matrix, while another matrix is
+  already indexed, the IJ pointers are saved, and restored when the current
+  function returns.
+* RTNERR now accepts a string instead of a numeric argument, so functions can
+  raise error messages other than the eight standard ones.
+* Implemented ERRNO and ERRMSG functions. These return the error number and
+  error message, respectively, for the last error caught by flag 25.
+* Implemented XSTR function, for creating strings directly in the X register.
+* Fixed memory leak in the parameterized comparison functions.
+
+2021-03-29: release 3.0.2
+
+* Fixed possible stack corruption or crash due to LNSTK, when big stack mode is
+  already active.
+* Fixed DROPN crash in 4STK mode.
+* Fixed matrix editor's GOTO Row/Column when stack empty (big stack mode).
+* Fixed bounds check bug in AGRAPH. This could cause nothing to be drawn when
+  the pattern was one pixel from being entirely off-screen.
+* Android version: Fixed filesystem access in Android 10.
+
+2021-03-04: release 3.0.1
+
+* Implemented a work-around for a bug in the decimal floating-point library
+  that could cause inaccurate results for several complex functions.
+* Implemented PRMVAR function. This prints all the variables associated with
+  the given LBL through MVAR declarations.
+* Implemented new comparison functions, for comparing arbitrary arguments to X
+  or to zero: X=?, X<?, 0=?, etc.
+* Added error number 8 to RTNERR, to allow user-defined functions to raise the
+  Too Few Arguments error condition.
+* RTN from the keyboard, and other actions that cause the RTN stack to be
+  cleared, now restore the stack mode if it had been changed locally using
+  LNSTK or L4STK.
+* Windows version: Fixed a bug that could cause programs with many ALPHA labels
+  to show up as blank lines in the Export Programs dialog.
+
+2021-02-22: release 3.0
+
+* Added dynamic stack option. See the Free42 web site for details.
+* Added the date and time format options to the MODES menu.
+* Changed the RTNERR function to take the error number from a parameter, rather
+  than from the X register. To prevent existing programs using the old
+  parameter-less RTNERR from breaking, those RTNERRs are converted to the
+  equivalent new instruction, RTNERR IND ST X.
+* Added PGMMENU function. This shows a menu of ALPHA labels with MVAR
+  instructions, like the top-level menu presented by SOLVER and ∫f(x). It is
+  meant to be used by programs that aim to implement a similar behavior as
+  those built-in menus.
+* On cold start, now setting the date and time format accordig to the host
+  operating system's locale settings.
+* The Free42 extensions to the HP-42S instruction set are now shown in separate
+  sections in CATALOG, rather than at the end of the FCN catalog.
+* Added STRACE option to PRINT menu. This is the "Stack trace" option, i.e.
+  TRACE mode where the entire stack gets printed, not just X. The option itself
+  is not new, it was implemented in 2.5.21, but the STRACE function, that
+  allows you to set that mode without having to twiddle flags, is new.
+
+2021-02-02: release 2.5.25
+
+* Fixed pasting of zero. This was broken in 2.5.21.
+
+2021-01-17: release 2.5.24a (Android only)
+
+* Fixed screen rotation issue with Android 11.
+
 2021-01-13: release 2.5.24
 
 * Improved user-defined function support. The changes are rather substantial;

@@ -58,6 +58,13 @@ int docmd_sf(arg_struct *arg) {
              * this to actually have the intended effect.
              */
             mode_disable_stack_lift = true;
+        else if (num == 25)
+            /* This is the error ignore flag.
+             * When flag 25 is cleared due to an error occurring, 'lasterr'
+             * is set to the error number. This is to make sure we start
+             * with a known, sane value.
+             */
+            lasterr = ERR_NONE;
         return ERR_NONE;
     }
 }
@@ -157,90 +164,72 @@ int docmd_fcc_t(arg_struct *arg) {
 }
 
 int docmd_comb(arg_struct *arg) {
-    if (reg_x->type == TYPE_REAL && reg_y->type == TYPE_REAL) {
-        phloat y = ((vartype_real *) reg_y)->x;
-        phloat x = ((vartype_real *) reg_x)->x;
-        phloat r, s, q = 1;
-        vartype *v;
-        if (x < 0 || x != floor(x) || x == x - 1 || y < 0 || y != floor(y))
-            return ERR_INVALID_DATA;
-        if (y < x)
-            return ERR_INVALID_DATA;
-        if (x > y / 2)
-            x = y - x;
-        #ifdef BCD_MATH
-            s = x == 0 ? 1 : pow(10, 1 + floor(log10(x)));
-        #else
-            s = x == 0 ? 1 : pow(2, 1 + floor(log2(x)));
-        #endif
-        r = 1 / s;
-        while (q <= x) {
-            r *= y--;
-            if (p_isinf(r)) {
-                if (flags.f.range_error_ignore) {
-                    r = POS_HUGE_PHLOAT;
-                    break;
-                } else
-                    return ERR_OUT_OF_RANGE;
-            }
-            r /= q++;
-        }
-        r *= s;
+    phloat y = ((vartype_real *) stack[sp - 1])->x;
+    phloat x = ((vartype_real *) stack[sp])->x;
+    phloat r, s, q = 1;
+    vartype *v;
+    if (x < 0 || x != floor(x) || x == x - 1 || y < 0 || y != floor(y))
+        return ERR_INVALID_DATA;
+    if (y < x)
+        return ERR_INVALID_DATA;
+    if (x > y / 2)
+        x = y - x;
+    #ifdef BCD_MATH
+        s = x == 0 ? 1 : pow(10, 1 + floor(log10(x)));
+    #elif ANDROID
+        s = x == 0 ? 1 : pow(2, 1 + floor(log(x) / log(2)));
+    #else
+        s = x == 0 ? 1 : pow(2, 1 + floor(log2(x)));
+    #endif
+    r = 1 / s;
+    while (q <= x) {
+        r *= y--;
         if (p_isinf(r)) {
-            if (flags.f.range_error_ignore)
+            if (flags.f.range_error_ignore) {
                 r = POS_HUGE_PHLOAT;
-            else
+                break;
+            } else
                 return ERR_OUT_OF_RANGE;
         }
-        v = new_real(r);
-        if (v == NULL)
-            return ERR_INSUFFICIENT_MEMORY;
-        binary_result(v);
-        return ERR_NONE;
-    } else if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else if (reg_x->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-    else if (reg_y->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else
-        return ERR_INVALID_TYPE;
+        r /= q++;
+    }
+    r *= s;
+    if (p_isinf(r)) {
+        if (flags.f.range_error_ignore)
+            r = POS_HUGE_PHLOAT;
+        else
+            return ERR_OUT_OF_RANGE;
+    }
+    v = new_real(r);
+    if (v == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    return binary_result(v);
 }
 
 int docmd_perm(arg_struct *arg) {
-    if (reg_x->type == TYPE_REAL && reg_y->type == TYPE_REAL) {
-        phloat y = ((vartype_real *) reg_y)->x;
-        phloat x = ((vartype_real *) reg_x)->x;
-        phloat r = 1;
-        vartype *v;
-        if (x < 0 || x != floor(x) || x == x - 1 || y < 0 || y != floor(y))
-            return ERR_INVALID_DATA;
-        if (y < x)
-            return ERR_INVALID_DATA;
-        while (x > 0) {
-            r *= y--;
-            if (p_isinf(r)) {
-                if (flags.f.range_error_ignore) {
-                    r = POS_HUGE_PHLOAT;
-                    break;
-                } else
-                    return ERR_OUT_OF_RANGE;
-            }
-            x--;
+    phloat y = ((vartype_real *) stack[sp - 1])->x;
+    phloat x = ((vartype_real *) stack[sp])->x;
+    phloat r = 1;
+    vartype *v;
+    if (x < 0 || x != floor(x) || x == x - 1 || y < 0 || y != floor(y))
+        return ERR_INVALID_DATA;
+    if (y < x)
+        return ERR_INVALID_DATA;
+    while (x > 0) {
+        r *= y--;
+        if (p_isinf(r)) {
+            if (flags.f.range_error_ignore) {
+                r = POS_HUGE_PHLOAT;
+                break;
+            } else
+                return ERR_OUT_OF_RANGE;
         }
-        v = new_real(r);
-        if (v == NULL)
-            return ERR_INSUFFICIENT_MEMORY;
-        binary_result(v);
-        return ERR_NONE;
-    } else if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else if (reg_x->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-    else if (reg_y->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else
-        return ERR_INVALID_TYPE;
+        x--;
+    }
+    v = new_real(r);
+    if (v == NULL)
+        return ERR_INSUFFICIENT_MEMORY;
+    return binary_result(v);
 }
 
 static int mappable_fact(phloat x, phloat *y) {
@@ -262,16 +251,11 @@ static int mappable_fact(phloat x, phloat *y) {
 }
 
 int docmd_fact(arg_struct *arg) {
-    if (reg_x->type == TYPE_REAL || reg_x->type == TYPE_REALMATRIX) {
-        vartype *v;
-        int err = map_unary(reg_x, &v, mappable_fact, NULL);
-        if (err == ERR_NONE)
-            unary_result(v);
-        return err;
-    } else if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else
-        return ERR_INVALID_TYPE;
+    vartype *v;
+    int err = map_unary(stack[sp], &v, mappable_fact, NULL);
+    if (err == ERR_NONE)
+        unary_result(v);
+    return err;
 }
 
 static int mappable_gamma(phloat x, phloat *y) {
@@ -288,89 +272,77 @@ static int mappable_gamma(phloat x, phloat *y) {
 }
 
 int docmd_gamma(arg_struct *arg) {
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else if (reg_x->type == TYPE_COMPLEX || reg_x->type == TYPE_COMPLEXMATRIX)
-        return ERR_INVALID_TYPE;
-    else {
-        vartype *v;
-        int err = map_unary(reg_x, &v, mappable_gamma, NULL);
-        if (err == ERR_NONE)
-            unary_result(v);
-        return err;
-    }
+    vartype *v;
+    int err = map_unary(stack[sp], &v, mappable_gamma, NULL);
+    if (err == ERR_NONE)
+        unary_result(v);
+    return err;
 }
 
 int docmd_ran(arg_struct *arg) {
     vartype *v = new_real(math_random());
     if (v == NULL)
         return ERR_INSUFFICIENT_MEMORY;
-    recall_result(v);
-    return ERR_NONE;
+    return recall_result(v);
 }
 
 int docmd_seed(arg_struct *arg) {
-    if (reg_x->type == TYPE_REAL) {
-        phloat x = ((vartype_real *) reg_x)->x;
-        if (x == 0) {
-            int8 s = shell_random_seed();
-            if (s < 0)
-                s = -s;
-            s %= 100000000000000LL;
-            s = s * 10 + 1;
-            random_number_high = s / 100000000LL;
-            random_number_low = s % 100000000LL;
-            return ERR_NONE;
-        }
-        if (x < 0)
-            x = -x;
-        #ifdef BCD_MATH
-            const phloat e12(1000000000000LL);
-            if (x >= 1) {
-                int exp = to_int(floor(log10(x)));
-                Phloat mant = floor(x * pow(Phloat(10), 11 - exp) + 0.5);
-                if (mant >= Phloat(1000000000000LL)) {
-                    mant /= 10;
-                    exp++;
-                }
-                x = (mant + ((exp + 1) % 100) / Phloat(100) + Phloat(1, 1000)) / e12;
-            } else if (x >= Phloat(1LL, 1000000000000LL)) {
-                x = floor(x * e12) / e12 + Phloat(1LL, 1000000000000000LL);
-            } else {
-                int exp = to_int(floor(log10(x) + 10000));
-                if (exp > 9984)
-                    exp = 9984;
-                x = ((exp + 16) % 100) / Phloat(100000000000000LL) + Phloat(1LL, 1000000000000000LL);
-            }
-            random_number_high = to_int8(x * Phloat(10000000));
-            random_number_low = to_int8(fmod(x * Phloat(1000000000000000LL), Phloat(100000000)));
-        #else
-            if (x >= 1) {
-                int exp = (int) floor(log10(x));
-                int8 mant = (int8) floor(x * pow(10.0, 11 - exp) + 0.5);
-                if (mant >= 1000000000000LL) {
-                    mant /= 10;
-                    exp++;
-                }
-                random_number_high = mant / 100000;
-                random_number_low = (mant % 100000) * 1000L + (exp + 1) % 100 * 10 + 1;
-            } else if (x >= 1e-12) {
-                int8 t = (int8) floor(x * 1e12);
-                random_number_high = t / 100000;
-                random_number_low = (t % 100000) * 1000L + 1;
-            } else {
-                int exp = (int) floor(log10(x) + 1000);
-                if (exp > 984)
-                    exp = 984;
-                random_number_high = 0;
-                random_number_low = (exp + 16) % 100 * 10 + 1;
-            }
-        #endif
+    phloat x = ((vartype_real *) stack[sp])->x;
+    if (x == 0) {
+        int8 s = shell_random_seed();
+        if (s < 0)
+            s = -s;
+        s %= 100000000000000LL;
+        s = s * 10 + 1;
+        random_number_high = s / 100000000LL;
+        random_number_low = s % 100000000LL;
         return ERR_NONE;
-    } else if (arg->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else
-        return ERR_INVALID_TYPE;
+    }
+    if (x < 0)
+        x = -x;
+    #ifdef BCD_MATH
+        const phloat e12(1000000000000LL);
+        if (x >= 1) {
+            int exp = to_int(floor(log10(x)));
+            Phloat mant = floor(x * pow(Phloat(10), 11 - exp) + 0.5);
+            if (mant >= Phloat(1000000000000LL)) {
+                mant /= 10;
+                exp++;
+            }
+            x = (mant + ((exp + 1) % 100) / Phloat(100) + Phloat(1, 1000)) / e12;
+        } else if (x >= Phloat(1LL, 1000000000000LL)) {
+            x = floor(x * e12) / e12 + Phloat(1LL, 1000000000000000LL);
+        } else {
+            int exp = to_int(floor(log10(x) + 10000));
+            if (exp > 9984)
+                exp = 9984;
+            x = ((exp + 16) % 100) / Phloat(100000000000000LL) + Phloat(1LL, 1000000000000000LL);
+        }
+        random_number_high = to_int8(x * Phloat(10000000));
+        random_number_low = to_int8(fmod(x * Phloat(1000000000000000LL), Phloat(100000000)));
+    #else
+        if (x >= 1) {
+            int exp = (int) floor(log10(x));
+            int8 mant = (int8) floor(x * pow(10.0, 11 - exp) + 0.5);
+            if (mant >= 1000000000000LL) {
+                mant /= 10;
+                exp++;
+            }
+            random_number_high = mant / 100000;
+            random_number_low = (mant % 100000) * 1000L + (exp + 1) % 100 * 10 + 1;
+        } else if (x >= 1e-12) {
+            int8 t = (int8) floor(x * 1e12);
+            random_number_high = t / 100000;
+            random_number_low = (t % 100000) * 1000L + 1;
+        } else {
+            int exp = (int) floor(log10(x) + 1000);
+            if (exp > 984)
+                exp = 984;
+            random_number_high = 0;
+            random_number_low = (exp + 16) % 100 * 10 + 1;
+        }
+    #endif
+    return ERR_NONE;
 }
 
 int docmd_lbl(arg_struct *arg) {
@@ -429,11 +401,13 @@ int docmd_input(arg_struct *arg) {
     }
 
     docmd_cld(NULL);
-    recall_result(v);
-    return ERR_STOP;
+    if (recall_result(v) != ERR_NONE)
+        return ERR_INSUFFICIENT_MEMORY;
+    else
+        return ERR_STOP;
 }
 
-int view_helper(arg_struct *arg, int print) {
+int view_helper(arg_struct *arg, bool print) {
     int err;
     char buf[22];
     int bufptr = 0, part2;
@@ -679,7 +653,7 @@ static int generic_loop(arg_struct *arg, bool isg) {
                 int4 index = arg->val.num;
                 if (index >= size)
                     return ERR_SIZE_ERROR;
-                if (rm->array->is_string[index])
+                if (rm->array->is_string[index] != 0)
                     return ERR_ALPHA_DATA_IS_INVALID;
                 else {
                     if (!disentangle(regs))
@@ -697,13 +671,21 @@ static int generic_loop(arg_struct *arg, bool isg) {
             }
         }
         case ARGTYPE_STK: {
-            vartype *v = NULL;
+            int idx;
             switch (arg->val.stk) {
-                case 'X': v = reg_x; break;
-                case 'Y': v = reg_y; break;
-                case 'Z': v = reg_z; break;
-                case 'T': v = reg_t; break;
-                case 'L': v = reg_lastx; break;
+                case 'X': idx = 0; break;
+                case 'Y': idx = 1; break;
+                case 'Z': idx = 2; break;
+                case 'T': idx = 3; break;
+                case 'L': idx = -1; break;
+            }
+            vartype *v;
+            if (idx == -1) {
+                v = lastx;
+            } else {
+                if (idx > sp)
+                    return ERR_NONEXISTENT;
+                v = stack[sp - idx];
             }
             if (v == NULL)
                 return ERR_INVALID_TYPE;
@@ -739,41 +721,38 @@ int docmd_dse(arg_struct *arg) {
 }
 
 int docmd_aip(arg_struct *arg) {
-    if (reg_x->type == TYPE_REAL) {
-        char buf[44];
-        int size = ip2revstring(((vartype_real *) reg_x)->x, buf, 44);
-        append_alpha_string(buf, size, 1);
-        if (flags.f.trace_print && flags.f.printer_exists)
-            docmd_pra(NULL);
-        return ERR_NONE;
-    } else if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else
-        return ERR_INVALID_TYPE;
+    char buf[44];
+    int size = ip2revstring(((vartype_real *) stack[sp])->x, buf, 44);
+    append_alpha_string(buf, size, 1);
+    if (flags.f.trace_print && flags.f.printer_exists)
+        docmd_pra(NULL);
+    return ERR_NONE;
 }
 
 int docmd_xtoa(arg_struct *arg) {
-    if (reg_x->type == TYPE_REAL) {
-        phloat x = ((vartype_real *) reg_x)->x;
+    if (stack[sp]->type == TYPE_REAL) {
+        phloat x = ((vartype_real *) stack[sp])->x;
         if (x < 0)
             x = -x;
         if (x >= 256)
             return ERR_INVALID_DATA;
         append_alpha_char(to_char(x));
-    } else if (reg_x->type == TYPE_STRING) {
-        vartype_string *s = (vartype_string *) reg_x;
-        append_alpha_string(s->text, s->length, 0);
-    } else if (reg_x->type == TYPE_REALMATRIX) {
-        vartype_realmatrix *m = (vartype_realmatrix *) reg_x;
+    } else if (stack[sp]->type == TYPE_STRING) {
+        vartype_string *s = (vartype_string *) stack[sp];
+        append_alpha_string(s->txt(), s->length, 0);
+    } else if (stack[sp]->type == TYPE_REALMATRIX) {
+        vartype_realmatrix *m = (vartype_realmatrix *) stack[sp];
         int4 size = m->rows * m->columns;
         int4 i;
         char buf[44];
         int buflen = 0;
         for (i = size - 1; i >= 0; i--) {
-            if (m->array->is_string[i]) {
-                int j;
-                for (j = phloat_length(m->array->data[i]) - 1; j >= 0; j--) {
-                    buf[buflen++] = phloat_text(m->array->data[i])[j];
+            if (m->array->is_string[i] != 0) {
+                int4 len;
+                char *text;
+                get_matrix_string(m, i, &text, &len);
+                for (int4 j = len - 1; j >= 0; j--) {
+                    buf[buflen++] = text[j];
                     if (buflen == 44)
                         goto done;
                 }
@@ -791,38 +770,37 @@ int docmd_xtoa(arg_struct *arg) {
         }
         done:
         append_alpha_string(buf, buflen, 1);
-    } else
-        return ERR_INVALID_TYPE;
+    }
     if (flags.f.trace_print && flags.f.printer_exists)
         docmd_pra(NULL);
     return ERR_NONE;
 }
 
 int docmd_agraph(arg_struct *arg) {
-    switch (reg_x->type) {
+    switch (stack[sp]->type) {
         case TYPE_REAL: {
-            if (reg_y->type == TYPE_REAL) {
-                phloat x = ((vartype_real *) reg_x)->x;
-                phloat y = ((vartype_real *) reg_y)->x;
+            if (stack[sp - 1]->type == TYPE_REAL) {
+                phloat x = ((vartype_real *) stack[sp])->x;
+                phloat y = ((vartype_real *) stack[sp - 1])->x;
                 draw_pattern(x, y, reg_alpha, reg_alpha_length);
                 flush_display();
                 flags.f.message = flags.f.two_line_message = 1;
                 return ERR_NONE;
-            } else if (reg_y->type == TYPE_STRING)
+            } else if (stack[sp - 1]->type == TYPE_STRING)
                 return ERR_ALPHA_DATA_IS_INVALID;
             else
                 return ERR_INVALID_TYPE;
         }
         case TYPE_COMPLEX: {
-            phloat x = ((vartype_complex *) reg_x)->re;
-            phloat y = ((vartype_complex *) reg_x)->im;
+            phloat x = ((vartype_complex *) stack[sp])->re;
+            phloat y = ((vartype_complex *) stack[sp])->im;
             draw_pattern(x, y, reg_alpha, reg_alpha_length);
             flush_display();
             flags.f.message = flags.f.two_line_message = 1;
             return ERR_NONE;
         }
         case TYPE_COMPLEXMATRIX: {
-            vartype_complexmatrix *cm = (vartype_complexmatrix *) reg_x;
+            vartype_complexmatrix *cm = (vartype_complexmatrix *) stack[sp];
             int4 size = 2 * cm->rows * cm->columns;
             int4 i;
             for (i = 0; i < size; i += 2)
@@ -865,25 +843,25 @@ static void pixel_helper(phloat dx, phloat dy) {
 }
 
 int docmd_pixel(arg_struct *arg) {
-    if (reg_x->type == TYPE_REAL) {
-        if (reg_y->type == TYPE_REAL) {
-            pixel_helper(((vartype_real *) reg_x)->x,
-                         ((vartype_real *) reg_y)->x);
+    if (stack[sp]->type == TYPE_REAL) {
+        if (stack[sp - 1]->type == TYPE_REAL) {
+            pixel_helper(((vartype_real *) stack[sp])->x,
+                         ((vartype_real *) stack[sp - 1])->x);
             flush_display();
             flags.f.message = flags.f.two_line_message = 1;
             return ERR_NONE;
-        } else if (reg_y->type == TYPE_STRING)
+        } else if (stack[sp - 1]->type == TYPE_STRING)
             return ERR_ALPHA_DATA_IS_INVALID;
         else
             return ERR_INVALID_TYPE;
-    } else if (reg_x->type == TYPE_COMPLEX) {
-        pixel_helper(((vartype_complex *) reg_x)->re,
-                     ((vartype_complex *) reg_x)->im);
+    } else if (stack[sp]->type == TYPE_COMPLEX) {
+        pixel_helper(((vartype_complex *) stack[sp])->re,
+                     ((vartype_complex *) stack[sp])->im);
         flush_display();
         flags.f.message = flags.f.two_line_message = 1;
         return ERR_NONE;
-    } else if (reg_x->type == TYPE_COMPLEXMATRIX) {
-        vartype_complexmatrix *m = (vartype_complexmatrix *) reg_x;
+    } else if (stack[sp]->type == TYPE_COMPLEXMATRIX) {
+        vartype_complexmatrix *m = (vartype_complexmatrix *) stack[sp];
         int4 size = 2 * m->rows * m->columns;
         int4 i;
         for (i = 0; i < size; i += 2)
@@ -891,7 +869,7 @@ int docmd_pixel(arg_struct *arg) {
         flush_display();
         flags.f.message = flags.f.two_line_message = 1;
         return ERR_NONE;
-    } else if (reg_x->type == TYPE_STRING)
+    } else if (stack[sp]->type == TYPE_STRING)
         return ERR_ALPHA_DATA_IS_INVALID;
     else
         return ERR_INVALID_TYPE;
@@ -971,210 +949,69 @@ int docmd_menu(arg_struct *arg) {
 }
 
 int docmd_x_eq_0(arg_struct *arg) {
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else if (reg_x->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-    return ((vartype_real *) reg_x)->x == 0 ? ERR_YES : ERR_NO;
+    return ((vartype_real *) stack[sp])->x == 0 ? ERR_YES : ERR_NO;
 }
 
 int docmd_x_ne_0(arg_struct *arg) {
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else if (reg_x->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-    return ((vartype_real *) reg_x)->x != 0 ? ERR_YES : ERR_NO;
+    return ((vartype_real *) stack[sp])->x != 0 ? ERR_YES : ERR_NO;
 }
 
 int docmd_x_lt_0(arg_struct *arg) {
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else if (reg_x->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-    return ((vartype_real *) reg_x)->x < 0 ? ERR_YES : ERR_NO;
+    return ((vartype_real *) stack[sp])->x < 0 ? ERR_YES : ERR_NO;
 }
 
 int docmd_x_gt_0(arg_struct *arg) {
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else if (reg_x->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-    return ((vartype_real *) reg_x)->x > 0 ? ERR_YES : ERR_NO;
+    return ((vartype_real *) stack[sp])->x > 0 ? ERR_YES : ERR_NO;
 }
 
 int docmd_x_le_0(arg_struct *arg) {
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else if (reg_x->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-    return ((vartype_real *) reg_x)->x <= 0 ? ERR_YES : ERR_NO;
+    return ((vartype_real *) stack[sp])->x <= 0 ? ERR_YES : ERR_NO;
 }
 
 int docmd_x_ge_0(arg_struct *arg) {
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else if (reg_x->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-    return ((vartype_real *) reg_x)->x >= 0 ? ERR_YES : ERR_NO;
+    return ((vartype_real *) stack[sp])->x >= 0 ? ERR_YES : ERR_NO;
 }
 
 int docmd_x_eq_y(arg_struct *arg) {
-    if (reg_x->type != reg_y->type)
-        return ERR_NO;
-    switch (reg_x->type) {
-        case TYPE_REAL: {
-            vartype_real *x = (vartype_real *) reg_x;
-            vartype_real *y = (vartype_real *) reg_y;
-            return x->x == y->x ? ERR_YES : ERR_NO;
-        }
-        case TYPE_COMPLEX: {
-            vartype_complex *x = (vartype_complex *) reg_x;
-            vartype_complex *y = (vartype_complex *) reg_y;
-            return x->re == y->re && x->im == y->im ? ERR_YES : ERR_NO;
-        }
-        case TYPE_REALMATRIX: {
-            vartype_realmatrix *x = (vartype_realmatrix *) reg_x;
-            vartype_realmatrix *y = (vartype_realmatrix *) reg_y;
-            int4 sz, i;
-            if (x->rows != y->rows || x->columns != y->columns)
-                return ERR_NO;
-            sz = x->rows * x->columns;
-            for (i = 0; i < sz; i++) {
-                int xstr = x->array->is_string[i];
-                int ystr = y->array->is_string[i];
-                if (xstr != ystr)
-                    return ERR_NO;
-                if (xstr) {
-                    if (!string_equals(phloat_text(x->array->data[i]),
-                                       phloat_length(x->array->data[i]),
-                                       phloat_text(y->array->data[i]),
-                                       phloat_length(y->array->data[i])))
-                        return ERR_NO;
-                } else {
-                    if (x->array->data[i] != y->array->data[i])
-                        return ERR_NO;
-                }
-            }
-            return ERR_YES;
-        }
-        case TYPE_COMPLEXMATRIX: {
-            vartype_complexmatrix *x = (vartype_complexmatrix *) reg_x;
-            vartype_complexmatrix *y = (vartype_complexmatrix *) reg_y;
-            int4 sz, i;
-            if (x->rows != y->rows || x->columns != y->columns)
-                return ERR_NO;
-            sz = 2 * x->rows * x->columns;
-            for (i = 0; i < sz; i++)
-                if (x->array->data[i] != y->array->data[i])
-                    return ERR_NO;
-            return ERR_YES;
-        }
-        case TYPE_STRING: {
-            vartype_string *x = (vartype_string *) reg_x;
-            vartype_string *y = (vartype_string *) reg_y;
-            if (string_equals(x->text, x->length, y->text, y->length))
-                return ERR_YES;
-            else
-                return ERR_NO;
-        }
-        default:
-            /* Can't happen */
-            return ERR_INTERNAL_ERROR;
-    }
+    return vartype_equals(stack[sp], stack[sp - 1]) ? ERR_YES : ERR_NO;
 }
 
 int docmd_x_ne_y(arg_struct *arg) {
-    int err = docmd_x_eq_y(arg);
-    switch (err) {
-        case ERR_YES:
-            return ERR_NO;
-        case ERR_NO:
-            return ERR_YES;
-        default:
-            return err;
-    }
+    return vartype_equals(stack[sp], stack[sp - 1]) ? ERR_NO : ERR_YES;
 }
 
 int docmd_x_lt_y(arg_struct *arg) {
-    switch (reg_x->type) {
-        case TYPE_REAL: {
-            if (reg_y->type == TYPE_STRING)
-                return ERR_ALPHA_DATA_IS_INVALID;
-            else if (reg_y->type != TYPE_REAL)
-                return ERR_INVALID_TYPE;
-            if (((vartype_real *) reg_x)->x < ((vartype_real *) reg_y)->x)
-                return ERR_YES;
-            else
-                return ERR_NO;
-        }
-        case TYPE_STRING:
-            return ERR_ALPHA_DATA_IS_INVALID;
-        default:
-            return ERR_INVALID_TYPE;
-    }
+    if (((vartype_real *) stack[sp])->x < ((vartype_real *) stack[sp - 1])->x)
+        return ERR_YES;
+    else
+        return ERR_NO;
 }
 
 int docmd_x_gt_y(arg_struct *arg) {
-    switch (reg_x->type) {
-        case TYPE_REAL: {
-            if (reg_y->type == TYPE_STRING)
-                return ERR_ALPHA_DATA_IS_INVALID;
-            else if (reg_y->type != TYPE_REAL)
-                return ERR_INVALID_TYPE;
-            if (((vartype_real *) reg_x)->x > ((vartype_real *) reg_y)->x)
-                return ERR_YES;
-            else
-                return ERR_NO;
-        }
-        case TYPE_STRING:
-            return ERR_ALPHA_DATA_IS_INVALID;
-        default:
-            return ERR_INVALID_TYPE;
-    }
+    if (((vartype_real *) stack[sp])->x > ((vartype_real *) stack[sp - 1])->x)
+        return ERR_YES;
+    else
+        return ERR_NO;
 }
 
 int docmd_x_le_y(arg_struct *arg) {
-    switch (reg_x->type) {
-        case TYPE_REAL: {
-            if (reg_y->type == TYPE_STRING)
-                return ERR_ALPHA_DATA_IS_INVALID;
-            else if (reg_y->type != TYPE_REAL)
-                return ERR_INVALID_TYPE;
-            if (((vartype_real *) reg_x)->x <= ((vartype_real *) reg_y)->x)
-                return ERR_YES;
-            else
-                return ERR_NO;
-        }
-        case TYPE_STRING:
-            return ERR_ALPHA_DATA_IS_INVALID;
-        default:
-            return ERR_INVALID_TYPE;
-    }
+    if (((vartype_real *) stack[sp])->x <= ((vartype_real *) stack[sp - 1])->x)
+        return ERR_YES;
+    else
+        return ERR_NO;
 }
 
 int docmd_x_ge_y(arg_struct *arg) {
-    switch (reg_x->type) {
-        case TYPE_REAL: {
-            if (reg_y->type == TYPE_STRING)
-                return ERR_ALPHA_DATA_IS_INVALID;
-            else if (reg_y->type != TYPE_REAL)
-                return ERR_INVALID_TYPE;
-            if (((vartype_real *) reg_x)->x >= ((vartype_real *) reg_y)->x)
-                return ERR_YES;
-            else
-                return ERR_NO;
-        }
-        case TYPE_STRING:
-            return ERR_ALPHA_DATA_IS_INVALID;
-        default:
-            return ERR_INVALID_TYPE;
-    }
+    if (((vartype_real *) stack[sp])->x >= ((vartype_real *) stack[sp - 1])->x)
+        return ERR_YES;
+    else
+        return ERR_NO;
 }
 
-typedef struct {
+struct sigma_label_spec {
     const char *text;
     int length;
-} sigma_label_spec;
+};
 
 static const sigma_label_spec sigma_labels[] = {
     { "\005X=",           3 },
@@ -1216,14 +1053,16 @@ int docmd_prsigma(arg_struct *arg) {
         return ERR_PRINTING_IS_DISABLED;
 
     shell_annunciators(-1, -1, 1, -1, -1, -1);
-    print_text(NULL, 0, 1);
+    print_text(NULL, 0, true);
     for (i = 0; i < nr; i++) {
         int4 j = i + mode_sigma_reg;
-        if (rm->array->is_string[j]) {
+        if (rm->array->is_string[j] != 0) {
+            char *text;
+            int4 len;
+            get_matrix_string(rm, j, &text, &len);
             bufptr = 0;
             char2buf(buf, 100, &bufptr, '"');
-            string2buf(buf, 100, &bufptr, phloat_text(rm->array->data[j]),
-                                          phloat_length(rm->array->data[j]));
+            string2buf(buf, 100, &bufptr, text, len);
             char2buf(buf, 100, &bufptr, '"');
         } else
             bufptr = easy_phloat2string(rm->array->data[j], buf, 100, 0);
@@ -1249,12 +1088,12 @@ int docmd_prp(arg_struct *arg) {
         return ERR_INVALID_TYPE;
     if (!flags.f.printer_exists)
         return ERR_PRINTING_IS_DISABLED;
-    return print_program(prgm_index, -1, -1, 0);
+    return print_program(prgm_index, -1, -1, false);
 }
 
 static vartype *prv_var;
 static int4 prv_index;
-static int prv_worker(int interrupted);
+static int prv_worker(bool interrupted);
 
 int docmd_prv(arg_struct *arg) {
     if (arg->type == ARGTYPE_IND_NUM || arg->type == ARGTYPE_IND_STK
@@ -1279,10 +1118,27 @@ int docmd_prv(arg_struct *arg) {
         shell_annunciators(-1, -1, 1, -1, -1, -1);
         string2buf(lbuf, 8, &llen, arg->val.text, arg->length);
         char2buf(lbuf, 8, &llen, '=');
-        rlen = vartype2string(v, rbuf, 100);
-        print_wide(lbuf, llen, rbuf, rlen);
+        if (v->type == TYPE_STRING) {
+            vartype_string *s = (vartype_string *) v;
+            char *sbuf = (char *) malloc(s->length + 2);
+            if (sbuf == NULL) {
+                shell_annunciators(-1, -1, 0, -1, -1, -1);
+                return ERR_INSUFFICIENT_MEMORY;
+            }
+            sbuf[0] = '"';
+            memcpy(sbuf + 1, s->txt(), s->length);
+            sbuf[s->length + 1] = '"';
+            print_wide(lbuf, llen, sbuf, s->length + 2);
+            free(sbuf);
+        } else {
+            rlen = vartype2string(v, rbuf, 100);
+            print_wide(lbuf, llen, rbuf, rlen);
+        }
 
-        if (v->type == TYPE_REALMATRIX || v->type == TYPE_COMPLEXMATRIX) {
+        if (v->type == TYPE_REALMATRIX
+                || v->type == TYPE_COMPLEXMATRIX
+                || v->type == TYPE_LIST
+                && ((vartype_list *) v)->size > 0) {
             prv_var = v;
             prv_index = 0;
             mode_interruptible = prv_worker;
@@ -1295,7 +1151,7 @@ int docmd_prv(arg_struct *arg) {
     }
 }
 
-static int prv_worker(int interrupted) {
+static int prv_worker(bool interrupted) {
     char lbuf[32], rbuf[100];
     int llen = 0, rlen = 0;
     int4 i, j, sz;
@@ -1314,17 +1170,26 @@ static int prv_worker(int interrupted) {
         char2buf(lbuf, 32, &llen, ':');
         llen += int2string(j + 1, lbuf + llen, 32 - llen);
         char2buf(lbuf, 32, &llen, '=');
-        if (rm->array->is_string[prv_index]) {
-            rlen = 0;
-            char2buf(rbuf, 100, &rlen, '"');
-            string2buf(rbuf, 100, &rlen, phloat_text(rm->array->data[prv_index]),
-                                    phloat_length(rm->array->data[prv_index]));
-            char2buf(rbuf, 100, &rlen, '"');
-        } else
+        if (rm->array->is_string[prv_index] != 0) {
+            char *text;
+            int4 len;
+            get_matrix_string(rm, prv_index, &text, &len);
+            char *sbuf = (char *) malloc(len + 2);
+            if (sbuf == NULL) {
+                print_wide(lbuf, llen, "<Low Mem>", 9);
+            } else {
+                sbuf[0] = '"';
+                memcpy(sbuf + 1, text, len);
+                sbuf[len + 1] = '"';
+                print_wide(lbuf, llen, sbuf, len + 2);
+                free(sbuf);
+            }
+        } else {
             rlen = easy_phloat2string(rm->array->data[prv_index],
                                         rbuf, 100, 0);
-        print_wide(lbuf, llen, rbuf, rlen);
-    } else /* prv_var->type == TYPE_COMPLEXMATRIX) */ {
+            print_wide(lbuf, llen, rbuf, rlen);
+        }
+    } else if (prv_var->type == TYPE_COMPLEXMATRIX) {
         vartype_complexmatrix *cm = (vartype_complexmatrix *) prv_var;
         vartype_complex cpx;
         cpx.type = TYPE_COMPLEX;
@@ -1339,6 +1204,29 @@ static int prv_worker(int interrupted) {
         cpx.im = cm->array->data[2 * prv_index + 1];
         rlen = vartype2string((vartype *) &cpx, rbuf, 100);
         print_wide(lbuf, llen, rbuf, rlen);
+    } else /* prv_var->type == TYPE_LIST */ {
+        vartype_list *list = (vartype_list *) prv_var;
+        i = prv_index;
+        sz = list->size;
+        llen = int2string(i + 1, lbuf, 32);
+        char2buf(lbuf, 32, &llen, '=');
+        vartype *v = list->array->data[i];
+        if (v->type == TYPE_STRING) {
+            vartype_string *s = (vartype_string *) v;
+            char *sbuf = (char *) malloc(s->length + 2);
+            if (sbuf == NULL) {
+                print_wide(lbuf, llen, "<Low Mem>", 9);
+            } else {
+                sbuf[0] = '"';
+                memcpy(sbuf + 1, s->txt(), s->length);
+                sbuf[s->length + 1] = '"';
+                print_wide(lbuf, llen, sbuf, s->length + 2);
+                free(sbuf);
+            }
+        } else {
+            rlen = vartype2string(v, rbuf, 100);
+            print_wide(lbuf, llen, rbuf, rlen);
+        }
     }
 
     if (++prv_index < sz)
@@ -1359,15 +1247,56 @@ int docmd_prstk(arg_struct *arg) {
         return ERR_PRINTING_IS_DISABLED;
     shell_annunciators(-1, -1, 1, -1, -1, -1);
     if (arg != NULL)
-        print_text(NULL, 0, 1);
-    len = vartype2string(reg_t, buf, 100);
-    print_wide("T=", 2, buf, len);
-    len = vartype2string(reg_z, buf, 100);
-    print_wide("Z=", 2, buf, len);
-    len = vartype2string(reg_y, buf, 100);
-    print_wide("Y=", 2, buf, len);
-    len = vartype2string(reg_x, buf, 100);
-    print_wide("X=", 2, buf, len);
+        print_text(NULL, 0, true);
+    if (flags.f.big_stack) {
+        if (sp == -1)
+            print_text("<Empty Stack>", 13, true);
+        else {
+            char nbuf[8];
+            int nlen;
+            for (int i = 0; i <= sp; i++) {
+                nlen = uint2string(sp + 1 - i, nbuf, 7);
+                char2buf(nbuf, 8, &nlen, '=');
+                if (stack[i]->type == TYPE_STRING) {
+                    vartype_string *s = (vartype_string *) stack[i];
+                    char *sbuf = (char *) malloc(s->length + 2);
+                    if (sbuf == NULL) {
+                        print_wide(nbuf, nlen, "<Low Mem>", 9);
+                    } else {
+                        sbuf[0] = '"';
+                        memcpy(sbuf + 1, s->txt(), s->length);
+                        sbuf[s->length + 1] = '"';
+                        print_wide(nbuf, nlen, sbuf, s->length + 2);
+                        free(sbuf);
+                    }
+                } else {
+                    len = vartype2string(stack[i], buf, 100);
+                    print_wide(nbuf, nlen, buf, len);
+                }
+            }
+        }
+    } else {
+        const int index[] = { REG_T, REG_Z, REG_Y, REG_X };
+        const char * const title[] = { "T=", "Z=", "Y=", "X=" };
+        for (int i = 0; i < 4; i++) {
+            if (stack[index[i]]->type == TYPE_STRING) {
+                vartype_string *s = (vartype_string *) stack[index[i]];
+                char *sbuf = (char *) malloc(s->length + 2);
+                if (sbuf == NULL) {
+                    print_wide(title[i], 2, "<Low Mem>", 9);
+                } else {
+                    sbuf[0] = '"';
+                    memcpy(sbuf + 1, s->txt(), s->length);
+                    sbuf[s->length + 1] = '"';
+                    print_wide(title[i], 2, sbuf, s->length + 2);
+                    free(sbuf);
+                }
+            } else {
+                len = vartype2string(stack[index[i]], buf, 100);
+                print_wide(title[i], 2, buf, len);
+            }
+        }
+    }
     shell_annunciators(-1, -1, 0, -1, -1, -1);
     return ERR_NONE;
 }
@@ -1380,24 +1309,24 @@ int docmd_pra(arg_struct *arg) {
         return ERR_PRINTING_IS_DISABLED;
     shell_annunciators(-1, -1, 1, -1, -1, -1);
     if (reg_alpha_length == 0)
-        print_text(NULL, 0, 1);
+        print_text(NULL, 0, true);
     else {
         int line_start = 0;
         int width = flags.f.double_wide_print ? 12 : 24;
         int i;
         for (i = 0; i < reg_alpha_length; i++) {
             if (reg_alpha[i] == 10) {
-                print_text(reg_alpha + line_start, i - line_start, 1);
+                print_text(reg_alpha + line_start, i - line_start, true);
                 line_start = i + 1;
             } else if (i == line_start + width) {
-                print_text(reg_alpha + line_start, i - line_start, 1);
+                print_text(reg_alpha + line_start, i - line_start, true);
                 line_start = i;
             }
         }
         if (line_start < reg_alpha_length
                 || (line_start > 0 && reg_alpha[line_start - 1] == 10))
             print_text(reg_alpha + line_start,
-                       reg_alpha_length - line_start, 1);
+                       reg_alpha_length - line_start, true);
     }
     shell_annunciators(-1, -1, 0, -1, -1, -1);
     return ERR_NONE;
@@ -1410,24 +1339,40 @@ int docmd_prx(arg_struct *arg) {
     if (!flags.f.printer_exists)
         return ERR_PRINTING_IS_DISABLED;
     else {
-        char buf[100];
-        int len;
         shell_annunciators(-1, -1, 1, -1, -1, -1);
-        len = vartype2string(reg_x, buf, 100);
-        if (reg_x->type == TYPE_REAL || reg_x->type == TYPE_STRING)
-            print_right(buf, len, "***", 3);
-        else {
-            /* Normally we print X right-justified, but if it doesn't fit on
-             * one line, we print it left-justified, because having the excess
-             * go near the right margin looks weird and confusing.
-             */
-            int left = len > (flags.f.double_wide_print ? 12 : 24);
-            print_lines(buf, len, left);
+        if (stack[sp]->type == TYPE_STRING) {
+            vartype_string *s = (vartype_string *) stack[sp];
+            char *lbuf = (char *) malloc(s->length + 2);
+            if (lbuf == NULL) {
+                shell_annunciators(-1, -1, 0, -1, -1, -1);
+                return ERR_INSUFFICIENT_MEMORY;
+            }
+            lbuf[0] = '"';
+            memcpy(lbuf + 1, s->txt(), s->length);
+            lbuf[s->length + 1] = '"';
+            print_right(lbuf, s->length + 2, "***", 3);
+            free(lbuf);
+        } else {
+            char buf[100];
+            int len;
+            len = vartype2string(stack[sp], buf, 100);
+            if (stack[sp]->type == TYPE_REAL)
+                print_right(buf, len, "***", 3);
+            else {
+                /* Normally we print X right-justified, but if it doesn't fit on
+                * one line, we print it left-justified, because having the excess
+                * go near the right margin looks weird and confusing.
+                */
+                bool left = len > (flags.f.double_wide_print ? 12 : 24);
+                print_lines(buf, len, left);
+            }
         }
 
-        if (arg != NULL && (reg_x->type == TYPE_REALMATRIX
-                            || reg_x->type == TYPE_COMPLEXMATRIX)) {
-            prv_var = reg_x;
+        if (arg != NULL && (stack[sp]->type == TYPE_REALMATRIX
+                            || stack[sp]->type == TYPE_COMPLEXMATRIX
+                            || stack[sp]->type == TYPE_LIST
+                            && ((vartype_list *) stack[sp])->size > 0)) {
+            prv_var = stack[sp];
             prv_index = 0;
             mode_interruptible = prv_worker;
             mode_stoppable = true;
@@ -1441,7 +1386,7 @@ int docmd_prx(arg_struct *arg) {
 
 static int prusr_state;
 static int prusr_index;
-static int prusr_worker(int interrupted);
+static int prusr_worker(bool interrupted);
 
 int docmd_prusr(arg_struct *arg) {
     if (!flags.f.printer_enable && program_running())
@@ -1450,7 +1395,7 @@ int docmd_prusr(arg_struct *arg) {
         return ERR_PRINTING_IS_DISABLED;
     else {
         shell_annunciators(-1, -1, 1, -1, -1, -1);
-        print_text(NULL, 0, 1);
+        print_text(NULL, 0, true);
         prusr_state = 0;
         prusr_index = vars_count - 1;
         mode_interruptible = prusr_worker;
@@ -1459,7 +1404,7 @@ int docmd_prusr(arg_struct *arg) {
     }
 }
 
-static int prusr_worker(int interrupted) {
+static int prusr_worker(bool interrupted) {
     if (interrupted) {
         shell_annunciators(-1, -1, 0, -1, -1, -1);
         return ERR_STOP;
@@ -1471,7 +1416,7 @@ static int prusr_worker(int interrupted) {
         int llen, rlen;
         if (prusr_index < 0) {
             if (vars_count > 0)
-                print_text(NULL, 0, 1);
+                print_text(NULL, 0, true);
             prusr_state = 1;
             prusr_index = 0;
             goto state1;
@@ -1481,8 +1426,22 @@ static int prusr_worker(int interrupted) {
             string2buf(lbuf, 8, &llen, vars[prusr_index].name,
                                        vars[prusr_index].length);
             char2buf(lbuf, 8, &llen, '=');
-            rlen = vartype2string(vars[prusr_index].value, rbuf, 100);
-            print_wide(lbuf, llen, rbuf, rlen);
+            if (vars[prusr_index].value->type == TYPE_STRING) {
+                vartype_string *s = (vartype_string *) vars[prusr_index].value;
+                char *sbuf = (char *) malloc(s->length + 2);
+                if (sbuf == NULL) {
+                    print_wide(lbuf, llen, "<Low Mem>", 9);
+                } else {
+                    sbuf[0] = '"';
+                    memcpy(sbuf + 1, s->txt(), s->length);
+                    sbuf[s->length + 1] = '"';
+                    print_wide(lbuf, llen, sbuf, s->length + 2);
+                    free(sbuf);
+                }
+            } else {
+                rlen = vartype2string(vars[prusr_index].value, rbuf, 100);
+                print_wide(lbuf, llen, rbuf, rlen);
+            }
         }
         prusr_index--;
     } else {
@@ -1505,7 +1464,7 @@ static int prusr_worker(int interrupted) {
                                       labels[prusr_index].length);
             char2buf(buf, 13, &len, '"');
         }
-        print_text(buf, len, 1);
+        print_text(buf, len, true);
         prusr_index++;
     }
     return ERR_INTERRUPTIBLE;
@@ -1518,14 +1477,14 @@ int docmd_list(arg_struct *arg) {
         return ERR_NONE;
     if (!flags.f.printer_exists)
         return ERR_PRINTING_IS_DISABLED;
-    return print_program(current_prgm, pc, arg->val.num, 0);
+    return print_program(current_prgm, pc, arg->val.num, false);
 }
 
 int docmd_adv(arg_struct *arg) {
     if (flags.f.printer_exists
             && (flags.f.printer_enable || !program_running())) {
         shell_annunciators(-1, -1, 1, -1, -1, -1);
-        print_text(NULL, 0, 1);
+        print_text(NULL, 0, true);
         shell_annunciators(-1, -1, 0, -1, -1, -1);
     }
     return ERR_NONE;
@@ -1545,19 +1504,14 @@ int docmd_prlcd(arg_struct *arg) {
 }
 
 int docmd_delay(arg_struct *arg) {
-    if (reg_x->type == TYPE_REAL) {
-        phloat x = ((vartype_real *) reg_x)->x;
-        if (x < 0)
-            x = -x;
-        if (x >= 1.95)
-            return ERR_INVALID_DATA;
-        else
-            /* We don't actually use the delay value... */
-            return ERR_NONE;
-    } else if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
+    phloat x = ((vartype_real *) stack[sp])->x;
+    if (x < 0)
+        x = -x;
+    if (x >= 1.95)
+        return ERR_INVALID_DATA;
     else
-        return ERR_INVALID_TYPE;
+        /* We don't actually use the delay value... */
+        return ERR_NONE;
 }
 
 int docmd_pon(arg_struct *arg) {
@@ -1670,16 +1624,7 @@ int docmd_number(arg_struct *arg) {
     vartype *new_x = new_real(arg->val_d);
     if (new_x == NULL)
         return ERR_INSUFFICIENT_MEMORY;
-    if (flags.f.stack_lift_disable)
-        free_vartype(reg_x);
-    else {
-        free_vartype(reg_t);
-        reg_t = reg_z;
-        reg_z = reg_y;
-        reg_y = reg_x;
-    }
-    reg_x = new_x;
-    return ERR_NONE;
+    return recall_result_silently(new_x);
 }
 
 int docmd_string(arg_struct *arg) {
@@ -1735,16 +1680,7 @@ int docmd_stop(arg_struct *arg) {
 int docmd_newmat(arg_struct *arg) {
     vartype *m;
 
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else if (reg_x->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-    if (reg_y->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else if (reg_y->type != TYPE_REAL)
-        return ERR_INVALID_TYPE;
-
-    phloat x = ((vartype_real *) reg_x)->x;
+    phloat x = ((vartype_real *) stack[sp])->x;
     if (x <= -2147483648.0 || x >= 2147483648.0)
         return ERR_DIMENSION_ERROR;
     int4 xx = to_int4(x);
@@ -1753,7 +1689,7 @@ int docmd_newmat(arg_struct *arg) {
     if (xx < 0)
         xx = -xx;
 
-    phloat y = ((vartype_real *) reg_y)->x;
+    phloat y = ((vartype_real *) stack[sp - 1])->x;
     if (y <= -2147483648.0 || y >= 2147483648.0)
         return ERR_DIMENSION_ERROR;
     int4 yy = to_int4(y);
@@ -1765,51 +1701,46 @@ int docmd_newmat(arg_struct *arg) {
     m = new_realmatrix(yy, xx);
     if (m == NULL)
         return ERR_INSUFFICIENT_MEMORY;
-    else {
-        binary_result(m);
-        return ERR_NONE;
-    }
+    else
+        return binary_result(m);
 }
 
 int docmd_rup(arg_struct *arg) {
-    vartype *temp = reg_x;    
-    reg_x = reg_t;
-    reg_t = reg_z;
-    reg_z = reg_y;
-    reg_y = temp;
+    if (sp > 0) {
+        vartype *temp = stack[0];
+        memmove(stack, stack + 1, sp * sizeof(vartype *));
+        stack[sp] = temp;
+    }
     print_trace();
     return ERR_NONE;
 }
 
 int docmd_real_t(arg_struct *arg) {
-    return reg_x->type == TYPE_REAL ? ERR_YES : ERR_NO;
+    return stack[sp]->type == TYPE_REAL ? ERR_YES : ERR_NO;
 }
 
 int docmd_cpx_t(arg_struct *arg) {
-    return reg_x->type == TYPE_COMPLEX ? ERR_YES : ERR_NO;
+    return stack[sp]->type == TYPE_COMPLEX ? ERR_YES : ERR_NO;
 }
 
 int docmd_str_t(arg_struct *arg) {
-    return reg_x->type == TYPE_STRING ? ERR_YES : ERR_NO;
+    return stack[sp]->type == TYPE_STRING ? ERR_YES : ERR_NO;
 }
 
 int docmd_mat_t(arg_struct *arg) {
-    return reg_x->type == TYPE_REALMATRIX
-            || reg_x->type == TYPE_COMPLEXMATRIX ? ERR_YES : ERR_NO;
+    return stack[sp]->type == TYPE_REALMATRIX
+            || stack[sp]->type == TYPE_COMPLEXMATRIX ? ERR_YES : ERR_NO;
 }
 
 int docmd_dim_t(arg_struct *arg) {
     int4 rows, columns;
-    if (reg_x->type == TYPE_REALMATRIX) {
-        rows = ((vartype_realmatrix *) reg_x)->rows;
-        columns = ((vartype_realmatrix *) reg_x)->columns;
-    } else if (reg_x->type == TYPE_COMPLEXMATRIX) {
-        rows = ((vartype_complexmatrix *) reg_x)->rows;
-        columns = ((vartype_complexmatrix *) reg_x)->columns;
-    } else if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else
-        return ERR_INVALID_TYPE;
+    if (stack[sp]->type == TYPE_REALMATRIX) {
+        rows = ((vartype_realmatrix *) stack[sp])->rows;
+        columns = ((vartype_realmatrix *) stack[sp])->columns;
+    } else {
+        rows = ((vartype_complexmatrix *) stack[sp])->rows;
+        columns = ((vartype_complexmatrix *) stack[sp])->columns;
+    }
     vartype *new_y = new_real(rows);
     vartype *new_x = new_real(columns);
     if (new_x == NULL || new_y == NULL) {
@@ -1817,15 +1748,7 @@ int docmd_dim_t(arg_struct *arg) {
         free_vartype(new_y);
         return ERR_INSUFFICIENT_MEMORY;
     }
-    free_vartype(reg_lastx);
-    reg_lastx = reg_x;
-    free_vartype(reg_t);
-    reg_t = reg_z;
-    reg_z = reg_y;
-    reg_y = new_y;
-    reg_x = new_x;
-    print_trace();
-    return ERR_NONE;
+    return unary_two_results(new_x, new_y);
 }
 
 static int assign_helper(int num, arg_struct *arg) {
@@ -1835,7 +1758,7 @@ static int assign_helper(int num, arg_struct *arg) {
          * programs that already contain such commands to continue
          * working.
          */
-        const command_spec *cs = cmdlist(arg->val.cmd);
+        const command_spec *cs = &cmd_array[arg->val.cmd];
         assign_custom_key(num, cs->name, cs->name_length);
     } else
         assign_custom_key(num, arg->val.text, arg->length);
@@ -1936,92 +1859,92 @@ int docmd_off(arg_struct *arg) {
 }
 
 int docmd_key1g(arg_struct *arg) {
-    assign_prgm_key(1, 1, arg);
+    assign_prgm_key(1, true, arg);
     return ERR_NONE;
 }
 
 int docmd_key2g(arg_struct *arg) {
-    assign_prgm_key(2, 1, arg);
+    assign_prgm_key(2, true, arg);
     return ERR_NONE;
 }
 
 int docmd_key3g(arg_struct *arg) {
-    assign_prgm_key(3, 1, arg);
+    assign_prgm_key(3, true, arg);
     return ERR_NONE;
 }
 
 int docmd_key4g(arg_struct *arg) {
-    assign_prgm_key(4, 1, arg);
+    assign_prgm_key(4, true, arg);
     return ERR_NONE;
 }
 
 int docmd_key5g(arg_struct *arg) {
-    assign_prgm_key(5, 1, arg);
+    assign_prgm_key(5, true, arg);
     return ERR_NONE;
 }
 
 int docmd_key6g(arg_struct *arg) {
-    assign_prgm_key(6, 1, arg);
+    assign_prgm_key(6, true, arg);
     return ERR_NONE;
 }
 
 int docmd_key7g(arg_struct *arg) {
-    assign_prgm_key(7, 1, arg);
+    assign_prgm_key(7, true, arg);
     return ERR_NONE;
 }
 
 int docmd_key8g(arg_struct *arg) {
-    assign_prgm_key(8, 1, arg);
+    assign_prgm_key(8, true, arg);
     return ERR_NONE;
 }
 
 int docmd_key9g(arg_struct *arg) {
-    assign_prgm_key(9, 1, arg);
+    assign_prgm_key(9, true, arg);
     return ERR_NONE;
 }
 
 int docmd_key1x(arg_struct *arg) {
-    assign_prgm_key(1, 0, arg);
+    assign_prgm_key(1, false, arg);
     return ERR_NONE;
 }
 
 int docmd_key2x(arg_struct *arg) {
-    assign_prgm_key(2, 0, arg);
+    assign_prgm_key(2, false, arg);
     return ERR_NONE;
 }
 
 int docmd_key3x(arg_struct *arg) {
-    assign_prgm_key(3, 0, arg);
+    assign_prgm_key(3, false, arg);
     return ERR_NONE;
 }
 
 int docmd_key4x(arg_struct *arg) {
-    assign_prgm_key(4, 0, arg);
+    assign_prgm_key(4, false, arg);
     return ERR_NONE;
 }
 
 int docmd_key5x(arg_struct *arg) {
-    assign_prgm_key(5, 0, arg);
+    assign_prgm_key(5, false, arg);
     return ERR_NONE;
 }
 
 int docmd_key6x(arg_struct *arg) {
-    assign_prgm_key(6, 0, arg);
+    assign_prgm_key(6, false, arg);
     return ERR_NONE;
 }
 
 int docmd_key7x(arg_struct *arg) {
-    assign_prgm_key(7, 0, arg);
+    assign_prgm_key(7, false, arg);
     return ERR_NONE;
 }
 
 int docmd_key8x(arg_struct *arg) {
-    assign_prgm_key(8, 0, arg);
+    assign_prgm_key(8, false, arg);
     return ERR_NONE;
 }
 
 int docmd_key9x(arg_struct *arg) {
-    assign_prgm_key(9, 0, arg);
+    assign_prgm_key(9, false, arg);
     return ERR_NONE;
 }
 
@@ -2076,8 +1999,7 @@ int docmd_sigma_reg_t(arg_struct *arg) {
     vartype *v = new_real(mode_sigma_reg);
     if (v == NULL)
         return ERR_INSUFFICIENT_MEMORY;
-    recall_result(v);
-    return ERR_NONE;
+    return recall_result(v);
 }
 
 int docmd_cld(arg_struct *arg) {

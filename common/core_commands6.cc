@@ -73,14 +73,11 @@ static int mappable_sin_c(phloat xre, phloat xim, phloat *yre, phloat *yim) {
 }
 
 int docmd_sin(arg_struct *arg) {
-    if (reg_x->type != TYPE_STRING) {
-        vartype *v;
-        int err = map_unary(reg_x, &v, mappable_sin_r, mappable_sin_c);
-        if (err == ERR_NONE)
-            unary_result(v);
-        return err;
-    } else
-        return ERR_ALPHA_DATA_IS_INVALID;
+    vartype *v;
+    int err = map_unary(stack[sp], &v, mappable_sin_r, mappable_sin_c);
+    if (err == ERR_NONE)
+        unary_result(v);
+    return err;
 }
 
 static int mappable_cos_r(phloat x, phloat *y) {
@@ -135,14 +132,11 @@ static int mappable_cos_c(phloat xre, phloat xim, phloat *yre, phloat *yim) {
 }
 
 int docmd_cos(arg_struct *arg) {
-    if (reg_x->type != TYPE_STRING) {
-        vartype *v;
-        int err = map_unary(reg_x, &v, mappable_cos_r, mappable_cos_c);
-        if (err == ERR_NONE)
-            unary_result(v);
-        return err;
-    } else
-        return ERR_ALPHA_DATA_IS_INVALID;
+    vartype *v;
+    int err = map_unary(stack[sp], &v, mappable_cos_r, mappable_cos_c);
+    if (err == ERR_NONE)
+        unary_result(v);
+    return err;
 }
 
 static int mappable_tan_r(phloat x, phloat *y) {
@@ -205,14 +199,11 @@ static int mappable_tan_c(phloat xre, phloat xim, phloat *yre, phloat *yim) {
 }
 
 int docmd_tan(arg_struct *arg) {
-    if (reg_x->type != TYPE_STRING) {
-        vartype *v;
-        int err = map_unary(reg_x, &v, mappable_tan_r, mappable_tan_c);
-        if (err == ERR_NONE)
-            unary_result(v);
-        return err;
-    } else
-        return ERR_ALPHA_DATA_IS_INVALID;
+    vartype *v;
+    int err = map_unary(stack[sp], &v, mappable_tan_r, mappable_tan_c);
+    if (err == ERR_NONE)
+        unary_result(v);
+    return err;
 }
 
 static int mappable_asin_r(phloat x, phloat *y) {
@@ -241,10 +232,8 @@ static int mappable_asin_c(phloat xre, phloat xim, phloat *yre, phloat *yim) {
 
 int docmd_asin(arg_struct *arg) {
     vartype *v;
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    if (reg_x->type == TYPE_REAL) {
-        phloat x = ((vartype_real *) reg_x)->x;
+    if (stack[sp]->type == TYPE_REAL) {
+        phloat x = ((vartype_real *) stack[sp])->x;
         if (x < -1 || x > 1) {
             if (flags.f.real_result_only)
                 return ERR_INVALID_DATA;
@@ -262,7 +251,7 @@ int docmd_asin(arg_struct *arg) {
         if (v == NULL)
             return ERR_INSUFFICIENT_MEMORY;
     } else {
-        int err = map_unary(reg_x, &v, mappable_asin_r, mappable_asin_c);
+        int err = map_unary(stack[sp], &v, mappable_asin_r, mappable_asin_c);
         if (err != ERR_NONE)
             return err;
     }
@@ -300,10 +289,8 @@ static int mappable_acos_c(phloat xre, phloat xim, phloat *yre, phloat *yim) {
 
 int docmd_acos(arg_struct *arg) {
     vartype *v;
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    if (reg_x->type == TYPE_REAL) {
-        phloat x = ((vartype_real *) reg_x)->x;
+    if (stack[sp]->type == TYPE_REAL) {
+        phloat x = ((vartype_real *) stack[sp])->x;
         if (x < -1 || x > 1) {
             if (flags.f.real_result_only)
                 return ERR_INVALID_DATA;
@@ -322,7 +309,7 @@ int docmd_acos(arg_struct *arg) {
         if (v == NULL)
             return ERR_INSUFFICIENT_MEMORY;
     } else {
-        int err = map_unary(reg_x, &v, mappable_acos_r, mappable_acos_c);
+        int err = map_unary(stack[sp], &v, mappable_acos_r, mappable_acos_c);
         if (err != ERR_NONE)
             return err;
     }
@@ -356,15 +343,11 @@ static int mappable_atan_c(phloat xre, phloat xim, phloat *yre, phloat *yim) {
 }
 
 int docmd_atan(arg_struct *arg) {
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else {
-        vartype *v;
-        int err = map_unary(reg_x, &v, mappable_atan_r, mappable_atan_c);
-        if (err == ERR_NONE)
-            unary_result(v);
-        return err;
-    }
+    vartype *v;
+    int err = map_unary(stack[sp], &v, mappable_atan_r, mappable_atan_c);
+    if (err == ERR_NONE)
+        unary_result(v);
+    return err;
 }
 
 static int mappable_log_r(phloat x, phloat *y) {
@@ -411,10 +394,8 @@ static int mappable_log_c(phloat xre, phloat xim, phloat *yre, phloat *yim) {
 }
 
 int docmd_log(arg_struct *arg) {
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else if (reg_x->type == TYPE_REAL) {
-        vartype_real *x = (vartype_real *) reg_x;
+    if (stack[sp]->type == TYPE_REAL) {
+        vartype_real *x = (vartype_real *) stack[sp];
         if (x->x == 0)
             return ERR_INVALID_DATA;
         else if (x->x < 0) {
@@ -440,7 +421,7 @@ int docmd_log(arg_struct *arg) {
         }
     } else {
         vartype *v;
-        int err = map_unary(reg_x, &v, mappable_log_r, mappable_log_c);
+        int err = map_unary(stack[sp], &v, mappable_log_r, mappable_log_c);
         if (err == ERR_NONE)
             unary_result(v);
         return err;
@@ -489,15 +470,12 @@ static int mappable_10_pow_x_c(phloat xre, phloat xim, phloat *yre, phloat *yim)
 }
 
 int docmd_10_pow_x(arg_struct *arg) {
-    if (reg_x->type != TYPE_STRING) {
-        vartype *v;
-        int err = map_unary(reg_x, &v, mappable_10_pow_x_r,
-                                       mappable_10_pow_x_c);
-        if (err == ERR_NONE)
-            unary_result(v);
-        return err;
-    } else
-        return ERR_ALPHA_DATA_IS_INVALID;
+    vartype *v;
+    int err = map_unary(stack[sp], &v, mappable_10_pow_x_r,
+                                    mappable_10_pow_x_c);
+    if (err == ERR_NONE)
+        unary_result(v);
+    return err;
 }
 
 static int mappable_ln_r(phloat x, phloat *y) {
@@ -544,10 +522,8 @@ static int mappable_ln_c(phloat xre, phloat xim, phloat *yre, phloat *yim) {
 }
 
 int docmd_ln(arg_struct *arg) {
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else if (reg_x->type == TYPE_REAL) {
-        vartype_real *x = (vartype_real *) reg_x;
+    if (stack[sp]->type == TYPE_REAL) {
+        vartype_real *x = (vartype_real *) stack[sp];
         if (x->x == 0)
             return ERR_INVALID_DATA;
         else if (x->x < 0) {
@@ -573,7 +549,7 @@ int docmd_ln(arg_struct *arg) {
         }
     } else {
         vartype *v;
-        int err = map_unary(reg_x, &v, mappable_ln_r, mappable_ln_c);
+        int err = map_unary(stack[sp], &v, mappable_ln_r, mappable_ln_c);
         if (err == ERR_NONE)
             unary_result(v);
         return err;
@@ -618,14 +594,11 @@ static int mappable_e_pow_x_c(phloat xre, phloat xim, phloat *yre, phloat *yim){
 }
 
 int docmd_e_pow_x(arg_struct *arg) {
-    if (reg_x->type != TYPE_STRING) {
-        vartype *v;
-        int err = map_unary(reg_x, &v, mappable_e_pow_x_r, mappable_e_pow_x_c);
-        if (err == ERR_NONE)
-            unary_result(v);
-        return err;
-    } else
-        return ERR_ALPHA_DATA_IS_INVALID;
+    vartype *v;
+    int err = map_unary(stack[sp], &v, mappable_e_pow_x_r, mappable_e_pow_x_c);
+    if (err == ERR_NONE)
+        unary_result(v);
+    return err;
 }
 
 static int mappable_sqrt_r(phloat x, phloat *y) {
@@ -672,8 +645,8 @@ static int mappable_sqrt_c(phloat xre, phloat xim, phloat *yre, phloat *yim) {
 }
 
 int docmd_sqrt(arg_struct *arg) {
-    if (reg_x->type == TYPE_REAL) {
-        phloat x = ((vartype_real *) reg_x)->x;
+    if (stack[sp]->type == TYPE_REAL) {
+        phloat x = ((vartype_real *) stack[sp])->x;
         vartype *v;
         if (x < 0) {
             if (flags.f.real_result_only)
@@ -685,11 +658,9 @@ int docmd_sqrt(arg_struct *arg) {
             return ERR_INSUFFICIENT_MEMORY;
         unary_result(v);
         return ERR_NONE;
-    } else if (reg_x->type == TYPE_STRING) {
-        return ERR_ALPHA_DATA_IS_INVALID;
     } else {
         vartype *v;
-        int err = map_unary(reg_x, &v, mappable_sqrt_r, mappable_sqrt_c);
+        int err = map_unary(stack[sp], &v, mappable_sqrt_r, mappable_sqrt_c);
         if (err != ERR_NONE)
             return err;
         unary_result(v);
@@ -732,15 +703,11 @@ static int mappable_square_c(phloat xre, phloat xim, phloat *yre, phloat *yim) {
 }
 
 int docmd_square(arg_struct *arg) {
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else {
-        vartype *v;
-        int err = map_unary(reg_x, &v, mappable_square_r, mappable_square_c);
-        if (err == ERR_NONE)
-            unary_result(v);
-        return err;
-    }
+    vartype *v;
+    int err = map_unary(stack[sp], &v, mappable_square_r, mappable_square_c);
+    if (err == ERR_NONE)
+        unary_result(v);
+    return err;
 }
 
 static int mappable_inv_r(phloat x, phloat *y) {
@@ -802,15 +769,11 @@ static int mappable_inv_c(phloat xre, phloat xim, phloat *yre, phloat *yim) {
 }
 
 int docmd_inv(arg_struct *arg) {
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    else {
-        vartype *v;
-        int err = map_unary(reg_x, &v, mappable_inv_r, mappable_inv_c);
-        if (err == ERR_NONE)
-            unary_result(v);
-        return err;
-    }
+    vartype *v;
+    int err = map_unary(stack[sp], &v, mappable_inv_r, mappable_inv_c);
+    if (err == ERR_NONE)
+        unary_result(v);
+    return err;
 }
 
 int docmd_y_pow_x(arg_struct *arg) {
@@ -818,20 +781,20 @@ int docmd_y_pow_x(arg_struct *arg) {
     int inf;
     vartype *res;
 
-    if (reg_x->type == TYPE_STRING || reg_y->type == TYPE_STRING)
+    if (stack[sp]->type == TYPE_STRING || stack[sp - 1]->type == TYPE_STRING)
         return ERR_ALPHA_DATA_IS_INVALID;
-    else if (reg_x->type == TYPE_REALMATRIX
-            || reg_x->type == TYPE_COMPLEXMATRIX
-            || reg_y->type == TYPE_REALMATRIX
-            || reg_y->type == TYPE_COMPLEXMATRIX)
+    else if (stack[sp]->type != TYPE_REAL
+            && stack[sp]->type != TYPE_COMPLEX
+            || stack[sp - 1]->type != TYPE_REAL
+            && stack[sp - 1]->type != TYPE_COMPLEX)
         return ERR_INVALID_TYPE;
-    else if (reg_x->type == TYPE_REAL) {
-        phloat x = ((vartype_real *) reg_x)->x;
+    else if (stack[sp]->type == TYPE_REAL) {
+        phloat x = ((vartype_real *) stack[sp])->x;
         if (x == floor(x)) {
             /* Integer exponent */
-            if (reg_y->type == TYPE_REAL) {
+            if (stack[sp - 1]->type == TYPE_REAL) {
                 /* Real number to integer power */
-                phloat y = ((vartype_real *) reg_y)->x;
+                phloat y = ((vartype_real *) stack[sp - 1])->x;
                 if (x == 0 && y == 0)
                     return ERR_INVALID_DATA;
                 phloat r = pow(y, x);
@@ -848,10 +811,8 @@ int docmd_y_pow_x(arg_struct *arg) {
                 res = new_real(r);
                 if (res == NULL)
                     return ERR_INSUFFICIENT_MEMORY;
-                else {
-                    binary_result(res);
-                    return ERR_NONE;
-                }
+                else
+                    return binary_result(res);
             } else {
                 /* Complex number to integer power */
                 phloat rre, rim, yre, yim;
@@ -865,8 +826,8 @@ int docmd_y_pow_x(arg_struct *arg) {
                     goto complex_pow_real_1;
                 rre = 1;
                 rim = 0;
-                yre = ((vartype_complex *) reg_y)->re;
-                yim = ((vartype_complex *) reg_y)->im;
+                yre = ((vartype_complex *) stack[sp - 1])->re;
+                yim = ((vartype_complex *) stack[sp - 1])->im;
                 ex = to_int4(x);
                 if (ex <= 0 && yre == 0 && yim == 0)
                     return ERR_INVALID_DATA;
@@ -911,14 +872,12 @@ int docmd_y_pow_x(arg_struct *arg) {
                 res = new_complex(rre, rim);
                 if (res == NULL)
                     return ERR_INSUFFICIENT_MEMORY;
-                else {
-                    binary_result(res);
-                    return ERR_NONE;
-                }
+                else
+                    return binary_result(res);
             }
-        } else if (reg_y->type == TYPE_REAL) {
+        } else if (stack[sp - 1]->type == TYPE_REAL) {
             /* Real number to noninteger real power */
-            phloat y = ((vartype_real *) reg_y)->x;
+            phloat y = ((vartype_real *) stack[sp - 1])->x;
             phloat r;
             if (y < 0) {
                 if (flags.f.real_result_only)
@@ -937,18 +896,19 @@ int docmd_y_pow_x(arg_struct *arg) {
             res = new_real(r);
             if (res == NULL)
                 return ERR_INSUFFICIENT_MEMORY;
-            else {
-                binary_result(res);
-                return ERR_NONE;
-            }
+            else
+                return binary_result(res);
         } else {
             /* Complex (or negative real) number to noninteger real power */
             complex_pow_real_1:
             {
-                phloat yre = ((vartype_complex *) reg_y)->re;
-                phloat yim = ((vartype_complex *) reg_y)->im;
+                phloat yre = ((vartype_complex *) stack[sp - 1])->re;
+                phloat yim = ((vartype_complex *) stack[sp - 1])->im;
                 yr = hypot(yre, yim);
-                yphi = atan2(yim, yre);
+                if (yim == 0)
+                    yphi = yre >= 0 ? 0 : PI;
+                else
+                    yphi = atan2(yim, yre);
             }
             complex_pow_real_2:
             yr = pow(yr, x);
@@ -974,25 +934,23 @@ int docmd_y_pow_x(arg_struct *arg) {
             res = new_complex(rre, rim);
             if (res == NULL)
                 return ERR_INSUFFICIENT_MEMORY;
-            else {
-                binary_result(res);
-                return ERR_NONE;
-            }
+            else
+                return binary_result(res);
         }
     } else {
         /* Real or complex number to complex power */
-        phloat xre = ((vartype_complex *) reg_x)->re;
-        phloat xim = ((vartype_complex *) reg_x)->im;
+        phloat xre = ((vartype_complex *) stack[sp])->re;
+        phloat xim = ((vartype_complex *) stack[sp])->im;
         phloat yre, yim;
         phloat lre, lim;
         phloat tmp;
         int err;
-        if (reg_y->type == TYPE_REAL) {
-            yre = ((vartype_real *) reg_y)->x;
+        if (stack[sp - 1]->type == TYPE_REAL) {
+            yre = ((vartype_real *) stack[sp - 1])->x;
             yim = 0;
         } else {
-            yre = ((vartype_complex *) reg_y)->re;
-            yim = ((vartype_complex *) reg_y)->im;
+            yre = ((vartype_complex *) stack[sp - 1])->re;
+            yim = ((vartype_complex *) stack[sp - 1])->im;
         }
         if (yre == 0 && yim == 0) {
             if (xre <= 0)
@@ -1001,10 +959,8 @@ int docmd_y_pow_x(arg_struct *arg) {
                 res = new_complex(0, 0);
             if (res == NULL)
                 return ERR_INSUFFICIENT_MEMORY;
-            else {
-                binary_result(res);
-                return ERR_NONE;
-            }
+            else
+                return binary_result(res);
         }
         err = mappable_ln_c(yre, yim, &lre, &lim);
         if (err != ERR_NONE)
@@ -1018,115 +974,24 @@ int docmd_y_pow_x(arg_struct *arg) {
         res = new_complex(xre, xim);
         if (res == NULL)
             return ERR_INSUFFICIENT_MEMORY;
-        else {
-            binary_result(res);
-            return ERR_NONE;
-        }
+        else
+            return binary_result(res);
     }
 }
 
 int docmd_anum(arg_struct *arg) {
-    char buf[50];
-    bool have_mant = false;
-    bool neg_mant = false;
-    bool have_radix = false;
-    bool have_exp = false;
-    bool neg_exp = false;
-    int exp_pos = 0;
-    int buf_pos = 0;
-    buf[buf_pos++] = '+';
-    for (int src_pos = 0; src_pos < reg_alpha_length; src_pos++) {
-        char c = reg_alpha[src_pos];
-        if (!flags.f.decimal_point)
-            if (c == '.')
-                c = ',';
-            else if (c == ',')
-                c = '.';
-        if (c == '+' || flags.f.thousands_separators && c == ',')
-            continue;
-        if (!have_mant) {
-            if (c == '-') {
-                neg_mant = !neg_mant;
-            } else if (c >= '0' && c <= '9') {
-                buf[buf_pos++] = c;
-                have_mant = true;
-            } else if (c == '.') {
-                buf[buf_pos++] = '0';
-                buf[buf_pos++] = '.';
-                have_mant = true;
-                have_radix = true;
-            } else {
-                neg_mant = false;
-            }
-        } else if (!have_exp) {
-            if (c == '-') {
-                neg_mant = !neg_mant;
-            } else if (c >= '0' && c <= '9') {
-                buf[buf_pos++] = c;
-            } else if (c == '.') {
-                if (!have_radix) {
-                    buf[buf_pos++] = c;
-                    have_radix = true;
-                }
-            } else if (c == 'E' || c == 'e' || c == 24) {
-                buf[buf_pos++] = 'e';
-                exp_pos = buf_pos;
-                buf[buf_pos++] = '+';
-                have_exp = true;
-            } else if (c == '.') {
-                /* ignore */
-            } else {
-                break;
-            }
-        } else {
-            if (c == '-') {
-                neg_exp = !neg_exp;
-            } else if (c >= '0' && c <= '9') {
-                buf[buf_pos++] = c;
-            } else if (c == '.' || c == 'E' || c == 'e' || c == 24) {
-                /* ignore */
-            } else {
-                break;
-            }
-        }
-    }
-    if (!have_mant)
+    phloat res;
+    if (!anum(reg_alpha, reg_alpha_length, &res))
         return ERR_NONE;
-    if (neg_mant)
-        buf[0] = '-';
-    if (have_exp && buf_pos == exp_pos + 1) {
-        buf_pos -= 2;
-        have_exp = false;
-    }
-    if (have_exp && neg_exp)
-        buf[exp_pos] = '-';
-    buf[buf_pos++] = 0;
-    phloat p;
-#ifdef BCD_MATH
-    BID_UINT128 b;
-    bid128_from_string(&b, buf);
-    p = b;
-#else
-    sscanf(buf, "%le", &p);
-#endif
-    if (p_isnan(p))
-        return ERR_NONE;
-    if (p_isinf(p))
-        p = p > 0 ? POS_HUGE_PHLOAT : NEG_HUGE_PHLOAT;
-    vartype *v = new_real(p);
+    vartype *v = new_real(res);
     if (v == NULL)
         return ERR_INSUFFICIENT_MEMORY;
     flags.f.numeric_data_input = 1;
-    recall_result(v);
-    return ERR_NONE;
+    return recall_result(v);
 }
 
 int docmd_x_swap_f(arg_struct *arg) {
-    if (reg_x->type == TYPE_STRING)
-        return ERR_ALPHA_DATA_IS_INVALID;
-    if (reg_x->type != TYPE_REAL)
-        return ERR_INVALID_DATA;
-    phloat x = ((vartype_real *) reg_x)->x;
+    phloat x = ((vartype_real *) stack[sp])->x;
     if (x < 0)
         x = -x;
     if (x >= 256)
@@ -1139,7 +1004,7 @@ int docmd_x_swap_f(arg_struct *arg) {
         flags.farray[i] = nf & 1;
         nf >>= 1;
     }
-    ((vartype_real *) reg_x)->x = f;
+    ((vartype_real *) stack[sp])->x = f;
     return ERR_NONE;
 }
 
@@ -1156,31 +1021,40 @@ int docmd_rclflag(arg_struct *arg) {
             hfs += p;
         p <<= 1;
     }
+#ifdef BCD_MATH
     vartype *v = new_complex(lfs, hfs);
+#else
+    /* Silence warning about possible loss of precision in VS2019.
+     * The warning is correct, in that we're assigning 64-bit integers
+     * to floating-point types with only 53-bit mantissas; but it just
+     * happens to be the case that we know we're only using 50 bits
+     * so this really is okay.
+     */
+    vartype *v = new_complex((double) lfs, (double) hfs);
+#endif
     if (v == NULL)
         return ERR_INSUFFICIENT_MEMORY;
-    recall_result(v);
-    return ERR_NONE;
+    return recall_result(v);
 }
 
 int docmd_stoflag(arg_struct *arg) {
-    if (reg_x->type == TYPE_STRING)
+    if (stack[sp]->type == TYPE_STRING)
         return ERR_ALPHA_DATA_IS_INVALID;
-    if (reg_x->type != TYPE_REAL && reg_x->type != TYPE_COMPLEX)
+    if (stack[sp]->type != TYPE_REAL && stack[sp]->type != TYPE_COMPLEX)
         return ERR_INVALID_DATA;
     vartype_complex *c;
     int b, e;
-    if (reg_x->type == TYPE_COMPLEX) {
-        c = (vartype_complex *) reg_x;
+    if (stack[sp]->type == TYPE_COMPLEX) {
+        c = (vartype_complex *) stack[sp];
         b = 0;
         e = 99;
     } else {
-        if (reg_y->type == TYPE_STRING)
+        if (stack[sp - 1]->type == TYPE_STRING)
             return ERR_ALPHA_DATA_IS_INVALID;
-        if (reg_y->type != TYPE_COMPLEX)
+        if (stack[sp - 1]->type != TYPE_COMPLEX)
             return ERR_INVALID_DATA;
-        c = (vartype_complex *) reg_y;
-        phloat x = ((vartype_real *) reg_x)->x;
+        c = (vartype_complex *) stack[sp - 1];
+        phloat x = ((vartype_real *) stack[sp])->x;
         if (x < 0)
             x = -x;
         if (x >= 100)
@@ -1217,7 +1091,7 @@ int docmd_stoflag(arg_struct *arg) {
         char hf = virtual_flags[j] == '1' ? 0 : (hfs & p) != 0;
         if (i >= b && i <= e)
             flags.farray[i] = lf;
-        if (j >= b && j <= e)
+        if (j >= b && j <= e && j != 80)
             flags.farray[j] = hf;
         p <<= 1;
     }

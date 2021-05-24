@@ -34,12 +34,11 @@ android {
     }
     compileSdkVersion 29
     defaultConfig {
-        applicationId "com.thomasokken.free42"
         buildConfigField "String", "GitRev", "\"${getGitRev()}\""
         minSdkVersion 14
         targetSdkVersion 29
-        versionCode 132
-        versionName "2.5.24"
+        versionCode 138
+        versionName "3.0.3"
     }
     buildTypes {
         debug {
@@ -63,6 +62,30 @@ android {
     externalNativeBuild {
         ndkBuild {
             path "src/main/cpp/Android.mk"
+        }
+    }
+    flavorDimensions "floatType"
+    productFlavors {
+        decimal {
+            getIsDefault().set(true)
+            dimension "floatType"
+            applicationId "com.thomasokken.free42"
+            manifestPlaceholders = [appName:"Free42"]
+            externalNativeBuild {
+                ndkBuild {
+                    arguments "FLOAT_TYPE=decimal"
+                }
+            }
+        }
+        binary {
+            dimension "floatType"
+            applicationId "com.thomasokken.free42b"
+            manifestPlaceholders = [appName:"Free42 Binary"]
+            externalNativeBuild {
+                ndkBuild {
+                    arguments "FLOAT_TYPE=binary"
+                }
+            }
         }
     }
 }
