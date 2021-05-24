@@ -2610,7 +2610,7 @@ void delete_command(int4 pc) {
 void store_command(int4 pc, int command, arg_struct *arg, const char *num_str) {
     unsigned char buf[100];
     int bufptr = 0;
-    int xstr_len;
+    int xstr_len = 0;
     int i;
     int4 pos;
     prgm_struct *prgm = prgms + current_prgm;

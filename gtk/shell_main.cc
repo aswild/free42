@@ -2500,7 +2500,7 @@ static void shell_keydown() {
     GdkWindow *win = gtk_widget_get_window(calc_widget);
 
     int repeat;
-    bool keep_running;
+    bool keep_running = false;
     if (skey == -1)
         skey = skin_find_skey(ckey);
     skin_invalidate_key(win, skey);
@@ -2547,8 +2547,9 @@ static void shell_keydown() {
                 repeat = 0;
             }
         }
-    } else
+    } else {
         keep_running = core_keydown(ckey, &enqueued, &repeat);
+    }
 
     if (quit_flag)
         quit();

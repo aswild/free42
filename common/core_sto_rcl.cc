@@ -301,7 +301,7 @@ int generic_rcl(arg_struct *arg, vartype **dst) {
             }
         }
         case ARGTYPE_STK: {
-            int idx;
+            int idx = 0;
             switch (arg->val.stk) {
                 case 'X': idx = 0; break;
                 case 'Y': idx = 1; break;
@@ -342,7 +342,7 @@ static int generic_sto_completion(int error, vartype *res) {
     if (temp_arg.type == ARGTYPE_STK) {
         // Note: at this point, it has already been verified
         // that the destination stack level exists.
-        int idx;
+        int idx = 0;
         switch (temp_arg.val.stk) {
             case 'X': idx = 0; break;
             case 'Y': idx = 1; break;
@@ -546,7 +546,7 @@ int generic_sto(arg_struct *arg, char operation) {
                 newval = dup_vartype(stack[sp]);
                 if (newval == NULL)
                     return ERR_INSUFFICIENT_MEMORY;
-                int idx;
+                int idx = 0;
                 switch (arg->val.stk) {
                     case 'Y': idx = 1; break;
                     case 'Z': idx = 2; break;
@@ -584,7 +584,7 @@ int generic_sto(arg_struct *arg, char operation) {
                     docmd_prstk(NULL);
                 return ERR_NONE;
             } else {
-                int idx;
+                int idx = 0;
                 switch (arg->val.stk) {
                     case 'X': idx = 0; break;
                     case 'Y': idx = 1; break;

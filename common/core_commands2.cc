@@ -671,7 +671,7 @@ static int generic_loop(arg_struct *arg, bool isg) {
             }
         }
         case ARGTYPE_STK: {
-            int idx;
+            int idx = 0;
             switch (arg->val.stk) {
                 case 'X': idx = 0; break;
                 case 'Y': idx = 1; break;

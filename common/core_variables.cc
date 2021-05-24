@@ -65,7 +65,7 @@ vartype *new_complex(phloat re, phloat im) {
 }
 
 vartype *new_string(const char *text, int length) {
-    char *dbuf;
+    char *dbuf = NULL;
     if (length > SSLENV) {
         dbuf = (char *) malloc(length);
         if (dbuf == NULL)
