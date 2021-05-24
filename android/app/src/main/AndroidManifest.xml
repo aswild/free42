@@ -14,7 +14,7 @@
                     android:normalScreens="true"
                     android:largeScreens="true"/>
   
-  <application android:label="${appName}"
+  <application android:label="${appName}${appNameSuffix}"
                android:icon="@mipmap/icon"
                android:allowBackup="true"
                android:requestLegacyExternalStorage="true">
