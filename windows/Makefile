@@ -13,11 +13,11 @@ dec: Free42Decimal.exe
 .PHONY: all bin dec
 
 # VCX Project wrappers (built with msbuild)
-Free42Binary.exe: free42.h cl111libbid.lib skins.cpp keymap.cpp VERSION.rc
+Free42Binary.exe: free42.h cl111libbid.lib skins.cpp keymap.cpp VERSION.h
 	$(BUILD_VCXPROJ)
 	cp build/$(basename $@)/$@ $@
 
-Free42Decimal.exe: free42.h cl111libbid.lib skins.cpp keymap.cpp VERSION.rc
+Free42Decimal.exe: free42.h cl111libbid.lib skins.cpp keymap.cpp VERSION.h
 	$(BUILD_VCXPROJ)
 	cp build/$(basename $@)/$@ $@
 
@@ -28,7 +28,7 @@ build/keymap2cpp/keymap2cpp.exe: keymap2cpp.cpp
 	$(BUILD_VCXPROJ)
 
 # git rev in version
-VERSION.rc: VERSION.rc.in
+VERSION.h: VERSION.h.in
 	sed 's/\(FREE42_VERSION_1 .*\)"/\1 ($(shell ../gitversion.sh))"/' $< >$@
 
 # rather than a "links" sentinel file, just look for free42.h
@@ -51,7 +51,7 @@ dist: Free42Binary.exe Free42Decimal.exe README.txt
 		bsdtar -a -cvf Free42Windows-$${version}.zip -s "#^#Free42Windows-$${version}/#p" $^
 
 clean:
-	rm -rf build Free42Binary.exe Free42Decimal.exe keymap.cpp skins.cpp VERSION.rc
+	rm -rf build Free42Binary.exe Free42Decimal.exe keymap.cpp skins.cpp VERSION.h
 
 distclean: clean
 	rm -rf IntelRDFPMathLib20U1 cl111libbid.lib readtest.c readtest_lines.cpp \
