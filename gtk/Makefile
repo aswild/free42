@@ -27,7 +27,7 @@ CFLAGS += -MMD \
 	 -pipe -g \
 	 $(shell pkg-config --cflags gtk+-3.0) \
 	 -DGDK_DISABLE_DEPRECATION_WARNINGS -DGTK_DISABLE_SINGLE_INCLUDES -DGSEAL_ENABLE \
-	 -DVERSION="\"$(shell cat VERSION)\"" \
+	 -DVERSION="\"$(shell cat VERSION) ($(shell ../gitversion.sh))\"" \
 	 -DVERSION_PLATFORM="\"$(shell uname -s)\"" \
 	 -DDECIMAL_CALL_BY_REFERENCE=1 \
 	 -DDECIMAL_GLOBAL_ROUNDING=1 \
