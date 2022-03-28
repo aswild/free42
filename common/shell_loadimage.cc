@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2021  Thomas Okken
+ * Copyright (C) 2004-2022  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -226,7 +226,7 @@ int shell_loadimage() {
                     || !read_short(&iheight)
                     || !read_byte(&info))
                 goto unexp_eof;
-            
+
             if (itop + iheight > pm->height
                     || ileft + iwidth > pm->width) {
                 fprintf(stderr, "Image position and size not contained within screen size!\n");

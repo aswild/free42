@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2021  Thomas Okken
+ * Copyright (C) 2004-2022  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -44,6 +44,7 @@ int docmd_fptest(arg_struct *arg);
 
 int docmd_lsto(arg_struct *arg);
 int docmd_lasto(arg_struct *arg);
+int docmd_lxasto(arg_struct *arg);
 int docmd_wsize(arg_struct *arg);
 int docmd_wsize_t(arg_struct *arg);
 int docmd_bsigned(arg_struct *arg);
@@ -62,6 +63,14 @@ int docmd_strace(arg_struct *arg);
 int docmd_varmnu1(arg_struct *arg);
 int docmd_x2line(arg_struct *arg);
 int docmd_a2line(arg_struct *arg);
+int docmd_a2pline(arg_struct *arg);
+int docmd_rcomplx(arg_struct *arg);
+int docmd_pcomplx(arg_struct *arg);
+int docmd_caps(arg_struct *arg);
+int docmd_mixed(arg_struct *arg);
+int docmd_skip(arg_struct *arg);
+int docmd_cpxmat_t(arg_struct *arg);
+int docmd_type_t(arg_struct *arg);
 
 int docmd_4stk(arg_struct *arg);
 int docmd_l4stk(arg_struct *arg);
@@ -78,7 +87,7 @@ int docmd_rdnn(arg_struct *arg);
 int docmd_rupn(arg_struct *arg);
 
 int docmd_pgmmenu(arg_struct *arg);
-int docmd_prmvar(arg_struct *arg);
+int docmd_pgmvar(arg_struct *arg);
 
 int docmd_x_eq_nn(arg_struct *arg);
 int docmd_x_ne_nn(arg_struct *arg);
@@ -94,5 +103,21 @@ int docmd_0_le_nn(arg_struct *arg);
 int docmd_0_ge_nn(arg_struct *arg);
 
 int docmd_xstr(arg_struct *arg);
+int docmd_append(arg_struct *arg);
+int docmd_extend(arg_struct *arg);
+int docmd_substr(arg_struct *arg);
+int docmd_length(arg_struct *arg);
+int docmd_head(arg_struct *arg);
+int docmd_rev(arg_struct *arg);
+int docmd_pos(arg_struct *arg);
+int docmd_s_to_n(arg_struct *arg);
+int docmd_n_to_s(arg_struct *arg);
+int docmd_c_to_n(arg_struct *arg);
+int docmd_n_to_c(arg_struct *arg);
+int docmd_list_t(arg_struct *arg);
+int docmd_newlist(arg_struct *arg);
+int docmd_newstr(arg_struct *arg);
+int docmd_to_list(arg_struct *arg);
+int docmd_from_list(arg_struct *arg);
 
 #endif

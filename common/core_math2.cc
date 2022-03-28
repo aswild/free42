@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2021  Thomas Okken
+ * Copyright (C) 2004-2022  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -90,7 +90,7 @@ int math_tan(phloat x, phloat *y, bool rad) {
         if (x > 89)
             *y = 1 / tan((100 - x) / (200 / PI));
         else
-            *y = tan(x / (200 / PI)); 
+            *y = tan(x / (200 / PI));
         if (neg)
             *y = -(*y);
     } else {
@@ -112,7 +112,7 @@ int math_tan(phloat x, phloat *y, bool rad) {
         if (x > 80)
             *y = 1 / tan((90 - x) / (180 / PI));
         else
-            *y = tan(x / (180 / PI)); 
+            *y = tan(x / (180 / PI));
         if (neg)
             *y = -(*y);
     }

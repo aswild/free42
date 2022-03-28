@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2021  Thomas Okken
+ * Copyright (C) 2004-2022  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -1089,7 +1089,7 @@ public class Free42Activity extends Activity {
 
                 TextView label2 = new TextView(context);
                 label2.setId(3);
-                label2.setText("\u00a9 2004-2021 Thomas Okken");
+                label2.setText("\u00a9 2004-2022 Thomas Okken");
                 lp = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
                 lp.addRule(RelativeLayout.ALIGN_LEFT, label1.getId());
                 lp.addRule(RelativeLayout.BELOW, label1.getId());
@@ -1235,7 +1235,7 @@ public class Free42Activity extends Activity {
                         for (int i = 0; i < macro.length; i++) {
                             running = core_keydown(macro[i] & 255, enqueued, repeat, true);
                             if (!enqueued.value)
-                                core_keyup();
+                                running = core_keyup();
                             while (waitForProgram && running)
                                 running = core_keydown(0, null, null, true);
                         }
@@ -1410,7 +1410,10 @@ public class Free42Activity extends Activity {
                 }
             }
             tmpBitmap.copyPixelsFromBuffer(tmpBuffer);
-            canvas.drawBitmap(tmpBitmap, new Rect(0, 0, src_width, src_height), clip, new Paint());
+            Paint p = new Paint();
+            p.setAntiAlias(false);
+            p.setFilterBitmap(false);
+            canvas.drawBitmap(tmpBitmap, new Rect(0, 0, src_width, src_height), clip, p);
             canvas.restore();
         }
         
@@ -2033,6 +2036,7 @@ public class Free42Activity extends Activity {
     private native boolean core_menu();
     //private native boolean core_alpha_menu();
     //private native boolean core_hex_menu();
+    //private native int core_special_menu_key(int which);
     private native boolean core_keydown(int key, BooleanHolder enqueued, IntHolder repeat, boolean immediate_return);
     private native boolean core_keydown_command(String cmd, BooleanHolder enqueued, IntHolder repeat, boolean immediate_return);
     private native int core_repeat();

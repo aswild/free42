@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2021  Thomas Okken
+ * Copyright (C) 2004-2022  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -1204,7 +1204,7 @@ int phloat2string(phloat pd, char *buf, int buflen, int base_mode, int digits,
         for (i = 0; i < MAX_MANT_DIGITS; i++)
             norm_mantissa[i] = bcd_mantissa[i];
         norm_exponent = bcd_exponent;
-        
+
         if (dispmode == 3) {
             /* Round to max_int_digits digits before doing anything else;
              * this is needed to handle mantissas like 9.99999999999999,

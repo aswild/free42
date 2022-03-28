@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2021  Thomas Okken
+ * Copyright (C) 2004-2022  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -173,7 +173,7 @@ vartype *new_list(int4 size) {
         return NULL;
     }
     list->array->data = (vartype **) malloc(size * sizeof(vartype *));
-    if (list->array->data == NULL) {
+    if (list->array->data == NULL && size != 0) {
         free(list->array);
         free(list);
         return NULL;
@@ -440,7 +440,7 @@ int disentangle(vartype *v) {
                 if (ld == NULL)
                     return 0;
                 ld->data = (vartype **) malloc(list->size * sizeof(vartype *));
-                if (ld->data == NULL) {
+                if (ld->data == NULL && list->size != 0) {
                     free(ld);
                     return 0;
                 }
@@ -527,6 +527,14 @@ int store_var(const char *name, int namelength, vartype *value, bool local) {
         vars[varindex].level = local ? get_rtn_level() : -1;
         vars[varindex].flags = 0;
     } else if (local && vars[varindex].level < get_rtn_level()) {
+        bool must_push = false;
+        if ((matedit_mode == 1 || matedit_mode == 3)
+                && string_equals(name, namelength, matedit_name, matedit_length)) {
+            if (matedit_mode == 3)
+                return ERR_RESTRICTED_OPERATION;
+            else
+                must_push = true;
+        }
         if (vars_count == vars_capacity) {
             int nc = vars_capacity + 25;
             var_struct *nv = (var_struct *) realloc(vars, nc * sizeof(var_struct));
@@ -542,13 +550,8 @@ int store_var(const char *name, int namelength, vartype *value, bool local) {
             vars[varindex].name[i] = name[i];
         vars[varindex].level = get_rtn_level();
         vars[varindex].flags = VAR_HIDING;
-        if ((matedit_mode == 1 || matedit_mode == 3)
-                && string_equals(name, namelength, matedit_name, matedit_length)) {
-            if (matedit_mode == 3)
-                return ERR_RESTRICTED_OPERATION;
-            else
-                push_indexed_matrix();
-        }
+        if (must_push)
+            push_indexed_matrix();
     } else {
         if (matedit_mode == 1 &&
                 string_equals(name, namelength, matedit_name, matedit_length)) {

@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2021  Thomas Okken
+ * Copyright (C) 2004-2022  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -52,6 +52,7 @@ const error_spec errors[] = {
     { /* DIMENSION_ERROR */        "Dimension Error",         15 },
     { /* TOO_FEW_ARGUMENTS */      "Too Few Arguments",       17 },
     { /* SIZE_ERROR */             "Size Error",              10 },
+    { /* STACK_DEPTH_ERROR */      "Stack Depth Error",       17 },
     { /* RESTRICTED_OPERATION */   "Restricted Operation",    20 },
     { /* YES */                    "Yes",                      3 },
     { /* NO */                     "No",                       2 },
@@ -270,8 +271,8 @@ const menu_spec menus[] = {
     { /* MENU_MODES5 */ MENU_NONE, MENU_MODES1, MENU_MODES4,
                       { { 0x2000 + CMD_4STK,    0, "" },
                         { 0x2000 + CMD_NSTK,    0, "" },
-                        { 0x1000 + CMD_NULL,    0, "" },
-                        { 0x1000 + CMD_NULL,    0, "" },
+                        { 0x2000 + CMD_CAPS,    0, "" },
+                        { 0x2000 + CMD_MIXED,   0, "" },
                         { 0x1000 + CMD_NULL,    0, "" },
                         { 0x1000 + CMD_NULL,    0, "" } } },
     { /* MENU_DISP */ MENU_NONE, MENU_NONE, MENU_NONE,
@@ -628,6 +629,7 @@ int mode_goose;
 bool mode_time_clktd;
 bool mode_time_clk24;
 int mode_wsize;
+bool mode_menu_caps;
 
 phloat entered_number;
 int entered_string_length;
@@ -708,7 +710,7 @@ bool no_keystrokes_yet;
 
 /* Version number for the state file.
  * State file versions correspond to application releases as follows:
- * 
+ *
  * Version  0: 1.0    first release
  * Version  1: 1.0.13 "IP Hack" option
  * Version  2: 1.0.13 "singular matrix" and matrix "out of range" options
@@ -723,7 +725,7 @@ bool no_keystrokes_yet;
  * Version 11: 1.4.44 "Auto-Repeat" option
  * Version 12: 1.4.52 BIGSTACK (iphone only);
  *                    new BCDFloat format (Inf and NaN flags)
- * 
+ *
  *  ========== NOTE: BCD20 Upgrade in Free42 1.4.52 ==========
  *  In version 1.4.52, I upgraded to a new version of BCD20, without realizing
  *  that it uses a slightly different storage format (NaN and Inifinity are now
@@ -779,8 +781,12 @@ bool no_keystrokes_yet;
  * Version 36-38:     Plus42 stuff
  * Version 39: 3.0.3  ERRMSG/ERRNO
  * Version 40: 3.0.3  Longer incomplete_str buffer
+ * Version 41: 3.0.3  Plus42 stuff
+ * Version 42: 3.0.6  CAPS/Mixed for menus
+ * Version 43: 3.0.7  Plus42 stuff
+ * Version 44: 3.0.8  cursor left, cursor right, del key handling
  */
-#define FREE42_VERSION 40
+#define FREE42_VERSION 44
 
 
 /*******************/
@@ -1323,7 +1329,7 @@ static bool unpersist_vartype(vartype **v, bool padded) {
                 return false;
         }
     }
-    
+
     // !state_is_portable
     int type;
     if (fread(&type, 1, sizeof(int), gfile) != sizeof(int))
@@ -1629,6 +1635,8 @@ static bool persist_globals() {
         goto done;
     if (!write_int(mode_wsize))
         goto done;
+    if (!write_bool(mode_menu_caps))
+        goto done;
     if (fwrite(&flags, 1, sizeof(flags_struct), gfile) != sizeof(flags_struct))
         goto done;
     if (!write_int(prgms_count))
@@ -1772,8 +1780,8 @@ static bool unpersist_globals() {
         bool bigstack;
         if (!read_bool(&bigstack))
             goto done;
-    }    
-    
+    }
+
     if (!read_int(&reg_alpha_length)) {
         reg_alpha_length = 0;
         goto done;
@@ -1816,6 +1824,13 @@ static bool unpersist_globals() {
         }
     } else
         mode_wsize = 36;
+    if (ver >= 42) {
+        if (!read_bool(&mode_menu_caps)) {
+            mode_menu_caps = false;
+            goto done;
+        }
+    } else
+        mode_menu_caps = false;
     if (fread(&flags, 1, sizeof(flags_struct), gfile)
             != sizeof(flags_struct))
         goto done;
@@ -1928,7 +1943,7 @@ static bool unpersist_globals() {
         prgm_highlight_row = 0;
         goto done;
     }
-    
+
     if (state_is_portable) {
         vars_capacity = 0;
         if (vars != NULL) {
@@ -1973,7 +1988,7 @@ static bool unpersist_globals() {
         }
         vars_capacity = vars_count;
     }
-    
+
     if (!read_int(&varmenu_length)) {
         varmenu_length = 0;
         goto done;
@@ -2111,7 +2126,7 @@ static bool unpersist_globals() {
         #endif
         rebuild_label_table();
     }
-    
+
     ret = true;
 
     done:
@@ -2454,7 +2469,7 @@ void get_next_command(int4 *pc, int *command, arg_struct *arg, int find_target, 
             arg->type = ARGTYPE_DOUBLE;
         }
     }
-    
+
     if (find_target) {
         target_pc = find_local_label(arg);
         arg->target = target_pc;
@@ -2740,7 +2755,7 @@ void store_command(int4 pc, int command, arg_struct *arg, const char *num_str) {
     }
 
     if ((command == CMD_GTO || command == CMD_XEQ)
-            && (arg->type == ARGTYPE_NUM || arg->type == ARGTYPE_STK 
+            && (arg->type == ARGTYPE_NUM || arg->type == ARGTYPE_STK
                                          || arg->type == ARGTYPE_LCLBL))
         for (i = 0; i < 4; i++)
             buf[bufptr++] = 255;
@@ -2836,7 +2851,7 @@ void store_command(int4 pc, int command, arg_struct *arg, const char *num_str) {
     prgm->size += bufptr;
     if (command != CMD_END && flags.f.printer_exists && (flags.f.trace_print || flags.f.normal_print))
         print_program_line(current_prgm, pc);
-    
+
     if (command == CMD_END ||
             (command == CMD_LBL && arg->type == ARGTYPE_STR))
         rebuild_label_table();
@@ -2893,7 +2908,7 @@ int x2line() {
             arg.val_d = c->im;
             store_command_after(&pc, CMD_NUMBER, &arg, NULL);
             arg.type = ARGTYPE_NONE;
-            store_command_after(&pc, CMD_COMPLEX, &arg, NULL);
+            store_command_after(&pc, CMD_RCOMPLX, &arg, NULL);
             return ERR_NONE;
         }
         case TYPE_STRING: {
@@ -2915,7 +2930,7 @@ int x2line() {
     }
 }
 
-int a2line() {
+int a2line(bool append) {
     if (reg_alpha_length == 0) {
         squeak();
         return ERR_NONE;
@@ -2925,11 +2940,20 @@ int a2line() {
     const char *p = reg_alpha;
     int len = reg_alpha_length;
     int maxlen = 15;
+
+    arg_struct arg;
+    if (append) {
+        maxlen = 14;
+    } else if (p[0] == 0x7f || (p[0] & 128) != 0) {
+        arg.type = ARGTYPE_NONE;
+        store_command_after(&pc, CMD_CLA, &arg, NULL);
+        maxlen = 14;
+    }
+
     while (len > 0) {
         int len2 = len;
         if (len2 > maxlen)
             len2 = maxlen;
-        arg_struct arg;
         arg.type = ARGTYPE_STR;
         if (maxlen == 15) {
             arg.length = len2;
@@ -3170,7 +3194,7 @@ int push_func_state(int n) {
     // FD list layout:
     // 0: n, the 2-digit parameter to FUNC
     // 1: original stack depth, or -1 for 4-level stack
-    // 2: flag 25, encoded as a string "0" or "1"
+    // 2: flag 25, ERRNO, and ERRMSG
     // 3: lastx
     // 4: X / level 1
     // 5: Y / level 2
@@ -3183,7 +3207,7 @@ int push_func_state(int n) {
     vartype **fd_data = ((vartype_list *) fd)->array->data;
     fd_data[0] = new_real(n);
     fd_data[1] = new_real(flags.f.big_stack ? sp + 1 : -1);
-    fd_data[2] = new_string(flags.f.error_ignore ? "1" : "0", 1);
+    fd_data[2] = new_string(NULL, lasterr == -1 ? 2 + lasterr_length : 2);
     fd_data[3] = dup_vartype(lastx);
     for (int i = 0; i < inputs; i++)
         fd_data[i + 4] = dup_vartype(stack[sp - i]);
@@ -3192,8 +3216,14 @@ int push_func_state(int n) {
             free_vartype(fd);
             return ERR_INSUFFICIENT_MEMORY;
         }
+    vartype_string *s = (vartype_string *) fd_data[2];
+    s->txt()[0] = flags.f.error_ignore ? '1' : '0';
+    s->txt()[1] = (char) lasterr;
+    if (lasterr == -1)
+        memcpy(s->txt() + 2, lasterr_text, lasterr_length);
     store_private_var("FD", 2, fd);
     flags.f.error_ignore = 0;
+    lasterr = ERR_NONE;
 
     if (rtn_level == 0)
         rtn_level_0_has_func_state = true;
@@ -3255,7 +3285,7 @@ int push_stack_state(bool big) {
         free_vartype(st);
         goto nomem;
     }
-    if (!flags.f.big_stack) {
+    if (!big && flags.f.big_stack) {
         memcpy(st_data + 1, stack, save_levels * sizeof(vartype *));
         memmove(stack + n_dups, stack + sp - 3 + n_dups, (sp + 1 - save_levels) * sizeof(vartype *));
         memcpy(stack, dups, n_dups * sizeof(vartype *));
@@ -3396,8 +3426,15 @@ int pop_func_state(bool error) {
         lastx = fd_data[li];
         fd_data[li] = NULL;
 
-        char f25 = ((vartype_string *) fd_data[2])->txt()[0] == '1';
-        flags.f.error_ignore = f25;
+        vartype_string *s = (vartype_string *) fd_data[2];
+        flags.f.error_ignore = s->txt()[0] == '1';
+        if (s->length > 1) {
+            lasterr = (signed char) s->txt()[1];
+            if (lasterr == -1) {
+                lasterr_length = s->length - 2;
+                memcpy(lasterr_text, s->txt() + 2, lasterr_length);
+            }
+        }
 
         goto done;
     }
@@ -3497,8 +3534,15 @@ int pop_func_state(bool error) {
         lastx = fd_data[li];
         fd_data[li] = NULL;
 
-        char f25 = ((vartype_string *) fd_data[2])->txt()[0] == '1';
-        flags.f.error_ignore = f25;
+        vartype_string *s = (vartype_string *) fd_data[2];
+        flags.f.error_ignore = s->txt()[0] == '1';
+        if (s->length > 1) {
+            lasterr = (signed char) s->txt()[1];
+            if (lasterr == -1) {
+                lasterr_length = s->length - 2;
+                memcpy(lasterr_text, s->txt() + 2, lasterr_length);
+            }
+        }
 
         flags.f.big_stack = fd_big;
     }
@@ -3765,6 +3809,10 @@ void clear_all_rtns() {
     } else if (st_mode == 1) {
         docmd_nstk(NULL);
     }
+    if (mode_plainmenu == MENU_PROGRAMMABLE)
+        set_menu(MENULEVEL_PLAIN, MENU_NONE);
+    if (varmenu_role == 3)
+        varmenu_role = 0;
 }
 
 int get_rtn_level() {
@@ -3783,9 +3831,17 @@ bool unwind_stack_until_solve() {
     int prgm;
     int4 pc;
     bool stop;
+    int st_mode = -1;
     do {
+        get_saved_stack_mode(&st_mode);
         pop_rtn_addr(&prgm, &pc, &stop);
     } while (prgm != -2);
+    if (st_mode == 0) {
+        arg_struct dummy_arg;
+        docmd_4stk(&dummy_arg);
+    } else if (st_mode == 1) {
+        docmd_nstk(NULL);
+    }
     return stop;
 }
 
@@ -4240,7 +4296,7 @@ static bool load_state2(bool *clear, bool *too_new) {
                 break;
         }
     }
-    
+
     if (ver < 9) {
         state_file_number_format = NUMBER_FORMAT_BINARY;
     } else {
@@ -4735,6 +4791,7 @@ void hard_reset(int reason) {
     mode_time_clktd = false;
     mode_time_clk24 = shell_clk24();
     mode_wsize = 36;
+    mode_menu_caps = false;
 
     reset_math();
 

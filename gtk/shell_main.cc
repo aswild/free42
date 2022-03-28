@@ -1,6 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Free42 -- an HP-42S calculator simulator
-// Copyright (C) 2004-2021  Thomas Okken
+// Copyright (C) 2004-2022  Thomas Okken
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2,
@@ -2397,7 +2397,7 @@ static void aboutCB() {
         GtkWidget *version = gtk_label_new("Free42 " VERSION);
         gtk_misc_set_alignment(GTK_MISC(version), 0, 0);
         gtk_box_pack_start(GTK_BOX(box2), version, FALSE, FALSE, 10);
-        GtkWidget *author = gtk_label_new("\302\251 2004-2021 Thomas Okken");
+        GtkWidget *author = gtk_label_new("\302\251 2004-2022 Thomas Okken");
         gtk_misc_set_alignment(GTK_MISC(author), 0, 0);
         gtk_box_pack_start(GTK_BOX(box2), author, FALSE, FALSE, 0);
         GtkWidget *websitelink = gtk_link_button_new("https://thomasokken.com/free42/");
@@ -2531,7 +2531,7 @@ static void shell_keydown() {
                 while (*macro != 0) {
                     keep_running = core_keydown(*macro++, &enqueued, &repeat);
                     if (*macro != 0 && !enqueued)
-                        core_keyup();
+                        keep_running = core_keyup();
                     while (waitForProgram && keep_running)
                         keep_running = core_keydown(0, &enqueued, &repeat);
                 }
@@ -2683,6 +2683,30 @@ static gboolean key_cb(GtkWidget *w, GdkEventKey *event, gpointer cd) {
                         mouse_key = false;
                         active_keycode = event->hardware_keycode;
                         return TRUE;
+                    } else if (event->keyval == GDK_KEY_Left
+                            || event->keyval == GDK_KEY_Right
+                            || event->keyval == GDK_KEY_Delete) {
+                        int which;
+                        if (event->keyval == GDK_KEY_Left)
+                            which = shift ? 2 : 1;
+                        else if (event->keyval == GDK_KEY_Right)
+                            which = shift ? 4 : 3;
+                        else if (event->keyval == GDK_KEY_Delete)
+                            which = 5;
+                        else
+                            which = 0;
+                        if (which != 0) {
+                            which = core_special_menu_key(which);
+                            if (which != 0) {
+                                ckey = which;
+                                skey = -1;
+                                macro = NULL;
+                                shell_keydown();
+                                mouse_key = false;
+                                active_keycode = event->hardware_keycode;
+                                return TRUE;
+                            }
+                        }
                     }
                 }
             }

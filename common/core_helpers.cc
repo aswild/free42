@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2021  Thomas Okken
+ * Copyright (C) 2004-2022  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -611,7 +611,7 @@ bool shell_always_on(int ao) {
 int virtual_flag_handler(int flagop, int flagnum) {
     /* NOTE: the determination which flag numbers are handled by this
      * function is made by docmd_sf() etc.; they do this based on a constant
-     * string 'virtual_flags' defined locally in core_commands.c.
+     * string 'virtual_flags' defined in core_globals.cc.
      */
     switch (flagnum) {
         case 27: /* custom_menu */ {
@@ -1026,7 +1026,7 @@ void print_wide(const char *left, int leftlen, const char *right, int rightlen) 
 void print_command(int cmd, const arg_struct *arg) {
     char buf[100];
     int bufptr = 0;
-    
+
     if (cmd == CMD_NULL && !deferred_print)
         return;
 

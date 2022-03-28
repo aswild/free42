@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2021  Thomas Okken
+ * Copyright (C) 2004-2022  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -28,8 +28,10 @@
 
 #ifdef BCD_MATH
 #define MAX_MANT_DIGITS 34
+#define ALWAYS_INT_FROM (pow(10, MAX_MANT_DIGITS))
 #else
 #define MAX_MANT_DIGITS 16
+#define ALWAYS_INT_FROM ((double) (1LL << 53))
 #endif
 
 

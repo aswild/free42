@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2021  Thomas Okken
+ * Copyright (C) 2004-2022  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -424,7 +424,7 @@ static int get_summation() {
     }
     return ERR_NONE;
 }
-    
+
 static struct model_struct {
     phloat x;
     phloat x2;
@@ -864,17 +864,17 @@ int docmd_not(arg_struct *arg) {
 }
 
 int docmd_or(arg_struct *arg) {
-    int8 x, y; 
-    int err; 
+    int8 x, y;
+    int err;
     vartype *v;
-    if ((err = get_base_param(stack[sp], &x)) != ERR_NONE) 
+    if ((err = get_base_param(stack[sp], &x)) != ERR_NONE)
         return err;
     if ((err = get_base_param(stack[sp - 1], &y)) != ERR_NONE)
         return err;
     int8 res = x | y;
     base_range_check(&res, true);
     v = new_real(base2phloat(res));
-    if (v == NULL) 
+    if (v == NULL)
         return ERR_INSUFFICIENT_MEMORY;
     return binary_result(v);
 }
@@ -993,7 +993,7 @@ int docmd_pgminti(arg_struct *arg) {
 int docmd_rotxy(arg_struct *arg) {
     int x;
     uint8 y, res;
-    int err; 
+    int err;
     vartype *v;
 
     // Not using get_base_param() to fetch x, because that
@@ -1021,7 +1021,7 @@ int docmd_rotxy(arg_struct *arg) {
         base_range_check((int8 *) &res, true);
     }
     v = new_real(base2phloat((int8) res));
-    if (v == NULL) 
+    if (v == NULL)
         return ERR_INSUFFICIENT_MEMORY;
     return binary_result(v);
 }
@@ -1089,16 +1089,16 @@ int docmd_vmsolve(arg_struct *arg) {
 
 int docmd_xor(arg_struct *arg) {
     int8 x, y;
-    int err; 
+    int err;
     vartype *v;
-    if ((err = get_base_param(stack[sp], &x)) != ERR_NONE) 
+    if ((err = get_base_param(stack[sp], &x)) != ERR_NONE)
         return err;
     if ((err = get_base_param(stack[sp - 1], &y)) != ERR_NONE)
         return err;
     int8 res = x ^ y;
     base_range_check(&res, true);
     v = new_real(base2phloat(res));
-    if (v == NULL) 
+    if (v == NULL)
         return ERR_INSUFFICIENT_MEMORY;
     return binary_result(v);
 }
@@ -1259,53 +1259,50 @@ static int sigma_helper_1(int weight) {
     sigmaregs = r->array->data + first;
 
     /* All summation registers present, real-valued, non-string. */
-    switch (stack[sp]->type) {
-        case TYPE_REAL: {
-            if (stack[sp - 1]->type == TYPE_REAL) {
-                vartype_real *x = (vartype_real *) new_real(0);
-                if (x == NULL)
-                    return ERR_INSUFFICIENT_MEMORY;
-                x->x = sigma_helper_2(sigmaregs,
-                                      ((vartype_real *) stack[sp])->x,
-                                      ((vartype_real *) stack[sp - 1])->x,
-                                      weight);
-                free_vartype(lastx);
-                lastx = stack[sp];
-                stack[sp] = (vartype *) x;
-                mode_disable_stack_lift = true;
-                return ERR_NONE;
-            } else if (stack[sp - 1]->type == TYPE_STRING)
+    if (stack[sp]->type == TYPE_REALMATRIX) {
+        vartype_realmatrix *rm = (vartype_realmatrix *) stack[sp];
+        vartype_real *x;
+        int4 i;
+        if (rm->columns != 2)
+            return ERR_DIMENSION_ERROR;
+        for (i = 0; i < rm->rows * 2; i++)
+            if (rm->array->is_string[i] != 0)
                 return ERR_ALPHA_DATA_IS_INVALID;
-            else
-                return ERR_INVALID_TYPE;
-        }
-        case TYPE_REALMATRIX: {
-            vartype_realmatrix *rm = (vartype_realmatrix *) stack[sp];
-            vartype_real *x;
-            int4 i;
-            if (rm->columns != 2)
-                return ERR_DIMENSION_ERROR;
-            for (i = 0; i < rm->rows * 2; i++)
-                if (rm->array->is_string[i] != 0)
-                    return ERR_ALPHA_DATA_IS_INVALID;
-            x = (vartype_real *) new_real(0);
+        x = (vartype_real *) new_real(0);
+        if (x == NULL)
+            return ERR_INSUFFICIENT_MEMORY;
+        for (i = 0; i < rm->rows; i++)
+            x->x = sigma_helper_2(sigmaregs,
+                                    rm->array->data[i * 2],
+                                    rm->array->data[i * 2 + 1],
+                                    weight);
+        free_vartype(lastx);
+        lastx = stack[sp];
+        stack[sp] = (vartype *) x;
+        mode_disable_stack_lift = true;
+        return ERR_NONE;
+    } else {
+        // stack[sp]->type == TYPE_REAL
+        if (sp < 1) {
+            return ERR_TOO_FEW_ARGUMENTS;
+        } else if (stack[sp - 1]->type == TYPE_REAL) {
+            vartype_real *x = (vartype_real *) new_real(0);
             if (x == NULL)
                 return ERR_INSUFFICIENT_MEMORY;
-            for (i = 0; i < rm->rows; i++)
-                x->x = sigma_helper_2(sigmaregs,
-                                      rm->array->data[i * 2],
-                                      rm->array->data[i * 2 + 1],
-                                      weight);
+            x->x = sigma_helper_2(sigmaregs,
+                                    ((vartype_real *) stack[sp])->x,
+                                    ((vartype_real *) stack[sp - 1])->x,
+                                    weight);
             free_vartype(lastx);
             lastx = stack[sp];
             stack[sp] = (vartype *) x;
             mode_disable_stack_lift = true;
             return ERR_NONE;
-        }
-        case TYPE_STRING:
+        } else if (stack[sp - 1]->type == TYPE_STRING) {
             return ERR_ALPHA_DATA_IS_INVALID;
-        default:
+        } else {
             return ERR_INVALID_TYPE;
+        }
     }
 }
 

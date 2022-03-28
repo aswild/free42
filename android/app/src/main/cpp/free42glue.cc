@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2021  Thomas Okken
+ * Copyright (C) 2004-2022  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -148,6 +148,12 @@ extern "C" jboolean
 Java_com_thomasokken_free42_Free42Activity_core_1hex_1menu(JNIEnv *env, jobject thiz) {
     Tracer T("core_hex_menu");
     return core_hex_menu();
+}
+
+extern "C" jint
+Java_com_thomasokken_free42_Free42Activity_core_1special_1menu_1key(JNIEnv *env, jobject thiz, jint which) {
+    Tracer T("core_special_menu_key");
+    return core_special_menu_key(which);
 }
 
 static struct timeval keydown_end_time;

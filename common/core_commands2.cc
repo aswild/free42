@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2021  Thomas Okken
+ * Copyright (C) 2004-2022  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -398,6 +398,24 @@ int docmd_input(arg_struct *arg) {
     } else {
         free_vartype(v);
         return ERR_INVALID_TYPE;
+    }
+
+    if (flags.f.printer_enable && flags.f.printer_exists
+            && (flags.f.trace_print || flags.f.normal_print)) {
+        int size = input_length + 1;
+        switch (v->type) {
+            case TYPE_STRING: size += ((vartype_string *) v)->length + 2; break;
+            default: size += 100;
+        }
+        char *buf = (char *) malloc(size);
+        if (buf != NULL) {
+            int bufptr = 0;
+            string2buf(buf, size, &bufptr, input_name, input_length);
+            char2buf(buf, size, &bufptr, '?');
+            bufptr += vartype2string(v, buf + bufptr, size - bufptr);
+            print_lines(buf, bufptr, true);
+            free(buf);
+        }
     }
 
     docmd_cld(NULL);
@@ -1060,13 +1078,20 @@ int docmd_prsigma(arg_struct *arg) {
             char *text;
             int4 len;
             get_matrix_string(rm, j, &text, &len);
-            bufptr = 0;
-            char2buf(buf, 100, &bufptr, '"');
-            string2buf(buf, 100, &bufptr, text, len);
-            char2buf(buf, 100, &bufptr, '"');
-        } else
+            char *sbuf = (char *) malloc(len + 2);
+            if (sbuf == NULL) {
+                print_wide(sigma_labels[i].text, sigma_labels[i].length, "<Low Mem>", 9);
+            } else {
+                sbuf[0] = '"';
+                memcpy(sbuf + 1, text, len);
+                sbuf[len + 1] = '"';
+                print_wide(sigma_labels[i].text, sigma_labels[i].length, sbuf, len + 2);
+                free(sbuf);
+            }
+        } else {
             bufptr = easy_phloat2string(rm->array->data[j], buf, 100, 0);
-        print_wide(sigma_labels[i].text, sigma_labels[i].length, buf, bufptr);
+            print_wide(sigma_labels[i].text, sigma_labels[i].length, buf, bufptr);
+        }
     }
     shell_annunciators(-1, -1, 0, -1, -1, -1);
     return ERR_NONE;
@@ -1624,7 +1649,10 @@ int docmd_number(arg_struct *arg) {
     vartype *new_x = new_real(arg->val_d);
     if (new_x == NULL)
         return ERR_INSUFFICIENT_MEMORY;
-    return recall_result_silently(new_x);
+    int err = recall_result_silently(new_x);
+    if (err == ERR_NONE)
+        print_stack_trace();
+    return err;
 }
 
 int docmd_string(arg_struct *arg) {

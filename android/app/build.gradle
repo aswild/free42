@@ -36,9 +36,9 @@ android {
     defaultConfig {
         buildConfigField "String", "GitRev", "\"${getGitRev()}\""
         minSdkVersion 14
-        targetSdkVersion 29
-        versionCode 138
-        versionName "3.0.3"
+        targetSdkVersion 30
+        versionCode 145
+        versionName "3.0.10"
     }
     buildTypes {
         debug {
