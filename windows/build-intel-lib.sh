@@ -12,7 +12,7 @@ fi
 set -x
 tar xzf ../inteldecimal/IntelRDFPMathLib20U1.tar.gz
 cd IntelRDFPMathLib20U1
-patch -p0 --binary <../intel-lib-windows-32bit.patch
+patch -p0 --binary <../intel-lib-windows.patch
 
 cd LIBRARY
 cmd //c ..\\..\\build-intel-lib.bat

@@ -45,9 +45,11 @@
 #ifdef WINDOWS
 FILE *my_fopen(const char *name, const char *mode);
 int my_rename(const char *oldname, const char *newname);
+int my_remove(const char *name);
 #else
 #define my_fopen fopen
 #define my_rename rename
+#define my_remove remove
 #endif
 
 
@@ -138,10 +140,22 @@ void core_save_state(const char *state_file_name) {
     if (mode_interruptible != NULL)
         stop_interruptible();
     set_running(false);
-    gfile = my_fopen(state_file_name, "wb");
+
+    char *state_file_name_crash = (char *) malloc(strlen(state_file_name) + 24);
+    uint4 date, time;
+    int weekday;
+    shell_get_time_date(&time, &date, &weekday);
+    sprintf(state_file_name_crash, "%s.%08u%08u.crash", state_file_name, date, time);
+
+    gfile = my_fopen(state_file_name_crash, "wb");
     if (gfile != NULL) {
-        save_state();
+        bool success;
+        save_state(&success);
         fclose(gfile);
+        if (success) {
+            my_remove(state_file_name);
+            my_rename(state_file_name_crash, state_file_name);
+        }
     }
 }
 
@@ -1723,7 +1737,7 @@ static int hp42ext[] = {
     CMD_NULL | 0x4000,
     CMD_NULL | 0x4000,
     CMD_NULL | 0x4000,
-    CMD_NULL | 0x4000,
+    CMD_LCLV | 0x2000,
     CMD_NULL | 0x4000,
     CMD_NULL | 0x4000,
     CMD_NULL | 0x4000,
@@ -1738,6 +1752,7 @@ static int hp42ext[] = {
 
     /* 70-7F */
     CMD_NULL | 0x4000,
+    CMD_LCLV | 0x0000,
     CMD_NULL | 0x4000,
     CMD_NULL | 0x4000,
     CMD_NULL | 0x4000,
@@ -1745,8 +1760,7 @@ static int hp42ext[] = {
     CMD_NULL | 0x4000,
     CMD_NULL | 0x4000,
     CMD_NULL | 0x4000,
-    CMD_NULL | 0x4000,
-    CMD_NULL | 0x4000,
+    CMD_LCLV | 0x1000,
     CMD_NULL | 0x4000,
     CMD_NULL | 0x4000,
     CMD_NULL | 0x4000,
@@ -3013,6 +3027,7 @@ static int ascii2hp(char *dst, int dstlen, const char *src, int srclen /* = -1 *
             case 0x2191: code =  94; break; // upward-pointing arrow
             case 0x22a2:                    // right tack sign (i41CX)
             case 0x22a6:                    // assertion sign (Emu42)
+            case 0x2212: code =  45; break; // minus sign
             case 0x251c: code = 127; break; // append sign
             case 0x028f: code = 129; break; // small-caps y
             case 0x240a: code = 138; break; // LF symbol
@@ -3091,13 +3106,20 @@ static int ascii2hp(char *dst, int dstlen, const char *src, int srclen /* = -1 *
             default:
                 // Anything outside of the printable ASCII range or LF or
                 // ESC is not representable, so we replace it with bullets,
-                // except for combining diacritics, which we skip, and tabs,
-                // which we treat as spaces.
-                if (code >= 0x0300 && code <= 0x036f) {
+                // except for combining diacritics and zero-width spaces,
+                // which we skip, and tabs and various other whitespace
+                // characters, which we treat as spaces.
+                if (code >= 0x0300 && code <= 0x036f || code >= 0x200b && code <= 0x200d) {
                     state = 0;
                     continue;
                 }
-                if (code == 9)
+                if (code >= 9 && code <= 13 // ASCII whitespace chars
+                        || code == 0x85 || code == 0xa0 // Latin-1 line break, non-break space
+                        || code >= 0x2000 && code <= 0x200a // Unicode spaces
+                        || code == 0x2028 // Unicode line separator
+                        || code == 0x2029 // Unicode paragraph separator
+                        || code == 0x202f // Narrow no-break space
+                        )
                     code = 32;
                 else if (code < 32 && code != 10 && code != 27 || code > 126)
                     code = 31;
@@ -4674,7 +4696,7 @@ void do_interactive(int command) {
         set_menu(MENULEVEL_ALPHA, MENU_NONE);
         redisplay();
         return;
-    } else if (command == CMD_CLV || command == CMD_PRV) {
+    } else if (command == CMD_CLV || command == CMD_PRV || command == CMD_LCLV) {
         if (!flags.f.prgm_mode && vars_count == 0) {
             display_error(ERR_NO_VARIABLES, false);
             redisplay();
@@ -5145,7 +5167,7 @@ void finish_xeq() {
             shell_delay(250);
             pending_command = CMD_NONE;
             set_menu(MENULEVEL_COMMAND, MENU_NONE);
-            if ((cmd == CMD_CLV || cmd == CMD_PRV)
+            if ((cmd == CMD_CLV || cmd == CMD_PRV || cmd == CMD_LCLV)
                     && !flags.f.prgm_mode && vars_count == 0) {
                 display_error(ERR_NO_VARIABLES, false);
                 pending_command = CMD_NONE;

@@ -1880,9 +1880,6 @@ static bool unpersist_globals() {
                 goto done;
             }
         vars_capacity = vars_count;
-
-        // Purging zero-length var that may have been created by buggy INTEG
-        purge_var("", 0);
     }
 
     prgms_count = 0;
@@ -3005,6 +3002,22 @@ int4 line2pc(int4 line) {
         return pc_line_convert(line, 0);
 }
 
+int4 global_pc2line(int prgm, int4 pc) {
+    int saved_prgm = current_prgm;
+    current_prgm = prgm;
+    int4 res = pc2line(pc);
+    current_prgm = saved_prgm;
+    return res;
+}
+
+int4 global_line2pc(int prgm, int4 line) {
+    int saved_prgm = current_prgm;
+    current_prgm = prgm;
+    int4 res = line2pc(line);
+    current_prgm = saved_prgm;
+    return res;
+}
+
 int4 find_local_label(const arg_struct *arg) {
     int4 orig_pc = pc;
     int4 search_pc;
@@ -3265,6 +3278,12 @@ int push_stack_state(bool big) {
             save_levels = sp + 1 - in;
         } else {
             save_levels = sp - 3;
+            for (int i = 0; i < 3 - sp; i++) {
+                dups[i] = new_real(0);
+                if (dups[i] == NULL)
+                    goto nomem;
+                n_dups = i + 1;
+            }
         }
         if (save_levels < 0)
             save_levels = 0;
@@ -4533,7 +4552,8 @@ bool load_state(int4 ver_p, bool *clear, bool *too_new) {
     return load_state2(clear, too_new);
 }
 
-void save_state() {
+void save_state(bool *success) {
+    *success = false;
     if (!write_int4(FREE42_MAGIC) || !write_int4(FREE42_VERSION))
         return;
 
@@ -4630,6 +4650,7 @@ void save_state() {
 
     if (!write_int4(FREE42_MAGIC)) return;
     if (!write_int4(FREE42_VERSION)) return;
+    *success = true;
 }
 
 // Reason:

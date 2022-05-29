@@ -42,7 +42,7 @@
 #define FUNC 0xff
 
 /* Dummy value, to be used only when argcount = 0. Only used for actual
- * existing functions; for unimplemented functions, leave it at 0x00.
+ * existing functions; for unimplemented functions, use UNIM.
  */
 #define NA_T 0x00
 
@@ -449,6 +449,7 @@ const command_spec cmd_array[] =
     { /* BRESET */     docmd_breset,      "BR\305S\305T",        0x00, 0x00, 0xa7, 0xd8,  6, ARG_NONE,   0, NA_T },
     { /* GETKEY1 */    docmd_getkey1,     "G\305TK\305\3311",    0x00, 0x00, 0xa7, 0xd9,  7, ARG_NONE,   0, NA_T },
     { /* LASTO */      docmd_lasto,       "LASTO",               0x00, 0xf5, 0xf2, 0xc8,  5, ARG_NAMED,  0, NA_T },
+    { /* LCLV */       docmd_lclv,        "LCLV",                0x00, 0x71, 0xf2, 0x63,  4, ARG_NAMED,  0, NA_T },
 
     /* Useful X-Fcn functions missing from the 42S */
     { /* ANUM */       docmd_anum,        "ANUM",                0x00, 0x00, 0xa6, 0x42,  4, ARG_NONE,   0, NA_T },
@@ -482,11 +483,11 @@ const command_spec cmd_array[] =
     { /* UNPICK */     docmd_unpick,      "UNPICK",              0x00, 0xf4, 0xf2, 0xa4,  6, ARG_NUM9,   0, NA_T },
     { /* RDNN */       docmd_rdnn,        "R\016N",              0x00, 0xf6, 0xf2, 0xa5,  3, ARG_NUM9,   0, NA_T },
     { /* RUPN */       docmd_rupn,        "R^N",                 0x00, 0xf7, 0xf2, 0xa6,  3, ARG_NUM9,   0, NA_T },
+    /* (Skipping 403 because of single-byte equality checks with CMD_END) */
+    { /* DUMMY */      NULL,              "",                    0x44, 0x00, 0x00, 0x00,  0, ARG_OTHER,  0, UNIM },
 
     /* Miscellaneous */
     { /* NOP */        docmd_nop,         "NOP",                 0x00, 0x00, 0x00, 0xf0,  3, ARG_NONE,   0, NA_T },
-    /* (Skipping 403 because of single-byte equality checks with CMD_END) */
-    { /* DUMMY */      NULL,              "",                    0x44, 0x00, 0x00, 0x00,  0, ARG_OTHER,  0, UNIM },
     { /* FMA */        docmd_fma,         "FMA",                 0x00, 0x00, 0xa7, 0xda,  3, ARG_NONE,   3, 0x01 },
     { /* PGMMENU */    docmd_pgmmenu,     "P\307\315M\305NU",    0x00, 0x00, 0xa7, 0xe8,  7, ARG_NONE,   0, NA_T },
     { /* PMEXEC */     NULL,              "",                    0x44, 0x00, 0x00, 0x00,  0, ARG_OTHER,  0, NA_T },
@@ -536,7 +537,11 @@ const command_spec cmd_array[] =
     { /* 0_LT_NN */    docmd_0_lt_nn,     "0<?",                 0x00, 0x24, 0xf2, 0x1c,  3, ARG_VAR,    0, NA_T },
     { /* 0_GT_NN */    docmd_0_gt_nn,     "0>?",                 0x00, 0x25, 0xf2, 0x1d,  3, ARG_VAR,    0, NA_T },
     { /* 0_LE_NN */    docmd_0_le_nn,     "0\011?",              0x00, 0x26, 0xf2, 0x1e,  3, ARG_VAR,    0, NA_T },
-    { /* 0_GE_NN */    docmd_0_ge_nn,     "0\013?",              0x00, 0x27, 0xf2, 0x1f,  3, ARG_VAR,    0, NA_T }
+    { /* 0_GE_NN */    docmd_0_ge_nn,     "0\013?",              0x00, 0x27, 0xf2, 0x1f,  3, ARG_VAR,    0, NA_T },
+
+    /* For Plus42 Compatibility */
+    { /* WIDTH */      docmd_width,       "WIDTH",               0x00, 0x00, 0xa2, 0x72,  5, ARG_NONE,   0, NA_T },
+    { /* HEIGHT */     docmd_height,      "HEIGHT",              0x00, 0x00, 0xa2, 0x73,  6, ARG_NONE,   0, NA_T },
 };
 
 /*

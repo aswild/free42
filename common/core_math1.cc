@@ -108,8 +108,13 @@ bool persist_math() {
     if (fwrite(solve.var_name, 1, 7, gfile) != 7) return false;
     if (!write_int(solve.var_length)) return false;
     if (!write_int(solve.keep_running)) return false;
-    if (!write_int(solve.prev_prgm)) return false;
-    if (!write_int4(solve.prev_pc)) return false;
+    if (solve_active()) {
+        if (!write_int(solve.prev_prgm)) return false;
+        if (!write_int4(global_pc2line(solve.prev_prgm, solve.prev_pc))) return false;
+    } else {
+        if (!write_int(0)) return false;
+        if (!write_int4(0)) return false;
+    }
     if (!write_int(solve.state)) return false;
     if (!write_int(solve.which)) return false;
     if (!write_int(solve.toggle)) return false;
@@ -145,8 +150,13 @@ bool persist_math() {
     if (fwrite(integ.var_name, 1, 7, gfile) != 7) return false;
     if (!write_int(integ.var_length)) return false;
     if (!write_int(integ.keep_running)) return false;
-    if (!write_int(integ.prev_prgm)) return false;
-    if (!write_int4(integ.prev_pc)) return false;
+    if (integ_active()) {
+        if (!write_int(integ.prev_prgm)) return false;
+        if (!write_int4(global_pc2line(integ.prev_prgm, integ.prev_pc))) return false;
+    } else {
+        if (!write_int(0)) return false;
+        if (!write_int4(0)) return false;
+    }
     if (!write_int(integ.state)) return false;
     if (!write_phloat(integ.llim)) return false;
     if (!write_phloat(integ.ulim)) return false;
@@ -186,6 +196,8 @@ bool unpersist_math(int ver, bool discard) {
         if (!read_int(&solve.keep_running)) return false;
         if (!read_int(&solve.prev_prgm)) return false;
         if (!read_int4(&solve.prev_pc)) return false;
+        if (solve_active())
+            solve.prev_pc = global_line2pc(solve.prev_prgm, solve.prev_pc);
         if (!read_int(&solve.state)) return false;
         if (!read_int(&solve.which)) return false;
         if (!read_int(&solve.toggle)) return false;
@@ -232,6 +244,8 @@ bool unpersist_math(int ver, bool discard) {
         if (!read_int(&integ.keep_running)) return false;
         if (!read_int(&integ.prev_prgm)) return false;
         if (!read_int4(&integ.prev_pc)) return false;
+        if (integ_active())
+            integ.prev_pc = global_line2pc(integ.prev_prgm, integ.prev_pc);
         if (!read_int(&integ.state)) return false;
         if (!read_phloat(&integ.llim)) return false;
         if (!read_phloat(&integ.ulim)) return false;
@@ -340,19 +354,18 @@ static int find_shadow(const char *name, int length) {
 }
 
 void put_shadow(const char *name, int length, phloat value) {
-    int i = find_shadow(name, length);
-    if (i == -1) {
-        for (i = 0; i < NUM_SHADOWS; i++)
-            if (solve.shadow_length[i] == 0)
-                goto do_insert;
-        /* No empty slots available. Remove slot 0 (the oldest) and
-         * move all subsequent ones down, freeing up slot NUM_SHADOWS - 1
-         */
-        for (i = 0; i < NUM_SHADOWS - 1; i++) {
-            string_copy(solve.shadow_name[i], &solve.shadow_length[i],
-                        solve.shadow_name[i + 1], solve.shadow_length[i + 1]);
-            solve.shadow_value[i] = solve.shadow_value[i + 1];
-        }
+    remove_shadow(name, length);
+    int i;
+    for (i = 0; i < NUM_SHADOWS; i++)
+        if (solve.shadow_length[i] == 0)
+            goto do_insert;
+    /* No empty slots available. Remove slot 0 (the oldest) and
+     * move all subsequent ones down, freeing up slot NUM_SHADOWS - 1
+     */
+    for (i = 0; i < NUM_SHADOWS - 1; i++) {
+        string_copy(solve.shadow_name[i], &solve.shadow_length[i],
+                    solve.shadow_name[i + 1], solve.shadow_length[i + 1]);
+        solve.shadow_value[i] = solve.shadow_value[i + 1];
     }
     do_insert:
     string_copy(solve.shadow_name[i], &solve.shadow_length[i], name, length);
@@ -369,13 +382,13 @@ int get_shadow(const char *name, int length, phloat *value) {
 
 void remove_shadow(const char *name, int length) {
     int i = find_shadow(name, length);
-    int j;
     if (i == -1)
         return;
-    for (j = i; j < NUM_SHADOWS - 1; j++) {
+    while (i < NUM_SHADOWS - 1) {
         string_copy(solve.shadow_name[i], &solve.shadow_length[i],
                     solve.shadow_name[i + 1], solve.shadow_length[i + 1]);
         solve.shadow_value[i] = solve.shadow_value[i + 1];
+        i++;
     }
     solve.shadow_length[NUM_SHADOWS - 1] = 0;
 }

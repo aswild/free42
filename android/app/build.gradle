@@ -32,13 +32,13 @@ android {
             storePassword keystoreProperties['storePassword']
         }
     }
-    compileSdkVersion 29
+    compileSdkVersion 30
     defaultConfig {
         buildConfigField "String", "GitRev", "\"${getGitRev()}\""
         minSdkVersion 14
         targetSdkVersion 30
-        versionCode 145
-        versionName "3.0.10"
+        versionCode 146
+        versionName "3.0.11"
     }
     buildTypes {
         debug {

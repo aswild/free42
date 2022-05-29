@@ -772,7 +772,9 @@ static void init_shell_state(int version) {
             core_settings.allow_big_stack = false;
             /* fall through */
         case 9:
-            /* current version (SHELL_VERSION = 9),
+            /* fall through */
+        case 10:
+            /* current version (SHELL_VERSION = 10),
              * so nothing to do here since everything
              * was initialized from the state file.
              */
@@ -1036,10 +1038,10 @@ void shell_request_timeout3(int delay) {
     [calcView setTimeout3:delay];
 }
 
-unsigned int shell_get_mem() {
+uint8 shell_get_mem() {
     TRACE("shell_get_mem");
     int mib[2];
-    unsigned int memsize;
+    size_t memsize = 0;
     size_t len;
     
     // Retrieve the available system memory

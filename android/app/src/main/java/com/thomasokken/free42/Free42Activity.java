@@ -104,7 +104,7 @@ public class Free42Activity extends Activity {
 
     public static final String[] builtinSkinNames = new String[] { "Standard", "Landscape" };
     
-    private static final int SHELL_VERSION = 18;
+    private static final int SHELL_VERSION = 19;
     
     private static final int PRINT_BACKGROUND_COLOR = Color.LTGRAY;
     
@@ -1855,7 +1855,9 @@ public class Free42Activity extends Activity {
             putCoreSettings(cs);
             // fall through
         case 18:
-            // current version (SHELL_VERSION = 18),
+            // fall through
+        case 19:
+            // current version (SHELL_VERSION = 19),
             // so nothing to do here since everything
             // was initialized from the state file.
             ;
@@ -2206,9 +2208,8 @@ public class Free42Activity extends Activity {
      * shell_get_mem()
      * Callback to get the amount of free memory in bytes.
      */
-    public int shell_get_mem() {
-        long freeMem = Runtime.getRuntime().freeMemory();
-        return freeMem > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) freeMem;
+    public long shell_get_mem() {
+        return Runtime.getRuntime().freeMemory();
     }
     
     /**

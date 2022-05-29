@@ -530,6 +530,8 @@ int x2line();
 int a2line(bool append);
 int4 pc2line(int4 pc);
 int4 line2pc(int4 line);
+int4 global_pc2line(int prgm, int4 pc);
+int4 global_line2pc(int prgm, int4 line);
 int4 find_local_label(const arg_struct *arg);
 int find_global_label(const arg_struct *arg, int *prgm, int4 *pc);
 int find_global_label_index(const arg_struct *arg, int *idx);
@@ -571,7 +573,7 @@ bool read_arg(arg_struct *arg, bool old);
 bool write_arg(const arg_struct *arg);
 
 bool load_state(int4 version, bool *clear, bool *too_new);
-void save_state();
+void save_state(bool *success);
 // Reason:
 // 0 = Memory Clear
 // 1 = State File Corrupt
