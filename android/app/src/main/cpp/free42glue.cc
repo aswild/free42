@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2022  Thomas Okken
+ * Copyright (C) 2004-2024  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -328,6 +328,8 @@ Java_com_thomasokken_free42_Free42Activity_getCoreSettings(JNIEnv *env, jobject 
     env->SetBooleanField(settings, fid, core_settings.auto_repeat);
     fid = env->GetFieldID(klass, "allow_big_stack", "Z");
     env->SetBooleanField(settings, fid, core_settings.allow_big_stack);
+    fid = env->GetFieldID(klass, "localized_copy_paste", "Z");
+    env->SetBooleanField(settings, fid, core_settings.localized_copy_paste);
 }
 
 extern "C" void
@@ -342,6 +344,8 @@ Java_com_thomasokken_free42_Free42Activity_putCoreSettings(JNIEnv *env, jobject 
     core_settings.auto_repeat = env->GetBooleanField(settings, fid);
     fid = env->GetFieldID(klass, "allow_big_stack", "Z");
     core_settings.allow_big_stack = env->GetBooleanField(settings, fid);
+    fid = env->GetFieldID(klass, "localized_copy_paste", "Z");
+    core_settings.localized_copy_paste = env->GetBooleanField(settings, fid);
 }
 
 extern "C" void
@@ -418,12 +422,12 @@ void shell_blitter(const char *bits, int bytesperline, int x, int y,
     env->DeleteLocalRef(bits2);
 }
 
-void shell_beeper(int frequency, int duration) {
+void shell_beeper(int tone) {
     Tracer T("shell_beeper");
     JNIEnv *env = getJniEnv();
     jclass klass = env->GetObjectClass(g_activity);
-    jmethodID mid = env->GetMethodID(klass, "shell_beeper", "(II)V");
-    env->CallVoidMethod(g_activity, mid, frequency, duration);
+    jmethodID mid = env->GetMethodID(klass, "shell_beeper", "(I)V");
+    env->CallVoidMethod(g_activity, mid, tone);
     // Delete local references
     env->DeleteLocalRef(klass);
 }
@@ -532,15 +536,20 @@ uint4 shell_milliseconds() {
     return (uint4) (tv.tv_sec * 1000L + tv.tv_usec / 1000);
 }
 
-bool shell_decimal_point() {
-    Tracer T("shell_decimal_point");
+const char *shell_number_format() {
+    Tracer T("shell_number_format");
     JNIEnv *env = getJniEnv();
     jclass klass = env->GetObjectClass(g_activity);
-    jmethodID mid = env->GetMethodID(klass, "shell_decimal_point", "()Z");
-    bool ret = env->CallBooleanMethod(g_activity, mid);
+    jmethodID mid = env->GetMethodID(klass, "shell_number_format", "()Ljava/lang/String;");
+    jstring jp = (jstring) env->CallObjectMethod(g_activity, mid);
+    const char *cp = env->GetStringUTFChars(jp, 0);
+    static char p[16];
+    strncpy(p, cp, 16);
+    p[15] = 0;
+    env->ReleaseStringUTFChars(jp, cp);
     // Delete local references
     env->DeleteLocalRef(klass);
-    return ret;
+    return p;
 }
 
 int shell_date_format() {
@@ -703,7 +712,7 @@ void shell_logprintf(const char *format, ...) {
     va_list ap;
     va_start(ap, format);
     char buf[1000];
-    vsprintf(buf, format, ap);
+    vsnprintf(buf, 1000, format, ap);
     shell_log(buf);
     va_end(ap);
 }

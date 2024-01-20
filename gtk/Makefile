@@ -1,6 +1,6 @@
 ###############################################################################
 # Free42 -- an HP-42S calculator simulator
-# Copyright (C) 2004-2022  Thomas Okken
+# Copyright (C) 2004-2024  Thomas Okken
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2,
@@ -15,9 +15,18 @@
 # along with this program; if not, see http://www.gnu.org/licenses/.
 ###############################################################################
 
+PKG_CONFIG ?= pkg-config
+
+# WILD XXX
+#	 -Wno-class-memaccess \
+#	 -Wno-unknown-warning-option \
+#
+
+CPPFLAGS += -MMD
 CFLAGS ?= -O2
 
-CFLAGS += -MMD \
+CFLAGS += \
+	$(CPPFLAGS) \
 	 -Wall \
 	 -Wno-parentheses \
 	 -Wno-write-strings \
@@ -25,7 +34,7 @@ CFLAGS += -MMD \
 	 -Wno-narrowing \
 	 -Wno-format-truncation \
 	 -pipe -g \
-	 $(shell pkg-config --cflags gtk+-3.0) \
+	 $(shell $(PKG_CONFIG) --cflags gtk+-3.0) \
 	 -DGDK_DISABLE_DEPRECATION_WARNINGS -DGTK_DISABLE_SINGLE_INCLUDES -DGSEAL_ENABLE \
 	 -DVERSION="\"$(shell cat VERSION) ($(shell ../gitversion.sh))\"" \
 	 -DVERSION_PLATFORM="\"$(shell uname -s)\"" \
@@ -50,7 +59,7 @@ HOSTCFLAGS   ?= $(CFLAGS)
 HOSTCXXFLAGS ?= $(CXXFLAGS)
 HOSTLDFLAGS  ?= $(LDFLAGS)
 
-LIBS = -L$(INTEL_DIR)/LIBRARY -lbid $(shell pkg-config --libs gtk+-3.0)
+LIBS = -L$(INTEL_DIR)/LIBRARY -lbid $(shell $(PKG_CONFIG) --libs gtk+-3.0)
 
 ifdef AUDIO_ALSA
 LIBS += -lpthread -ldl
@@ -60,6 +69,14 @@ ifneq "$(findstring 6162,$(shell echo ab | od -x))" ""
 CFLAGS += -DF42_BIG_ENDIAN -DBID_BIG_ENDIAN
 endif
 
+ifeq "$(shell uname -m)" "arm64"
+CFLAGS += -fsigned-char -DBID_SIZE_LONG=8
+else ifeq "$(shell uname -m)" "aarch64"
+CFLAGS += -fsigned-char -DBID_SIZE_LONG=8
+else ifeq "$(shell uname -m | sed 's/^\(...\).*$$/\1/')" "arm"
+CFLAGS += -fsigned-char -DBID_SIZE_LONG=4
+endif
+
 SRCS = shell_main.cc shell_skin.cc skins.cc keymap.cc shell_loadimage.cc \
 	shell_spool.cc core_main.cc core_commands1.cc core_commands2.cc \
 	core_commands3.cc core_commands4.cc core_commands5.cc \
@@ -67,13 +84,14 @@ SRCS = shell_main.cc shell_skin.cc skins.cc keymap.cc shell_loadimage.cc \
 	core_helpers.cc core_keydown.cc core_linalg1.cc core_linalg2.cc \
 	core_math1.cc core_math2.cc core_phloat.cc core_sto_rcl.cc \
 	core_tables.cc core_variables.cc
-OBJS = shell_main.o shell_skin.o skins.o keymap.o shell_loadimage.o \
-	shell_spool.o core_main.o core_commands1.o core_commands2.o \
+CORE_OBJS = shell_spool.o core_main.o core_commands1.o core_commands2.o \
 	core_commands3.o core_commands4.o core_commands5.o \
 	core_commands6.o core_commands7.o core_display.o core_globals.o \
 	core_helpers.o core_keydown.o core_linalg1.o core_linalg2.o \
 	core_math1.o core_math2.o core_phloat.o core_sto_rcl.o \
 	core_tables.o core_variables.o
+OBJS = shell_main.o shell_skin.o skins.o keymap.o shell_loadimage.o \
+	$(CORE_OBJS)
 
 BCD_MATH ?= 1
 
@@ -122,7 +140,13 @@ $(EXE): $(OBJS)
 $(SRCS) skin2cc.cc keymap2cc.cc skin2cc.conf: .symlinks_done $(INTEL_LIB)
 
 .cc.o:
-	$(_V_CXX_$(V))$(CXX) $(CXXFLAGS) -c -o $@ $<
+	$(_V_CXX_$(V))$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
+
+txt2raw: txt2raw.o $(CORE_OBJS)
+	$(_V_LD_$(V))$(CXX) -o txt2raw $(CXXFLAGS) $(LDFLAGS) txt2raw.o $(CORE_OBJS) $(LIBS)
+
+raw2txt: raw2txt.o $(CORE_OBJS)
+	$(_V_LD_$(V))$(CXX) -o raw2txt $(CXXFLAGS) $(LDFLAGS) raw2txt.o $(CORE_OBJS) $(LIBS)
 
 readtest.o: readtest.c
 	$(_V_CC_$(V))$(CC) $(CFLAGS) -I $(INTEL_DIR)/TESTS -D__intptr_t_defined -DLINUX -c -o $@ $<
@@ -148,6 +172,7 @@ $(INTEL_LIB):
 	+sh ./build-intel-lib.sh
 
 CLEAN_FILES = skin2cc skins.cc keymap2cc keymap.cc readtest_lines.cc
+CLEAN_FILES += raw2txt txt2raw
 CLEAN_FILES += .symlinks_done *.o *.d 
 CLEANER_FILES = free42bin free42dec
 

@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2022  Thomas Okken
+ * Copyright (C) 2004-2024  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -59,12 +59,11 @@ void shell_blitter(const char *bits, int bytesperline, int x, int y,
 /* shell_beeper()
  *
  * Callback invoked by the emulator core to play a sound.
- * The first parameter is the frequency in Hz; the second is the
- * duration in ms. The sound volume is up to the GUI to control.
+ * The parameter is the tone number, from 0 to 9, or 10 for the error beep.
  * Sound playback should be synchronous (the beeper function should
  * not return until the sound has finished), if possible.
  */
-void shell_beeper(int frequency, int duration);
+void shell_beeper(int tone);
 
 /* shell_annunciators()
  *
@@ -146,13 +145,23 @@ int8 shell_random_seed();
  */
 uint4 shell_milliseconds();
 
-/* shell_decimal_point()
+/* shell_number_format()
  *
- * Returns 0 if the host's locale uses comma as the decimal separator;
- * returns 1 if it uses dot or anything else.
- * Used to initialize flag 28 on hard reset.
+ * Returns a UTF-8 encoded four-character string, describing the number
+ * formatting parameters for the current locale. The four characters are:
+ * 0: decimal (must be one of '.' or ',')
+ * 1: grouping character (must be one of '.', ',', '\'', or space)
+ * 2: primary grouping size
+ * 3: secondary grouping size
+ * The grouping sizes are encoded as ASCII digits. If there is no grouping,
+ * only the decimal character will be present, so the string will be only 1
+ * character long.
+ * The caller should not modify or free the string.
+ *
+ * The number formatting information is used for Copy and Paste of scalars and
+ * matrices, and to determine the initial setting of flag 28 on cold start.
  */
-bool shell_decimal_point();
+const char *shell_number_format();
 
 /* shell_date_format()
  *

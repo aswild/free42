@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2022  Thomas Okken
+ * Copyright (C) 2004-2024  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -30,7 +30,7 @@
 #define MAX_MANT_DIGITS 34
 #define ALWAYS_INT_FROM (pow(10, MAX_MANT_DIGITS))
 #else
-#define MAX_MANT_DIGITS 16
+#define MAX_MANT_DIGITS 17
 #define ALWAYS_INT_FROM ((double) (1LL << 53))
 #endif
 
@@ -68,11 +68,7 @@ class Phloat {
         Phloat(const BID_UINT128 &b) : val(b) {}
         Phloat(int numer, int denom);
         Phloat(int8 numer, int8 denom);
-        Phloat(double d) {
-            BID_UINT64 tmp;
-            binary64_to_bid64(&tmp, &d);
-            bid64_to_bid128(&val, &tmp);
-        }
+
         Phloat(const char *str) {
             bid128_from_string(&val, (char *) str);
         }
@@ -84,6 +80,11 @@ class Phloat {
         }
         Phloat(uint8 i) {
             bid128_from_uint64(&val, &i);
+        }
+        Phloat(double d) {
+            BID_UINT64 tmp;
+            binary64_to_bid64(&tmp, &d);
+            bid64_to_bid128(&val, &tmp);
         }
 
         Phloat& operator=(const Phloat& p) = default;
@@ -198,6 +199,7 @@ class Phloat {
         Phloat operator++(int); // postfix
         Phloat operator--(); // prefix
         Phloat operator--(int); // postfix
+        void assign17digits(double d);
 };
 
 typedef Phloat phloat;
@@ -248,6 +250,8 @@ Phloat fabs(Phloat p);
 Phloat pow(Phloat x, Phloat y);
 Phloat floor(Phloat x);
 Phloat fma(Phloat x, Phloat y, Phloat z);
+int ilogb(Phloat x);
+Phloat scalbn(Phloat x, int y);
 
 Phloat operator*(int x, Phloat y);
 Phloat operator/(int x, Phloat y);
@@ -257,8 +261,6 @@ Phloat operator-(int x, Phloat y);
 bool operator==(int4 x, Phloat y);
 
 extern Phloat PI;
-
-void update_decimal(BID_UINT128 *val);
 
 
 #endif // BCD_MATH
@@ -275,7 +277,8 @@ extern phloat NAN_2_PHLOAT;
 void phloat_init();
 int phloat2string(phloat d, char *buf, int buflen,
                   int base_mode, int digits, int dispmode,
-                  int thousandssep, int max_mant_digits = 12);
+                  int thousandssep, int max_mant_digits = 12,
+                  const char *format = NULL);
 int string2phloat(const char *buf, int buflen, phloat *d);
 
 

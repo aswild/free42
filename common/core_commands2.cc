@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2022  Thomas Okken
+ * Copyright (C) 2004-2024  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -482,7 +482,7 @@ int docmd_view(arg_struct *arg) {
     return view_helper(arg, 1);
 }
 
-static void aview_helper() {
+static void aview_helper(const char *text, int length) {
 #define DISP_ROWS 2
 #define DISP_COLUMNS 22
     int line_start[DISP_ROWS];
@@ -490,8 +490,8 @@ static void aview_helper() {
     int line = 0;
     int i;
     line_start[0] = 0;
-    for (i = 0; i < reg_alpha_length; i++) {
-        if (reg_alpha[i] == 10) {
+    for (i = 0; i < length; i++) {
+        if (text[i] == 10) {
             if (line == DISP_ROWS - 1)
                 break;
             line_length[line] = i - line_start[line];
@@ -510,12 +510,12 @@ static void aview_helper() {
     if (flags.f.two_line_message || program_running())
         clear_row(1);
     for (i = 0; i <= line; i++)
-        draw_string(0, i, reg_alpha + line_start[i], line_length[i]);
+        draw_string(0, i, text + line_start[i], line_length[i]);
     flush_display();
 }
 
 int docmd_aview(arg_struct *arg) {
-    aview_helper();
+    aview_helper(reg_alpha, reg_alpha_length);
     if (flags.f.printer_enable || !program_running()) {
         if (flags.f.printer_exists)
             docmd_pra(arg);
@@ -536,19 +536,22 @@ int docmd_xeq(arg_struct *arg) {
             int4 dummy2;
             bool dummy3;
             pop_rtn_addr(&dummy1, &dummy2, &dummy3);
-        }
+        } else
+            save_csld();
         return err;
     } else {
         int err = docmd_gto(arg);
         if (err != ERR_NONE)
             return err;
+        else
+            save_csld();
         clear_all_rtns();
         return ERR_RUN;
     }
 }
 
 int docmd_prompt(arg_struct *arg) {
-    aview_helper();
+    aview_helper(reg_alpha, reg_alpha_length);
     if (flags.f.printer_enable && flags.f.printer_exists
             && (flags.f.trace_print || flags.f.normal_print))
         docmd_pra(arg);
@@ -702,7 +705,7 @@ static int generic_loop(arg_struct *arg, bool isg) {
                 v = lastx;
             } else {
                 if (idx > sp)
-                    return ERR_NONEXISTENT;
+                    return ERR_STACK_DEPTH_ERROR;
                 v = stack[sp - idx];
             }
             if (v == NULL)
@@ -839,7 +842,7 @@ static void pixel_helper(phloat dx, phloat dy) {
     dx = dx < 0 ? -floor(-dx + 0.5) : floor(dx + 0.5);
     dy = dy < 0 ? -floor(-dy + 0.5) : floor(dy + 0.5);
     int x = dx < -132 ? -132 : dx > 132 ? 132 : to_int(dx);
-    int y = dy < -132 ? -132 : dy > 132 ? 132 : to_int(dy);
+    int y = dy < -17 ? -17 : dy > 17 ? 17 : to_int(dy);
     int i;
     int dot = 1;
     if (x < 0) {
@@ -1118,6 +1121,7 @@ int docmd_prp(arg_struct *arg) {
 
 static vartype *prv_var;
 static int4 prv_index;
+static bool prv_prreg;
 static int prv_worker(bool interrupted);
 
 int docmd_prv(arg_struct *arg) {
@@ -1165,6 +1169,7 @@ int docmd_prv(arg_struct *arg) {
                 || v->type == TYPE_LIST
                 && ((vartype_list *) v)->size > 0) {
             prv_var = v;
+            prv_prreg = false;
             prv_index = 0;
             mode_interruptible = prv_worker;
             mode_stoppable = true;
@@ -1188,13 +1193,21 @@ static int prv_worker(bool interrupted) {
 
     if (prv_var->type == TYPE_REALMATRIX) {
         vartype_realmatrix *rm = (vartype_realmatrix *) prv_var;
-        i = prv_index / rm->columns;
-        j = prv_index % rm->columns;
         sz = rm->rows * rm->columns;
-        llen = int2string(i + 1, lbuf, 32);
-        char2buf(lbuf, 32, &llen, ':');
-        llen += int2string(j + 1, lbuf + llen, 32 - llen);
-        char2buf(lbuf, 32, &llen, '=');
+        if (prv_prreg) {
+            char2buf(lbuf, 32, &llen, 'R');
+            if (prv_index < 10)
+                char2buf(lbuf, 32, &llen, '0');
+            llen += int2string(prv_index, lbuf + llen, 32 - llen);
+            char2buf(lbuf, 32, &llen, '=');
+        } else {
+            i = prv_index / rm->columns;
+            j = prv_index % rm->columns;
+            llen = int2string(i + 1, lbuf, 32);
+            char2buf(lbuf, 32, &llen, ':');
+            llen += int2string(j + 1, lbuf + llen, 32 - llen);
+            char2buf(lbuf, 32, &llen, '=');
+        }
         if (rm->array->is_string[prv_index] != 0) {
             char *text;
             int4 len;
@@ -1216,15 +1229,23 @@ static int prv_worker(bool interrupted) {
         }
     } else if (prv_var->type == TYPE_COMPLEXMATRIX) {
         vartype_complexmatrix *cm = (vartype_complexmatrix *) prv_var;
+        sz = cm->rows * cm->columns;
+        if (prv_prreg) {
+            char2buf(lbuf, 32, &llen, 'R');
+            if (prv_index < 10)
+                char2buf(lbuf, 32, &llen, '0');
+            llen += int2string(prv_index, lbuf + llen, 32 - llen);
+            char2buf(lbuf, 32, &llen, '=');
+        } else {
+            i = prv_index / cm->columns;
+            j = prv_index % cm->columns;
+            llen = int2string(i + 1, lbuf, 32);
+            char2buf(lbuf, 32, &llen, ':');
+            llen += int2string(j + 1, lbuf + llen, 32 - llen);
+            char2buf(lbuf, 32, &llen, '=');
+        }
         vartype_complex cpx;
         cpx.type = TYPE_COMPLEX;
-        i = prv_index / cm->columns;
-        j = prv_index % cm->columns;
-        sz = cm->rows * cm->columns;
-        llen = int2string(i + 1, lbuf, 32);
-        char2buf(lbuf, 32, &llen, ':');
-        llen += int2string(j + 1, lbuf + llen, 32 - llen);
-        char2buf(lbuf, 32, &llen, '=');
         cpx.re = cm->array->data[2 * prv_index];
         cpx.im = cm->array->data[2 * prv_index + 1];
         rlen = vartype2string((vartype *) &cpx, rbuf, 100);
@@ -1260,6 +1281,24 @@ static int prv_worker(bool interrupted) {
         shell_annunciators(-1, -1, 0, -1, -1, -1);
         return ERR_NONE;
     }
+}
+
+int docmd_prreg(arg_struct *arg) {
+    vartype *regs = recall_var("REGS", 4);
+    if (regs == NULL)
+        return ERR_NONEXISTENT;
+    if (!flags.f.printer_enable && program_running())
+        return ERR_NONE;
+    if (!flags.f.printer_exists)
+        return ERR_PRINTING_IS_DISABLED;
+    shell_annunciators(-1, -1, 1, -1, -1, -1);
+    print_text(NULL, 0, true);
+    prv_var = regs;
+    prv_prreg = true;
+    prv_index = 0;
+    mode_interruptible = prv_worker;
+    mode_stoppable = true;
+    return ERR_INTERRUPTIBLE;
 }
 
 int docmd_prstk(arg_struct *arg) {
@@ -1326,34 +1365,50 @@ int docmd_prstk(arg_struct *arg) {
     return ERR_NONE;
 }
 
-int docmd_pra(arg_struct *arg) {
-    // arg == NULL if we're called to do TRACE mode auto-print
-    if (arg != NULL && !flags.f.printer_enable && program_running())
+static int pra_helper(bool trace, const char *text, int length) {
+    if (!trace && !flags.f.printer_enable && program_running())
         return ERR_NONE;
     if (!flags.f.printer_exists)
         return ERR_PRINTING_IS_DISABLED;
     shell_annunciators(-1, -1, 1, -1, -1, -1);
-    if (reg_alpha_length == 0)
+    if (length == 0)
         print_text(NULL, 0, true);
     else {
         int line_start = 0;
         int width = flags.f.double_wide_print ? 12 : 24;
         int i;
-        for (i = 0; i < reg_alpha_length; i++) {
-            if (reg_alpha[i] == 10) {
-                print_text(reg_alpha + line_start, i - line_start, true);
+        for (i = 0; i < length; i++) {
+            if (text[i] == 10) {
+                print_text(text + line_start, i - line_start, true);
                 line_start = i + 1;
             } else if (i == line_start + width) {
-                print_text(reg_alpha + line_start, i - line_start, true);
+                print_text(text + line_start, i - line_start, true);
                 line_start = i;
             }
         }
-        if (line_start < reg_alpha_length
-                || (line_start > 0 && reg_alpha[line_start - 1] == 10))
-            print_text(reg_alpha + line_start,
-                       reg_alpha_length - line_start, true);
+        if (line_start < length
+                || (line_start > 0 && text[line_start - 1] == 10))
+            print_text(text + line_start,
+                       length - line_start, true);
     }
     shell_annunciators(-1, -1, 0, -1, -1, -1);
+    return ERR_NONE;
+}
+
+int docmd_pra(arg_struct *arg) {
+    // arg == NULL if we're called to do TRACE mode auto-print
+    return pra_helper(arg == NULL, reg_alpha, reg_alpha_length);
+}
+
+int docmd_xview(arg_struct *arg) {
+    vartype_string *s = (vartype_string *) stack[sp];
+    aview_helper(s->txt(), s->length);
+    if (flags.f.printer_enable || !program_running()) {
+        if (flags.f.printer_exists)
+            pra_helper(false, s->txt(), s->length);
+        else
+            return ERR_STOP;
+    }
     return ERR_NONE;
 }
 
@@ -1398,6 +1453,7 @@ int docmd_prx(arg_struct *arg) {
                             || stack[sp]->type == TYPE_LIST
                             && ((vartype_list *) stack[sp])->size > 0)) {
             prv_var = stack[sp];
+            prv_prreg = false;
             prv_index = 0;
             mode_interruptible = prv_worker;
             mode_stoppable = true;

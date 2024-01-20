@@ -1,6 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Free42 -- an HP-42S calculator simulator
-// Copyright (C) 2004-2022  Thomas Okken
+// Copyright (C) 2004-2024  Thomas Okken
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2,
@@ -710,11 +710,11 @@ unsigned char *skin_keymap_lookup(guint keyval, bool printable,
                 && alt == entry->alt
                 && (printable || shift == entry->shift)
                 && keyval == entry->keyval) {
-            if (cshift == entry->cshift) {
+            if (shift == entry->shift && cshift == entry->cshift) {
                 *exact = true;
                 return entry->macro;
             }
-            if (cshift)
+            if ((shift || !entry->shift) && (cshift || !entry->cshift) && macro == NULL)
                 macro = entry->macro;
         }
     }

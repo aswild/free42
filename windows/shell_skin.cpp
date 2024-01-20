@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2022  Thomas Okken
+ * Copyright (C) 2004-2024  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -135,6 +135,7 @@ keymap_entry *parse_keymap_entry(char *line, int lineno) {
         char *tok;
         bool ctrl = false;
         bool alt = false;
+        bool extended = false;
         bool shift = false;
         bool cshift = false;
         int keycode = 0;
@@ -154,6 +155,8 @@ keymap_entry *parse_keymap_entry(char *line, int lineno) {
                 ctrl = true;
             else if (_stricmp(tok, "alt") == 0)
                 alt = true;
+            else if (_stricmp(tok, "extended") == 0)
+                extended = true;
             else if (_stricmp(tok, "shift") == 0)
                 shift = true;
             else if (_stricmp(tok, "cshift") == 0)
@@ -194,6 +197,7 @@ keymap_entry *parse_keymap_entry(char *line, int lineno) {
 
         entry.ctrl = ctrl;
         entry.alt = alt;
+        entry.extended = extended;
         entry.shift = shift;
         entry.cshift = cshift;
         entry.keycode = keycode;
@@ -784,7 +788,7 @@ unsigned char *skin_find_macro(int ckey, bool *is_name) {
     return NULL;
 }
 
-unsigned char *skin_keymap_lookup(int keycode, bool ctrl, bool alt, bool shift, bool cshift, bool *exact) {
+unsigned char *skin_keymap_lookup(int keycode, bool ctrl, bool alt, bool extended, bool shift, bool cshift, bool *exact) {
     int i;
     unsigned char *macro = NULL;
     for (i = 0; i < keymap_length; i++) {
@@ -793,11 +797,11 @@ unsigned char *skin_keymap_lookup(int keycode, bool ctrl, bool alt, bool shift, 
                 && ctrl == entry->ctrl
                 && alt == entry->alt
                 && shift == entry->shift) {
-            if (cshift == entry->cshift) {
+            if (extended == entry->extended && cshift == entry->cshift) {
                 *exact = true;
                 return entry->macro;
             }
-            if (cshift)
+            if ((extended || !entry->extended) && (cshift || !entry->cshift))
                 macro = entry->macro;
         }
     }
@@ -887,13 +891,13 @@ void skin_repaint_display(HDC hdc) {
     if (!display_enabled)
         return;
     Graphics g(hdc);
-    g.TranslateTransform((REAL) display_loc.x, (REAL) display_loc.y);
+    g.SetClip(Rect(display_loc.x - 1, display_loc.y - 1, ((int) ceil(display_scale_x * 131)) + 2, ((int) ceil(display_scale_y * 16)) + 2));
+    g.TranslateTransform((REAL) (display_loc.x + 1), (REAL) (display_loc.y + 1));
     g.ScaleTransform((REAL) display_scale_x, (REAL) display_scale_y);
     if (display_scale_int)
         g.SetInterpolationMode(InterpolationModeNearestNeighbor);
     else
         g.SetInterpolationMode(InterpolationModeBicubic);
-    g.SetClip(Rect(-1, -1, 131 + 2, 16 + 2));
     g.DrawImage(disp_bitmap, -2, -2, 131 + 4, 16 + 4);
 }
 

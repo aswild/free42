@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2022  Thomas Okken
+ * Copyright (C) 2004-2024  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -595,40 +595,6 @@ static int mappable_sqrt_r(phloat x, phloat *y) {
     }
 }
 
-static int mappable_sqrt_c(phloat xre, phloat xim, phloat *yre, phloat *yim) {
-    if (xre == 0 && xim == 0) {
-        *yre = 0;
-        *yim = 0;
-        return ERR_NONE;
-    }
-
-    phloat r = hypot(xre, xim);
-    phloat a = sqrt((r + fabs(xre)) / 2);
-    phloat b = xim / (a * 2);
-
-    if (p_isinf(a)) {
-        xre /= 100;
-        xim /= 100;
-        r = hypot(xre, xim);
-        a = sqrt((r + fabs(xre)) / 2);
-        b = xim / (a * 2);
-        a *= 10;
-        b *= 10;
-    }
-
-    if (xre >= 0) {
-        *yre = a;
-        *yim = b;
-    } else if (b >= 0) {
-        *yre = b;
-        *yim = a;
-    } else {
-        *yre = -b;
-        *yim = -a;
-    }
-    return ERR_NONE;
-}
-
 int docmd_sqrt(arg_struct *arg) {
     if (stack[sp]->type == TYPE_REAL) {
         phloat x = ((vartype_real *) stack[sp])->x;
@@ -645,7 +611,7 @@ int docmd_sqrt(arg_struct *arg) {
         return ERR_NONE;
     } else {
         vartype *v;
-        int err = map_unary(stack[sp], &v, mappable_sqrt_r, mappable_sqrt_c);
+        int err = map_unary(stack[sp], &v, mappable_sqrt_r, math_sqrt);
         if (err != ERR_NONE)
             return err;
         unary_result(v);
@@ -1088,6 +1054,9 @@ int docmd_stoflag(arg_struct *arg) {
         new_rad = -1;
     if (new_g != -1 || new_rad != -1)
         shell_annunciators(-1, -1, -1, -1, new_g, new_rad);
+
+    if (b <= 30 && e >= 30 && ((lfs >> 30) & 1) == 1)
+        mode_disable_stack_lift = true;
 
     return ERR_NONE;
 }

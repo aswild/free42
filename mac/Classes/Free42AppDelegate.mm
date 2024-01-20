@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2022  Thomas Okken
+ * Copyright (C) 2004-2024  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -119,6 +119,7 @@ static bool is_file(const char *name);
 @synthesize prefsMatrixOutOfRange;
 @synthesize prefsAutoRepeat;
 @synthesize prefsAllowBigStack;
+@synthesize prefsLocalizedCopyPaste;
 @synthesize prefsPrintText;
 @synthesize prefsPrintTextFile;
 @synthesize prefsPrintTextRaw;
@@ -487,7 +488,7 @@ static void low_battery_checker(CFRunLoopTimerRef timer, void *info) {
 - (IBAction) showAbout:(id)sender {
     const char *version = [Free42AppDelegate getVersion];
     [aboutVersion setStringValue:[NSString stringWithFormat:@"Free42 %s", version]];
-    [aboutCopyright setStringValue:@"© 2004-2022 Thomas Okken"];
+    [aboutCopyright setStringValue:@"© 2004-2024 Thomas Okken"];
     [NSApp runModalForWindow:aboutWindow];
 }
 
@@ -496,6 +497,7 @@ static void low_battery_checker(CFRunLoopTimerRef timer, void *info) {
     [prefsMatrixOutOfRange setState:core_settings.matrix_outofrange];
     [prefsAutoRepeat setState:core_settings.auto_repeat];
     [prefsAllowBigStack setState:core_settings.allow_big_stack];
+    [prefsLocalizedCopyPaste setState:core_settings.localized_copy_paste];
     [prefsPrintText setState:state.printerToTxtFile];
     [prefsPrintTextFile setStringValue:[NSString stringWithUTF8String:state.printerTxtFileName]];
     [prefsPrintGIF setState:state.printerToGifFile];
@@ -510,6 +512,7 @@ static void low_battery_checker(CFRunLoopTimerRef timer, void *info) {
     core_settings.auto_repeat = [prefsAutoRepeat state];
     bool oldBigStack = core_settings.allow_big_stack;
     core_settings.allow_big_stack = [prefsAllowBigStack state];
+    core_settings.localized_copy_paste = [prefsLocalizedCopyPaste state];
     if (oldBigStack != core_settings.allow_big_stack)
         core_update_allow_big_stack();
     state.printerToTxtFile = [prefsPrintText state];
@@ -547,13 +550,13 @@ static void low_battery_checker(CFRunLoopTimerRef timer, void *info) {
 
 - (IBAction) browsePrintTextFile:(id)sender {
     FileSavePanel *saveDlg = [FileSavePanel panelWithTitle:@"Select Text File Name" types:@"Text;txt;All Files;*" path:[prefsPrintTextFile stringValue]];
-    if ([saveDlg runModal] == NSOKButton)
+    if ([saveDlg runModal] == NSModalResponseOK)
         [prefsPrintTextFile setStringValue:[saveDlg path]];
 }
 
 - (IBAction) browsePrintGIFFile:(id)sender {
     FileSavePanel *saveDlg = [FileSavePanel panelWithTitle:@"Select GIF File Name" types:@"GIF;gif;All Files;*" path:[prefsPrintGIFFile stringValue]];
-    if ([saveDlg runModal] == NSOKButton)
+    if ([saveDlg runModal] == NSModalResponseOK)
         [prefsPrintGIFFile setStringValue:[saveDlg path]];
 }
 
@@ -578,7 +581,7 @@ static void low_battery_checker(CFRunLoopTimerRef timer, void *info) {
 
 - (IBAction) importPrograms:(id)sender {
     FileOpenPanel *openDlg = [FileOpenPanel panelWithTitle:@"Import Programs" types:@"Program Files;raw;All Files;*"];
-    if ([openDlg runModal] == NSOKButton) {
+    if ([openDlg runModal] == NSModalResponseOK) {
         NSArray* paths = [openDlg paths];
         for (int i = 0; i < [paths count]; i++) {
             NSString* fileName = [paths objectAtIndex:i];
@@ -631,7 +634,7 @@ static void low_battery_checker(CFRunLoopTimerRef timer, void *info) {
         }
     }
     FileSavePanel *saveDlg = [FileSavePanel panelWithTitle:@"Export Programs" types:@"Program Files;raw;All Files;*" path:name];
-    if ([saveDlg runModal] == NSOKButton) {
+    if ([saveDlg runModal] == NSModalResponseOK) {
         NSString *fileName = [saveDlg path];
         char cFileName[1024];
         [fileName getCString:cFileName maxLength:1024 encoding:NSUTF8StringEncoding];
@@ -877,11 +880,12 @@ static void tbnonewliner() {
         return;
     if (taskSuccess[0] && taskSuccess[1]) {
         char buf1[FILENAMELEN], buf2[FILENAMELEN];
+        const char *sname = [[skinName stringByRemovingPercentEncoding] UTF8String];
         snprintf(buf1, FILENAMELEN, "%s/_temp_gif_", free42dirname);
-        snprintf(buf2, FILENAMELEN, "%s/%s.gif", free42dirname, [skinName UTF8String]);
+        snprintf(buf2, FILENAMELEN, "%s/%s.gif", free42dirname, sname);
         rename(buf1, buf2);
         snprintf(buf1, FILENAMELEN, "%s/_temp_layout_", free42dirname);
-        snprintf(buf2, FILENAMELEN, "%s/%s.layout", free42dirname, [skinName UTF8String]);
+        snprintf(buf2, FILENAMELEN, "%s/%s.layout", free42dirname, sname);
         rename(buf1, buf2);
         if (loadSkinsWindowMapped)
             show_message("Message", "Skin Loaded");
@@ -988,7 +992,7 @@ static char version[32] = "";
     [alert addButtonWithTitle:@"OK"];
     [alert setMessageText:title];
     [alert setInformativeText:message];
-    [alert setAlertStyle:NSCriticalAlertStyle];
+    [alert setAlertStyle:NSAlertStyleCritical];
     [alert runModal];
 }
 
@@ -1250,12 +1254,13 @@ void calc_keydown(NSString *characters, NSUInteger flags, unsigned short keycode
         return;
     unsigned short c = [characters characterAtIndex:0];
     
-    bool printable = len == 1 && c >= 32 && c <= 126;
+    bool printable = len == 1 && c >= 33 && c <= 126;
     just_pressed_shift = false;
     
-    bool ctrl = (flags & NSControlKeyMask) != 0;
-    bool alt = (flags & NSAlternateKeyMask) != 0;
-    bool shift = (flags & NSShiftKeyMask) != 0;
+    bool ctrl = (flags & NSEventModifierFlagControl) != 0;
+    bool alt = (flags & NSEventModifierFlagOption) != 0;
+    bool numpad = (flags & NSEventModifierFlagNumericPad) != 0;
+    bool shift = (flags & NSEventModifierFlagShift) != 0;
     bool cshift = ann_shift != 0;
     
     if (ckey != 0) {
@@ -1264,20 +1269,19 @@ void calc_keydown(NSString *characters, NSUInteger flags, unsigned short keycode
     }
     
     bool exact;
-    unsigned char *key_macro = skin_keymap_lookup(c, printable,
-                                                  ctrl, alt, shift, cshift, &exact);
+    unsigned char *key_macro = skin_keymap_lookup(c, printable, ctrl, alt, numpad, shift, cshift, &exact);
     if (key_macro == NULL || !exact) {
         for (int i = 0; i < keymap_length; i++) {
             keymap_entry *entry = keymap + i;
             if (ctrl == entry->ctrl
-                && alt == entry->alt
-                && (printable || shift == entry->shift)
-                && c == entry->keychar) {
-                if (cshift == entry->cshift) {
+                    && alt == entry->alt
+                    && (printable || shift == entry->shift)
+                    && c == entry->keychar) {
+                if ((!numpad || shift == entry->shift) && numpad == entry->numpad && cshift == entry->cshift) {
                     key_macro = entry->macro;
                     break;
                 } else {
-                    if (cshift && key_macro == NULL)
+                    if ((numpad || !entry->numpad) && (cshift || !entry->cshift) && key_macro == NULL)
                         key_macro = entry->macro;
                 }
             }
@@ -1290,7 +1294,7 @@ void calc_keydown(NSString *characters, NSUInteger flags, unsigned short keycode
         // effect for R/S will never be overridden by the special cases
         // for the ALPHA and A..F menus.
         if (!ctrl && !alt) {
-            if (printable && core_alpha_menu()) {
+            if ((printable || c == ' ') && core_alpha_menu()) {
                 if (c >= 'a' && c <= 'z')
                     c = c + 'A' - 'a';
                 else if (c >= 'A' && c <= 'Z')
@@ -1398,7 +1402,7 @@ void calc_keyup(NSString *characters, NSUInteger flags, unsigned short keycode) 
 
 void calc_keymodifierschanged(NSUInteger flags) {
     static bool shift_was_down = false;
-    bool shift_is_down = (flags & NSShiftKeyMask) != 0;
+    bool shift_is_down = (flags & NSEventModifierFlagShift) != 0;
     if (shift_is_down == shift_was_down)
         return;
     shift_was_down = shift_is_down;
@@ -1439,17 +1443,9 @@ int8 shell_random_seed() {
     return tv.tv_sec * 1000LL + tv.tv_usec / 1000;
 }
 
-void shell_beeper(int frequency, int duration) {
-    const int cutoff_freqs[] = { 164, 220, 243, 275, 293, 324, 366, 418, 438, 550 };
-    for (int i = 0; i < 10; i++) {
-        if (frequency <= cutoff_freqs[i]) {
-            AudioServicesPlaySystemSound(soundIDs[i]);
-            shell_delay(250);
-            return;
-        }
-    }
-    AudioServicesPlaySystemSound(soundIDs[10]);
-    shell_delay(125);
+void shell_beeper(int tone) {
+    AudioServicesPlaySystemSound(soundIDs[tone]);
+    shell_delay(tone == 10 ? 125 : 250);
 }
 
 bool shell_low_battery() {
@@ -1467,10 +1463,23 @@ uint4 shell_milliseconds() {
     return (uint4) (tv.tv_sec * 1000L + tv.tv_usec / 1000);
 }
 
-bool shell_decimal_point() {
+const char *shell_number_format() {
     NSLocale *loc = [NSLocale currentLocale];
-    NSString *dec = [loc objectForKey:NSLocaleDecimalSeparator];
-    return ![dec isEqualToString:@","];
+    static NSString *f = nil;
+    [f release];
+    f = [loc objectForKey:NSLocaleDecimalSeparator];
+    NSNumberFormatter *fmt = [[NSNumberFormatter alloc] init];
+    fmt.numberStyle = NSNumberFormatterDecimalStyle;
+    if (fmt.usesGroupingSeparator) {
+        NSString *sep = [loc objectForKey:NSLocaleGroupingSeparator];
+        int ps = fmt.groupingSize;
+        int ss = fmt.secondaryGroupingSize;
+        if (ss == 0)
+            ss = ps;
+        f = [NSString stringWithFormat:@"%@%@%c%c", f, sep, '0' + ps, '0' + ss];
+    }
+    [f retain];
+    return [f UTF8String];
 }
 
 int shell_date_format() {
@@ -1800,7 +1809,10 @@ static void init_shell_state(int4 version) {
         case 3:
             /* fall through */
         case 4:
-            /* current version (SHELL_VERSION = 4),
+            core_settings.localized_copy_paste = true;
+            /* fall through */
+        case 5:
+            /* current version (SHELL_VERSION = 5),
              * so nothing to do here since everything
              * was initialized from the state file.
              */
@@ -1848,6 +1860,9 @@ static int read_shell_state(int4 *ver) {
 
     if (state_version >= 3)
         core_settings.allow_big_stack = state.allow_big_stack;
+
+    if (state_version >= 5)
+        core_settings.localized_copy_paste = state.localized_copy_paste;
     
     init_shell_state(state_version);
     *ver = version;
@@ -1872,6 +1887,7 @@ static int write_shell_state() {
     state.matrix_outofrange = core_settings.matrix_outofrange;
     state.auto_repeat = core_settings.auto_repeat;
     state.allow_big_stack = core_settings.allow_big_stack;
+    state.localized_copy_paste = core_settings.localized_copy_paste;
     if (fwrite(&state, 1, sizeof(state_type), statefile) != sizeof(state_type))
         return 0;
     

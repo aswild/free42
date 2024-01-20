@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2022  Thomas Okken
+ * Copyright (C) 2004-2024  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -69,6 +69,7 @@ public class PreferencesDialog extends Dialog {
     private CheckBox matrixOutOfRangeCB;
     private CheckBox autoRepeatCB;
     private CheckBox allowBigStackCB;
+    private CheckBox localizedCopyPasteCB;
     private CheckBox alwaysOnCB;
     private SeekBar keyClicksSB;
     private SeekBar hapticSB;
@@ -95,6 +96,7 @@ public class PreferencesDialog extends Dialog {
         matrixOutOfRangeCB = (CheckBox) findViewById(R.id.matrixOutOfRangeCB);
         autoRepeatCB = (CheckBox) findViewById(R.id.autoRepeatCB);
         allowBigStackCB = (CheckBox) findViewById(R.id.allowBigStackCB);
+        localizedCopyPasteCB = (CheckBox) findViewById(R.id.localizedCopyPasteCB);
         alwaysOnCB = (CheckBox) findViewById(R.id.alwaysOnCB);
         keyClicksSB = (SeekBar) findViewById(R.id.keyClicksSB);
         keyClicksSB.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -104,7 +106,7 @@ public class PreferencesDialog extends Dialog {
                 if (fromUser) {
                     if (val != prevVal) {
                         if (val > 0)
-                            Free42Activity.instance.playSound(val + 10, 0);
+                            Free42Activity.instance.playSound(val + 10);
                         prevVal = val;
                     }
                 }
@@ -214,8 +216,6 @@ public class PreferencesDialog extends Dialog {
     }
     
     private void browseTextFileName(Context context) {
-        if (!Free42Activity.checkStorageAccess())
-            return;
         FileSelectionDialog fsd = new FileSelectionDialog(context, new String[] { "txt", "*" });
         fsd.setPath(printToTextFileNameTF.getText().toString());
         fsd.setOkListener(new FileSelectionDialog.OkListener() {
@@ -227,8 +227,6 @@ public class PreferencesDialog extends Dialog {
     }
     
     private void browseGifFileName(Context context) {
-        if (!Free42Activity.checkStorageAccess())
-            return;
         FileSelectionDialog fsd = new FileSelectionDialog(context, new String[] { "gif", "*" });
         fsd.setPath(printToGifFileNameTF.getText().toString());
         fsd.setOkListener(new FileSelectionDialog.OkListener() {
@@ -269,6 +267,14 @@ public class PreferencesDialog extends Dialog {
 
     public boolean getAllowBigStack() {
         return allowBigStackCB.isChecked();
+    }
+
+    public void setLocalizedCopyPaste(boolean b) {
+        localizedCopyPasteCB.setChecked(b);
+    }
+
+    public boolean getLocalizedCopyPaste() {
+        return localizedCopyPasteCB.isChecked();
     }
 
     public void setAlwaysOn(boolean b) {

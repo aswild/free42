@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2022  Thomas Okken
+ * Copyright (C) 2004-2024  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -19,6 +19,7 @@ package com.thomasokken.free42;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -49,6 +50,7 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.res.Configuration;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -68,10 +70,10 @@ import android.media.SoundPool;
 import android.net.Uri;
 import android.os.BatteryManager;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Vibrator;
+import android.provider.OpenableColumns;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
@@ -104,12 +106,19 @@ public class Free42Activity extends Activity {
 
     public static final String[] builtinSkinNames = new String[] { "Standard", "Landscape" };
     
-    private static final int SHELL_VERSION = 19;
+    private static final int SHELL_VERSION = 21;
     
     private static final int PRINT_BACKGROUND_COLOR = Color.LTGRAY;
     
     private static final int MY_PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION = 1;
-    
+
+    public static final int IMPORT_RAW = 1;
+    public static final int EXPORT_RAW = 2;
+    public static final int IMPORT_STATE = 3;
+    public static final int EXPORT_STATE = 4;
+    public static final int IMPORT_FILE = 5;
+    public static final int EXPORT_FILE = 6;
+
     public static Free42Activity instance;
     
     static {
@@ -124,6 +133,7 @@ public class Free42Activity extends Activity {
     private boolean printViewShowing;
     private PreferencesDialog preferencesDialog;
     private AlertDialog programImportExportMenuDialog;
+    private AlertDialog fileManagementMenuDialog;
     private Handler mainHandler;
     private boolean alwaysOn;
     
@@ -446,7 +456,8 @@ public class Free42Activity extends Activity {
         impTemp = importedProgram;
         importedProgram = null;
         if (impTemp != null) {
-            doImport2(impTemp);
+            core_import_programs(impTemp);
+            redisplay();
             new File(impTemp).delete();
         }
     }
@@ -597,10 +608,10 @@ public class Free42Activity extends Activity {
         final String[] itemsArr = {
             "Show Print-Out",
             "Program Import & Export",
+            "File Import & Export",
             "States",
             "Preferences",
             "Select Skin",
-            "Skin: Other...",
             "Copy",
             "Paste",
             "About Free42",
@@ -621,16 +632,16 @@ public class Free42Activity extends Activity {
                 postProgramImportExportMenu();
                 return;
             case 2:
+                postFileManagementMenu();
+                break;
+            case 3:
                 doStates(null);
                 return;
-            case 3:
+            case 4:
                 doPreferences();
                 return;
-            case 4:
-                doSelectSkin();
-                break;
             case 5:
-                doSkinOther();
+                doSelectSkin();
                 break;
             case 6:
                 doCopy();
@@ -683,7 +694,62 @@ public class Free42Activity extends Activity {
             // default: Cancel; do nothing
         }
     }
-    
+
+    private void postFileManagementMenu() {
+        if (programImportExportMenuDialog == null) {
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("File Management Menu");
+            List<String> itemsList = new ArrayList<String>();
+            itemsList.add("Import File");
+            itemsList.add("Export File");
+            itemsList.add("Delete File or Directory");
+            itemsList.add("Back");
+            itemsList.add("Cancel");
+            builder.setItems(itemsList.toArray(new String[itemsList.size()]),
+                    new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialog, int which) {
+                            fileManagementMenuItemSelected(which);
+                        }
+                    });
+            fileManagementMenuDialog = builder.create();
+        }
+        fileManagementMenuDialog.show();
+    }
+
+    private void fileManagementMenuItemSelected(int which) {
+        switch (which) {
+            case 0:
+                doImportFile();
+                return;
+            case 1:
+                doExportFile();
+                return;
+            case 2:
+                doDeleteFileOrDirectory();
+                return;
+            case 3:
+                postMainMenu();
+                return;
+            // default: Cancel; do nothing
+        }
+    }
+
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (resultCode != Activity.RESULT_OK || data == null)
+            return;
+        Uri uri = data.getData();
+        if (uri == null)
+            return;
+        switch (requestCode) {
+            case IMPORT_RAW: doImportRaw(uri); break;
+            case EXPORT_RAW: doExportRaw(uri); break;
+            case IMPORT_STATE: StatesDialog.doImport2(uri); break;
+            case EXPORT_STATE: StatesDialog.doExport2(uri); break;
+            case IMPORT_FILE: doImportFile2(uri); break;
+            case EXPORT_FILE: doExportFile3(uri); break;
+        }
+    }
+
     private void doSelectSkin() {
         SkinSelectDialog ssd = new SkinSelectDialog(this);
         ssd.setListener(new SkinSelectDialog.Listener() {
@@ -693,21 +759,6 @@ public class Free42Activity extends Activity {
             }
         });
         ssd.show();
-    }
-
-    private void doSkinOther() {
-        if (!checkStorageAccess())
-            return;
-        FileSelectionDialog fsd = new FileSelectionDialog(this, new String[] { "layout", "*" });
-        if (externalSkinName[orientation].length() > 0)
-            fsd.setPath(externalSkinName[orientation] + ".layout");
-        fsd.setOkListener(new FileSelectionDialog.OkListener() {
-            public void okPressed(String path) {
-                if (path.endsWith(".layout"))
-                    doSelectSkin(path.substring(0, path.length() - 7));
-            }
-        });
-        fsd.show();
     }
 
     public static String getSelectedSkin() {
@@ -764,22 +815,48 @@ public class Free42Activity extends Activity {
     }
     
     private void doImport() {
-        if (!checkStorageAccess())
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        // TODO: Is there any point to putExtra() when opening a document?
+        // intent.putExtra(Intent.EXTRA_TITLE, "Importing, eh?");
+        startActivityForResult(intent, IMPORT_RAW);
+    }
+
+    private void doImportRaw(Uri uri) {
+        String name = getNameFromUri(uri);
+        if (name == null || !name.toLowerCase().endsWith(".raw"))
             return;
-        FileSelectionDialog fsd = new FileSelectionDialog(this, new String[] { "raw", "*" });
-        fsd.setOkListener(new FileSelectionDialog.OkListener() {
-            public void okPressed(String path) {
-                doImport2(path);
-            }
-        });
-        fsd.show();
+        InputStream is = null;
+        OutputStream os = null;
+        String tempName = "_TEMP_RAW_";
+        try {
+            is = getContentResolver().openInputStream(uri);
+            os = openFileOutput(tempName, Context.MODE_PRIVATE);
+            byte[] buf = new byte[1024];
+            int n;
+            while ((n = is.read(buf)) != -1)
+                os.write(buf, 0, n);
+            tempName = getFilesDir() + "/" + tempName;
+        } catch (IOException e) {
+            tempName = null;
+        } finally {
+            if (is != null)
+                try {
+                    is.close();
+                } catch (IOException e2) {}
+            if (os != null)
+                try {
+                    os.close();
+                } catch (IOException e2) {}
+        }
+        if (tempName != null) {
+            core_import_programs(tempName);
+            redisplay();
+            new File(tempName).delete();
+        }
     }
-    
-    private void doImport2(String path) {
-        core_import_programs(path);
-        redisplay();
-    }
-    
+
     private boolean[] selectedProgramIndexes;
     private String[] programNames;
     private boolean exportShare;
@@ -806,8 +883,6 @@ public class Free42Activity extends Activity {
     }
 
     private void doExport(boolean share) {
-        if (!share && !checkStorageAccess())
-            return;
         exportShare = share;
         programNames = core_list_programs();
         selectedProgramIndexes = new boolean[programNames.length];
@@ -832,11 +907,213 @@ public class Free42Activity extends Activity {
         builder.create().show();
     }
 
+    private String fileMgmtPath = "";
+    private Uri fileMgmtImportUri;
+    private String fileMgmtExportPath;
+
+    private void doImportFile() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        // TODO: Is there any point to putExtra() when opening a document?
+        // intent.putExtra(Intent.EXTRA_TITLE, "Importing, eh?");
+        startActivityForResult(intent, IMPORT_FILE);
+    }
+
+    private void doImportFile2(Uri uri) {
+        fileMgmtImportUri = uri;
+        String name = getNameFromUri(uri);
+        int lastdot = name.lastIndexOf('.');
+        String[] suffixes;
+        if (lastdot == -1)
+            suffixes = new String[] { "*" };
+        else
+            suffixes = new String[] { name.substring(lastdot + 1), "*" };
+        FileSelectionDialog fsd = new FileSelectionDialog(this, suffixes);
+        fsd.setPath(fileMgmtPath + "/" + name);
+        fsd.setOkListener(new FileSelectionDialog.OkListener() {
+            public void okPressed(String path) {
+                doImportFile3(path);
+            }
+        });
+        fsd.show();
+    }
+
+    private void doImportFile3(String path) {
+        int lastslash = path.lastIndexOf('/');
+        if (lastslash == -1)
+            fileMgmtPath = path;
+        else
+            fileMgmtPath = path.substring(0, lastslash);
+        InputStream is = null;
+        OutputStream os = null;
+        try {
+            is = getContentResolver().openInputStream(fileMgmtImportUri);
+            os = new FileOutputStream(getFilesDir() + "/" + path);
+            byte[] buf = new byte[1024];
+            int n;
+            while ((n = is.read(buf)) != -1)
+                os.write(buf, 0, n);
+        } catch (IOException e) {
+            // TODO: Message box
+        } finally {
+            if (is != null)
+                try {
+                    is.close();
+                } catch (IOException e) {}
+            if (os != null)
+                try {
+                    os.close();
+                } catch (IOException e) {}
+        }
+    }
+
+    private void doExportFile() {
+        FileSelectionDialog fsd = new FileSelectionDialog(this, new String[] { "*" });
+        fsd.setPath(fileMgmtPath);
+        fsd.setOkListener(new FileSelectionDialog.OkListener() {
+            public void okPressed(String path) {
+                doExportFile2(path);
+            }
+        });
+        fsd.show();
+    }
+
+    private void doExportFile2(String path) {
+        fileMgmtExportPath = path;
+        int lastslash = path.lastIndexOf('/');
+        String name = null;
+        if (lastslash == -1) {
+            fileMgmtPath = "";
+            name = path;
+        } else {
+            fileMgmtPath = path.substring(0, lastslash);
+            name = path.substring(lastslash + 1);
+        }
+
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        if (name != null && name.length() != 0)
+            intent.putExtra(Intent.EXTRA_TITLE, name);
+        startActivityForResult(intent, EXPORT_FILE);
+    }
+
+    private void doExportFile3(Uri uri) {
+        InputStream is = null;
+        OutputStream os = null;
+        try {
+            is = new FileInputStream(getFilesDir() + "/" + fileMgmtExportPath);
+            os = getContentResolver().openOutputStream(uri);
+            byte[] buf = new byte[1024];
+            int n;
+            while ((n = is.read(buf)) != -1)
+                os.write(buf, 0, n);
+        } catch (IOException e) {
+            // TODO: Message box
+        } finally {
+            if (is != null)
+                try {
+                    is.close();
+                } catch (IOException e) {}
+            if (os != null)
+                try {
+                    os.close();
+                } catch (IOException e) {}
+        }
+    }
+
+    private void doDeleteFileOrDirectory() {
+        FileSelectionDialog fsd = new FileSelectionDialog(this, null);
+        fsd.setPath(fileMgmtPath);
+        fsd.setOkListener(new FileSelectionDialog.OkListener() {
+            public void okPressed(String path) {
+                doDeleteFileOrDirectory2(path);
+            }
+        });
+        fsd.show();
+    }
+
+    private File fileMgmtDeletionFile;
+
+    private void doDeleteFileOrDirectory2(String path) {
+        if (path.equals("") || path.equals("/"))
+            // Not deleting the home directory!
+            return;
+        File f = new File(getFilesDir() + "/" + path);
+        if (!f.exists())
+            return;
+        fileMgmtDeletionFile = f;
+        if (f.isDirectory()) {
+            if (path.endsWith("/"))
+                path = path.substring(0, path.length() - 1);
+            fileMgmtPath = path;
+            int lastslash = fileMgmtPath.lastIndexOf('/');
+            if (lastslash != -1)
+                fileMgmtPath = fileMgmtPath.substring(0, lastslash);
+            new AlertDialog.Builder(this)
+                    .setTitle("Confirm Delete Directory")
+                    .setMessage("Are you sure you want to delete the directory \"" + f.getName() + "\"?")
+                    .setIcon(android.R.drawable.ic_dialog_info)
+                    .setPositiveButton("OK", new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialog, int whichButton) {
+                            doDeleteDirectory();
+                        }
+                    })
+                    .setNegativeButton("Cancel", null).show();
+        } else {
+            fileMgmtPath = path;
+            int lastslash = fileMgmtPath.lastIndexOf('/');
+            if (lastslash != -1)
+                fileMgmtPath = fileMgmtPath.substring(0, lastslash);
+            new AlertDialog.Builder(this)
+                    .setTitle("Confirm Delete File")
+                    .setMessage("Are you sure you want to delete the file \"" + f.getName() + "\"?")
+                    .setIcon(android.R.drawable.ic_dialog_info)
+                    .setPositiveButton("OK", new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialog, int whichButton) {
+                            fileMgmtDeletionFile.delete();
+                        }
+                    })
+                    .setNegativeButton("Cancel", null).show();
+        }
+    }
+
+    private void doDeleteDirectory() {
+        File[] contents = fileMgmtDeletionFile.listFiles();
+        if (contents == null || contents.length == 0) {
+            fileMgmtDeletionFile.delete();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Directory Not Empty")
+                .setMessage("The directory \"" + fileMgmtDeletionFile.getName() + "\" is not empty; delete anyway?")
+                .setIcon(android.R.drawable.ic_dialog_info)
+                .setPositiveButton("OK", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int whichButton) {
+                        doDeleteDirectory2(fileMgmtDeletionFile);
+                    }
+                })
+                .setNegativeButton("Cancel", null).show();
+    }
+
+    private void doDeleteDirectory2(File dir) {
+        File[] contents = dir.listFiles();
+        if (contents != null)
+            for (File f : contents) {
+                if (f.isDirectory())
+                    doDeleteDirectory2(f);
+                else
+                    f.delete();
+            }
+        dir.delete();
+    }
+
     private void doStates(String selectedState) {
         StatesDialog sd = new StatesDialog(this, selectedState);
         sd.show();
     }
-    
+
     private void doProgramSelectionClick(DialogInterface dialog, int which) {
         if (which == DialogInterface.BUTTON_POSITIVE) {
             String name = null;
@@ -849,12 +1126,9 @@ public class Free42Activity extends Activity {
                 if (exportShare) {
                     doShare();
                 } else {
-                    FileSelectionDialog fsd = new FileSelectionDialog(this, new String[]{"raw", "*"});
-                    fsd.setOkListener(new FileSelectionDialog.OkListener() {
-                        public void okPressed(String path) {
-                            doExport2(path);
-                        }
-                    });
+                    Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType("*/*");
                     if (name.startsWith("\"")) {
                         int q = name.indexOf('"', 1);
                         if (q != -1)
@@ -864,8 +1138,8 @@ public class Free42Activity extends Activity {
                     } else {
                         name = "Untitled.raw";
                     }
-                    fsd.setPath(name);
-                    fsd.show();
+                    intent.putExtra(Intent.EXTRA_TITLE, name);
+                    startActivityForResult(intent, EXPORT_RAW);
                 }
             }
         }
@@ -883,6 +1157,34 @@ public class Free42Activity extends Activity {
             if (selectedProgramIndexes[i])
                 selection[n++] = i;
         core_export_programs(selection, path);
+    }
+
+    private void doExportRaw(Uri uri) {
+        String tempName = "_TEMP_RAW_";
+        String fullTempName = getFilesDir() + "/" + tempName;
+        doExport2(fullTempName);
+        InputStream is = null;
+        OutputStream os = null;
+        try {
+            is = openFileInput(tempName);
+            os = getContentResolver().openOutputStream(uri);
+            byte[] buf = new byte[1024];
+            int n;
+            while ((n = is.read(buf)) != -1)
+                os.write(buf, 0, n);
+        } catch (IOException e) {
+            // ignore
+        } finally {
+            if (is != null)
+                try {
+                    is.close();
+                } catch (IOException e) {}
+            if (os != null)
+                try {
+                    os.close();
+                } catch (IOException e) {}
+        }
+        new File(fullTempName).delete();
     }
 
     private void doShare() {
@@ -941,7 +1243,7 @@ public class Free42Activity extends Activity {
             calcView.invalidate();
             core_repaint_display();
         } catch (IllegalArgumentException e) {
-            shell_beeper(1835, 125);
+            shell_beeper(10);
         }
     }
     
@@ -961,6 +1263,7 @@ public class Free42Activity extends Activity {
         preferencesDialog.setMatrixOutOfRange(cs.matrix_outofrange);
         preferencesDialog.setAutoRepeat(cs.auto_repeat);
         preferencesDialog.setAllowBigStack(cs.allow_big_stack);
+        preferencesDialog.setLocalizedCopyPaste(cs.localized_copy_paste);
         preferencesDialog.setAlwaysOn(shell_always_on(-1));
         preferencesDialog.setKeyClicks(keyClicksLevel);
         preferencesDialog.setKeyVibration(keyVibration);
@@ -986,6 +1289,7 @@ public class Free42Activity extends Activity {
         cs.auto_repeat = preferencesDialog.getAutoRepeat();
         boolean oldBigStack = cs.allow_big_stack;
         cs.allow_big_stack = preferencesDialog.getAllowBigStack();
+        cs.localized_copy_paste = preferencesDialog.getLocalizedCopyPaste();
         putCoreSettings(cs);
         if (oldBigStack != cs.allow_big_stack)
             core_update_allow_big_stack();
@@ -1089,7 +1393,7 @@ public class Free42Activity extends Activity {
 
                 TextView label2 = new TextView(context);
                 label2.setId(3);
-                label2.setText("\u00a9 2004-2022 Thomas Okken");
+                label2.setText("\u00a9 2004-2024 Thomas Okken");
                 lp = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
                 lp.addRule(RelativeLayout.ALIGN_LEFT, label1.getId());
                 lp.addRule(RelativeLayout.BELOW, label1.getId());
@@ -1117,8 +1421,28 @@ public class Free42Activity extends Activity {
                 lp.addRule(RelativeLayout.BELOW, label3.getId());
                 addView(label4, lp);
 
+                TextView label5 = new TextView(context);
+                label5.setId(6);
+                label5.setText("Plus42: Free42 Enhanced");
+                lp = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
+                lp.addRule(RelativeLayout.ALIGN_LEFT, label4.getId());
+                lp.addRule(RelativeLayout.BELOW, label4.getId());
+                lp.setMargins(0, 10, 0, 0);
+                addView(label5, lp);
+
+                TextView label6 = new TextView(context);
+                label6.setId(7);
+                s = new SpannableString("https://thomasokken.com/plus42/");
+                Linkify.addLinks(s, Linkify.WEB_URLS);
+                label6.setText(s);
+                label6.setMovementMethod(LinkMovementMethod.getInstance());
+                lp = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
+                lp.addRule(RelativeLayout.ALIGN_LEFT, label5.getId());
+                lp.addRule(RelativeLayout.BELOW, label5.getId());
+                addView(label6, lp);
+
                 Button okB = new Button(context);
-                okB.setId(6);
+                okB.setId(8);
                 okB.setText("   OK   ");
                 okB.setOnClickListener(new OnClickListener() {
                     public void onClick(View view) {
@@ -1126,7 +1450,7 @@ public class Free42Activity extends Activity {
                     }
                 });
                 lp = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
-                lp.addRule(RelativeLayout.BELOW, label4.getId());
+                lp.addRule(RelativeLayout.BELOW, label6.getId());
                 lp.addRule(RelativeLayout.CENTER_HORIZONTAL);
                 addView(okB, lp);
 
@@ -1776,6 +2100,8 @@ public class Free42Activity extends Activity {
                 cs.auto_repeat = state_read_boolean();
                 if (shell_version >= 18)
                     cs.allow_big_stack = state_read_boolean();
+                if (shell_version >= 20)
+                    cs.localized_copy_paste = state_read_boolean();
                 putCoreSettings(cs);
             }
             init_shell_state(shell_version);
@@ -1852,12 +2178,23 @@ public class Free42Activity extends Activity {
             // fall through
         case 17:
             cs.allow_big_stack = false;
-            putCoreSettings(cs);
             // fall through
         case 18:
             // fall through
         case 19:
-            // current version (SHELL_VERSION = 19),
+            cs.localized_copy_paste = true;
+            putCoreSettings(cs);
+            // fall through
+        case 20: {
+            String homePath = getFilesDir() + "/";
+            if (ShellSpool.printToGifFileName.startsWith(homePath))
+                ShellSpool.printToGifFileName = ShellSpool.printToGifFileName.substring(homePath.length());
+            if (ShellSpool.printToTxtFileName.startsWith(homePath))
+                ShellSpool.printToTxtFileName = ShellSpool.printToTxtFileName.substring(homePath.length());
+            // fall through
+        }
+        case 21:
+            // current version (SHELL_VERSION = 21),
             // so nothing to do here since everything
             // was initialized from the state file.
             ;
@@ -1897,6 +2234,7 @@ public class Free42Activity extends Activity {
             state_write_boolean(cs.matrix_outofrange);
             state_write_boolean(cs.auto_repeat);
             state_write_boolean(cs.allow_big_stack);
+            state_write_boolean(cs.localized_copy_paste);
         } catch (IllegalArgumentException e) {}
     }
     
@@ -2003,7 +2341,7 @@ public class Free42Activity extends Activity {
     
     private void click(View view) {
         if (keyClicksLevel > 0)
-            playSound(keyClicksLevel + 10, 0);
+            playSound(keyClicksLevel + 10);
         if (keyVibration == -1) {
             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
         } else if (keyVibration > 0) {
@@ -2013,7 +2351,8 @@ public class Free42Activity extends Activity {
         }
     }
 
-    public void playSound(int index, int duration) {
+
+    public void playSound(int index) {
         soundPool.play(soundIds[index], 1f, 1f, 0, 0, 1f);
     }
     
@@ -2065,6 +2404,7 @@ public class Free42Activity extends Activity {
         public boolean matrix_outofrange;
         public boolean auto_repeat;
         public boolean allow_big_stack;
+        public boolean localized_copy_paste;
     }
 
     ///////////////////////////////////////////////////
@@ -2100,27 +2440,17 @@ public class Free42Activity extends Activity {
     /**
      * shell_beeper()
      * Callback invoked by the emulator core to play a sound.
-     * The first parameter is the frequency in Hz; the second is the
-     * duration in ms. The sound volume is up to the GUI to control.
+     * The parameter is the tone number, from 0 to 9, or 10 for the error beep.
      * Sound playback should be synchronous (the beeper function should
      * not return until the sound has finished), if possible.
      */
-    public void shell_beeper(int frequency, int duration) {
-        int sound_number = 10;
-        for (int i = 0; i < 10; i++) {
-            if (frequency <= cutoff_freqs[i]) {
-                sound_number = i;
-                break;
-            }
-        }
-        playSound(sound_number, sound_number == 10 ? 125 : 250);
+    public void shell_beeper(int tone) {
+        playSound(tone);
         try {
-            Thread.sleep(sound_number == 10 ? 125 : 250);
+            Thread.sleep(tone == 10 ? 125 : 250);
         } catch (InterruptedException e) {}
     }
 
-    private final int[] cutoff_freqs = { 164, 220, 243, 275, 293, 324, 366, 418, 438, 550 };
-    
     private PrintAnnunciatorTurnerOffer pato = null;
 
     private class PrintAnnunciatorTurnerOffer extends Thread {
@@ -2229,7 +2559,13 @@ public class Free42Activity extends Activity {
      */
     public void shell_powerdown() {
         quit_flag = true;
-        finish();
+        if (android.os.Build.VERSION.SDK_INT < 21)
+            finish();
+        else
+            try {
+                Method m = Free42Activity.class.getMethod("finishAndRemoveTask");
+                m.invoke(this);
+            } catch (Exception e) {}
     }
     
     private class AlwaysOnSetter implements Runnable {
@@ -2258,16 +2594,38 @@ public class Free42Activity extends Activity {
         return ret;
     }
     
-    /**
-     * shell_decimal_point()
-     * Returns 0 if the host's locale uses comma as the decimal separator;
-     * returns 1 if it uses dot or anything else.
-     * Used to initialize flag 28 on hard reset.
+    /** shell_number_format()
+     *
+     * Returns a UTF-8 encoded four-character string, describing the number
+     * formatting parameters for the current locale. The four characters are:
+     * 0: decimal (must be one of '.' or ',')
+     * 1: grouping character (must be one of '.', ',', '\'', or space)
+     * 2: primary grouping size
+     * 3: secondary grouping size
+     * The grouping sizes are encoded as ASCII digits. If there is no grouping,
+     * only the decimal character will be present, so the string will be only 1
+     * character long.
+     * The caller should not modify or free the string.
+     *
+     * The number formatting information is used for Copy and Paste of scalars and
+     * matrices, and to determine the initial setting of flag 28 on cold start.
      */
-    public boolean shell_decimal_point() {
+    public String shell_number_format() {
         DecimalFormat df = new DecimalFormat();
         DecimalFormatSymbols dfsym = df.getDecimalFormatSymbols();
-        return dfsym.getDecimalSeparator() != ',';
+        char dec = dfsym.getDecimalSeparator();
+        if (!df.isGroupingUsed()) {
+            return "" + dec;
+        } else {
+            String n = df.format(100000000000.1);
+            char sep = dfsym.getGroupingSeparator();
+            int decPos = n.indexOf(dec);
+            int sep1Pos = n.lastIndexOf(sep, decPos);
+            int sep2Pos = sep1Pos < 1 ? -1 : n.lastIndexOf(sep, sep1Pos - 1);
+            int g1 = sep1Pos == -1 ? 0 : (decPos - sep1Pos - 1);
+            int g2 = sep2Pos == -1 ? 0 : (sep1Pos - sep2Pos - 1);
+            return "" + dec + sep + ((char) ('0' + g1)) + ((char) ('0' + g2));
+        }
     }
     
     /**
@@ -2322,12 +2680,13 @@ public class Free42Activity extends Activity {
         printPaperView.print(text, bits, bytesperline, x, y, width, height);
 
         if (ShellSpool.printToTxt) {
+            String txtFileName = getFilesDir() + "/" + ShellSpool.printToTxtFileName;
             try {
                 if (printTxtStream == null)
-                    if (new File(ShellSpool.printToTxtFileName).exists())
-                        printTxtStream = new FileOutputStream(ShellSpool.printToTxtFileName, true);
+                    if (new File(txtFileName).exists())
+                        printTxtStream = new FileOutputStream(txtFileName, true);
                     else
-                        printTxtStream = new FileOutputStream(ShellSpool.printToTxtFileName);
+                        printTxtStream = new FileOutputStream(txtFileName);
                 if (text != null)
                     ShellSpool.shell_spool_txt(text, printTxtStream);
                 else
@@ -2385,14 +2744,14 @@ public class Free42Activity extends Activity {
                     seq = seq.substring(seq.length() - 4);
                     name += "." + seq + ".gif";
     
-                    if (!new File(name).exists())
+                    if (!new File(getFilesDir() + "/" + name).exists())
                         break;
                 }
             }
 
             try {
                 if (name != null) {
-                    printGifFile = new RandomAccessFile(name, "rw");
+                    printGifFile = new RandomAccessFile(getFilesDir() + "/" + name, "rw");
                     gif_lines = 0;
                     ShellSpool.shell_start_gif(printGifFile, ShellSpool.maxGifHeight);
                 }
@@ -2620,17 +2979,15 @@ public class Free42Activity extends Activity {
     public void shell_log(String s) {
         Log.i("FREE42", s);
     }
-    
-    public static boolean checkStorageAccess() {
-        return instance.checkStorageAccess2();
-    }
-    
-    private boolean checkStorageAccess2() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
-            getExternalFilesDir(null).mkdirs();
-            return true;
-        }
-        ActivityCompat.requestPermissions(this, new String[] { Manifest.permission.WRITE_EXTERNAL_STORAGE }, MY_PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION);
-        return false;
+
+    public static String getNameFromUri(Uri uri) {
+        Cursor cursor = instance.getContentResolver().query(uri, null, null, null, null);
+        if (cursor == null)
+            return null;
+        int nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+        cursor.moveToFirst();
+        String name = cursor.getString(nameIndex);
+        cursor.close();
+        return name;
     }
 }

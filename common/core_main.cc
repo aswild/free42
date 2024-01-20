@@ -1,6 +1,6 @@
 /*****************************************************************************
  * Free42 -- an HP-42S calculator simulator
- * Copyright (C) 2004-2022  Thomas Okken
+ * Copyright (C) 2004-2024  Thomas Okken
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2,
@@ -91,11 +91,12 @@ void core_init(int read_saved_state, int4 version, const char *state_file_name, 
         // launch with Memory Clear rather than just crashing on startup over
         // and over, and, on iOS and Android, needing to be deleted and
         // reinstalled.
-        state_file_name_crash = (char *) malloc(strlen(state_file_name) + 24);
+        size_t bufsize = strlen(state_file_name) + 24;
+        state_file_name_crash = (char *) malloc(bufsize);
         uint4 date, time;
         int weekday;
         shell_get_time_date(&time, &date, &weekday);
-        sprintf(state_file_name_crash, "%s.%08u%08u.crash", state_file_name, date, time);
+        snprintf(state_file_name_crash, bufsize, "%s.%08u%08u.crash", state_file_name, date, time);
         my_rename(state_file_name, state_file_name_crash);
         gfile = my_fopen(state_file_name_crash, "rb");
         if (gfile == NULL)
@@ -141,11 +142,12 @@ void core_save_state(const char *state_file_name) {
         stop_interruptible();
     set_running(false);
 
-    char *state_file_name_crash = (char *) malloc(strlen(state_file_name) + 24);
+    size_t bufsize = strlen(state_file_name) + 24;
+    char *state_file_name_crash = (char *) malloc(bufsize);
     uint4 date, time;
     int weekday;
     shell_get_time_date(&time, &date, &weekday);
-    sprintf(state_file_name_crash, "%s.%08u%08u.crash", state_file_name, date, time);
+    snprintf(state_file_name_crash, bufsize, "%s.%08u%08u.crash", state_file_name, date, time);
 
     gfile = my_fopen(state_file_name_crash, "wb");
     if (gfile != NULL) {
@@ -415,8 +417,12 @@ void core_keytimeout1() {
         display_command(0);
         /* If the program catalog was left up by GTO or XEQ,
          * don't paint over it */
-        if (mode_transientmenu == MENU_NONE || pending_command == CMD_NULL)
+        if (mode_transientmenu == MENU_NONE || pending_command == CMD_NULL) {
+            bool saved_prgm_mode = flags.f.prgm_mode;
+            flags.f.prgm_mode = 0;
             display_x(1);
+            flags.f.prgm_mode = saved_prgm_mode;
+        }
         flush_display();
     }
 }
@@ -429,7 +435,10 @@ void core_keytimeout2() {
             && (cmd_array[pending_command].flags & FLAG_NO_SHOW) == 0) {
         clear_row(0);
         draw_string(0, 0, "NULL", 4);
+        bool saved_prgm_mode = flags.f.prgm_mode;
+        flags.f.prgm_mode = 0;
         display_x(1);
+        flags.f.prgm_mode = saved_prgm_mode;
         flush_display();
         pending_command = CMD_CANCELLED;
     }
@@ -514,7 +523,17 @@ bool core_keyup() {
         /* INPUT active */
         if (pending_command == CMD_RUN || pending_command == CMD_SST
                 || pending_command == CMD_SST_UP || pending_command == CMD_SST_RT) {
-            int err = generic_sto(&input_arg, 0);
+            int err;
+            if (sp == -1) {
+                vartype_real zero;
+                zero.type = TYPE_REAL;
+                zero.x = 0;
+                stack[++sp] = (vartype *) &zero;
+                err = generic_sto(&input_arg, 0);
+                sp--;
+            } else {
+                err = generic_sto(&input_arg, 0);
+            }
             input_length = 0;
             if (err != ERR_NONE) {
                 pending_command = CMD_NONE;
@@ -760,67 +779,6 @@ char *core_list_programs() {
     return buf;
 }
 
-#ifdef IPHONE
-
-// This would have been a lot cleaner using fmemopen(), but that's only supported
-// in iOS 11 and later, and I'm not ready to give up on iOS 8 through 10 yet.
-
-static char *raw_buf;
-static size_t raw_size;
-static size_t raw_pos;
-
-static int raw_getc() {
-    if (raw_buf == NULL)
-        return fgetc(gfile);
-    else {
-        if (raw_pos < raw_size)
-            return raw_buf[raw_pos++] & 255;
-        else
-            return EOF;
-    }
-}
-
-static int raw_ungetc(int c) {
-    if (raw_buf == NULL)
-        return ungetc(c, gfile);
-    else {
-        raw_buf[--raw_pos] = (char) c;
-        return c;
-    }
-}
-
-static size_t raw_write(const char *buf, size_t size) {
-    if (raw_buf == NULL)
-        return fwrite(buf, 1, size, gfile);
-    else {
-        if (raw_pos + size > raw_size)
-            size = raw_size - raw_pos;
-        memcpy(raw_buf + raw_pos, buf, size);
-        raw_pos += size;
-        return size;
-    }
-}
-
-static void raw_close(const char *mode) {
-    if (raw_buf == NULL) {
-        if (ferror(gfile)) {
-            char msg[50];
-            sprintf(msg, "An error occurred during program %s.", mode);
-            shell_message(msg);
-        }
-        fclose(gfile);
-    }
-}
-
-#else
-
-#define raw_getc() fgetc(gfile)
-#define raw_ungetc(c) ungetc(c, gfile)
-#define raw_write(buf, size) fwrite(buf, 1, size, gfile)
-#define raw_close(dummy) fclose(gfile)
-
-#endif
-
 static void export_hp42s(int index) {
     int4 pc = 0;
     int cmd;
@@ -1025,7 +983,7 @@ static void export_hp42s(int index) {
                         const char *ptr = arg.val.xstr;
                         while (len > 0) {
                             if (buflen + 16 > 1000 - 50) {
-                                if (raw_write(buf, buflen) != buflen)
+                                if (fwrite(buf, 1, buflen, gfile) != buflen)
                                     goto done;
                                 buflen = 0;
                             }
@@ -1128,7 +1086,7 @@ static void export_hp42s(int index) {
                 continue;
         }
         if (buflen + cmdlen > 1000 - 50) {
-            if (raw_write(buf, buflen) != buflen)
+            if (fwrite(buf, 1, buflen, gfile) != buflen)
                 goto done;
             buflen = 0;
         }
@@ -1136,7 +1094,7 @@ static void export_hp42s(int index) {
             buf[buflen++] = cmdbuf[i];
     } while (cmd != CMD_END && pc < prgms[index].size);
     if (buflen > 0)
-        raw_write(buf, buflen);
+        fwrite(buf, 1, buflen, gfile);
     done:
     current_prgm = saved_prgm;
 }
@@ -1279,32 +1237,30 @@ void core_export_programs(int count, const int *indexes, const char *raw_file_na
             ssize_t size;
             memcpy(&buf, raw_file_name + 5, sizeof(char *));
             memcpy(&size, raw_file_name + 13, sizeof(ssize_t));
-            raw_buf = buf;
-            raw_size = size;
-            raw_pos = 0;
+            gfile = fmemopen(buf, size, "wb");
         } else {
-            raw_buf = NULL;
 #endif
             gfile = my_fopen(raw_file_name, "wb");
             if (gfile == NULL) {
                 char msg[1024];
                 int err = errno;
-                sprintf(msg, "Could not open \"%s\" for writing: %s (%d)", raw_file_name, strerror(err), err);
+                snprintf(msg, 1024, "Could not open \"%s\" for writing: %s (%d)", raw_file_name, strerror(err), err);
                 shell_message(msg);
                 return;
             }
 #ifdef IPHONE
         }
-    } else {
-        raw_buf = NULL;
 #endif
     }
     for (int i = 0; i < count; i++) {
         int p = indexes[i];
         export_hp42s(p);
     }
-    if (raw_file_name != NULL)
-        raw_close("export");
+    if (raw_file_name != NULL) {
+        if (ferror(gfile))
+            shell_message("An error occurred during program export.");
+        fclose(gfile);
+    }
 }
 
 static int hp42tofree42[] = {
@@ -1974,24 +1930,19 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
             ssize_t size;
             memcpy(&buf, raw_file_name + 5, sizeof(char *));
             memcpy(&size, raw_file_name + 13, sizeof(ssize_t));
-            raw_buf = buf;
-            raw_size = size;
-            raw_pos = 0;
+            gfile = fmemopen(buf, size, "rb");
         } else {
-            raw_buf = NULL;
 #endif
             gfile = my_fopen(raw_file_name, "rb");
             if (gfile == NULL) {
                 char msg[1024];
                 int err = errno;
-                sprintf(msg, "Could not open \"%s\" for reading: %s (%d)", raw_file_name, strerror(err), err);
+                snprintf(msg, 1024, "Could not open \"%s\" for reading: %s (%d)", raw_file_name, strerror(err), err);
                 shell_message(msg);
                 return;
             }
 #ifdef IPHONE
         }
-    } else {
-        raw_buf = NULL;
 #endif
     }
 
@@ -2022,7 +1973,7 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
 
     while (!done_flag) {
         skip:
-        byte1 = raw_getc();
+        byte1 = fgetc(gfile);
         if (byte1 == EOF)
             goto done;
         cmd = hp42tofree42[byte1];
@@ -2039,7 +1990,7 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                 arg.val.num--;
             goto store;
         } else if (flag == 2) {
-            suffix = raw_getc();
+            suffix = fgetc(gfile);
             if (suffix == EOF)
                 goto done;
             goto do_suffix;
@@ -2060,23 +2011,23 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                     else
                         byte1 += '0' - 0x10;
                     numbuf[numlen++] = byte1;
-                    byte1 = raw_getc();
+                    byte1 = fgetc(gfile);
                 } while (byte1 >= 0x10 && byte1 <= 0x1C);
                 if (byte1 == EOF)
                     done_flag = 1;
                 else if (byte1 != 0x00)
-                    raw_ungetc(byte1);
+                    ungetc(byte1, gfile);
                 numbuf[numlen++] = 0;
                 arg.val_d = parse_number_line(numbuf);
                 cmd = CMD_NUMBER;
                 arg.type = ARGTYPE_DOUBLE;
             } else if (byte1 == 0x1D || byte1 == 0x1E) {
                 cmd = byte1 == 0x1D ? CMD_GTO : CMD_XEQ;
-                str_len = raw_getc();
+                str_len = fgetc(gfile);
                 if (str_len == EOF)
                     goto done;
                 else if (str_len < 0x0F1) {
-                    raw_ungetc(str_len);
+                    ungetc(str_len, gfile);
                     goto skip;
                 } else
                     str_len -= 0x0F0;
@@ -2092,28 +2043,11 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                  * on the cmd_array table.
                  */
                 uint4 code;
-                byte2 = raw_getc();
+                byte2 = fgetc(gfile);
                 if (byte2 == EOF)
                     goto done;
                 code = (((unsigned int) byte1) << 8) | byte2;
-                if (code >= 0x0A7DB && code <= 0x0A7DD) {
-                    /* FUNC0, FUNC1, FUNC2: translate to FUNC nn */
-                    cmd = CMD_FUNC;
-                    arg.type = ARGTYPE_NUM;
-                    if (code == 0x0A7DB)
-                        arg.val.num = 0;
-                    else if (code == 0x0A7DC)
-                        arg.val.num = 11;
-                    else // code == 0x0A7DD
-                        arg.val.num = 21;
-                    goto store;
-                } else if (code == 0x0A7E0) {
-                    /* Unparameterized RTNERR: translate to RTNERR IND ST X */
-                    cmd = CMD_RTNERR;
-                    arg.type = ARGTYPE_IND_STK;
-                    arg.val.stk = 'X';
-                    goto store;
-                } else if (code >= 0x0a679 && code <= 0x0a67e) {
+                if (code >= 0x0a679 && code <= 0x0a67e) {
                     /* HP-41CX: X=NN? etc. */
                     switch (code & 0xf) {
                         case 0x9: cmd = CMD_X_EQ_NN; break;
@@ -2125,6 +2059,14 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                     }
                     arg.type = ARGTYPE_IND_STK;
                     arg.val.stk = 'Y';
+                    goto store;
+                }
+                if (code == 0x0a7f5) {
+                    /* NEWSTR; deprecated, replace with XSTR "" */
+                    cmd = CMD_XSTR;
+                    arg.type = ARGTYPE_XSTR;
+                    arg.length = 0;
+                    arg.val.xstr = NULL;
                     goto store;
                 }
                 for (i = 0; i < CMD_SENTINEL; i++)
@@ -2142,7 +2084,7 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                 goto store;
             } else if (byte1 == 0x0AE) {
                 /* GTO/XEQ IND */
-                suffix = raw_getc();
+                suffix = fgetc(gfile);
                 if (suffix == EOF)
                     goto done;
                 if ((suffix & 0x80) != 0)
@@ -2157,7 +2099,7 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                 goto skip;
             } else if (byte1 >= 0x0B1 && byte1 <= 0x0BF) {
                 /* 2-byte GTO */
-                byte2 = raw_getc();
+                byte2 = fgetc(gfile);
                 if (byte2 == EOF)
                     goto done;
                 cmd = CMD_GTO;
@@ -2166,10 +2108,10 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                 goto store;
             } else if (byte1 >= 0x0C0 && byte1 <= 0x0CD) {
                 /* GLOBAL */
-                byte2 = raw_getc();
+                byte2 = fgetc(gfile);
                 if (byte2 == EOF)
                     goto done;
-                str_len = raw_getc();
+                str_len = fgetc(gfile);
                 if (str_len == EOF)
                     goto done;
                 if (str_len < 0x0F1) {
@@ -2180,7 +2122,7 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                 } else {
                     /* LBL "" */
                     str_len -= 0x0F1;
-                    byte2 = raw_getc();
+                    byte2 = fgetc(gfile);
                     if (byte2 == EOF)
                         goto done;
                     cmd = CMD_LBL;
@@ -2189,10 +2131,10 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                 }
             } else if (byte1 >= 0x0D0 && byte1 <= 0x0EF) {
                 /* 3-byte GTO & XEQ */
-                byte2 = raw_getc();
+                byte2 = fgetc(gfile);
                 if (byte2 == EOF)
                     goto done;
-                suffix = raw_getc();
+                suffix = fgetc(gfile);
                 if (suffix == EOF)
                     goto done;
                 cmd = byte1 <= 0x0DF ? CMD_GTO : CMD_XEQ;
@@ -2200,7 +2142,7 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                 goto do_suffix;
             } else /* byte1 >= 0xF1 && byte1 <= 0xFF */ {
                 /* Strings and parameterized HP-42S extensions */
-                byte2 = raw_getc();
+                byte2 = fgetc(gfile);
                 if (byte2 == EOF)
                     goto done;
                 if ((byte2 & 0x080) == 0) {
@@ -2212,11 +2154,11 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                     cmd = CMD_XROM;
                     string_2:
                     str_len = byte1 - 0x0F0;
-                    raw_ungetc(byte2);
+                    ungetc(byte2, gfile);
                     arg.type = ARGTYPE_STR;
                     do_string:
                     for (i = 0; i < str_len; i++) {
-                        suffix = raw_getc();
+                        suffix = fgetc(gfile);
                         if (suffix == EOF)
                             goto done;
                         arg.val.text[i] = suffix;
@@ -2229,7 +2171,7 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                     arg.length = str_len;
                     if (assign) {
                         assign = 0;
-                        suffix = raw_getc();
+                        suffix = fgetc(gfile);
                         if (suffix == EOF)
                             goto done;
                         if (suffix > 17) {
@@ -2263,7 +2205,7 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                         goto store;
                     }
                     if (byte2 == 0xa7) {
-                        byte2 = raw_getc();
+                        byte2 = fgetc(gfile);
                         if (byte2 == EOF)
                             goto done;
                         byte1--;
@@ -2288,7 +2230,7 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                             goto done;
                         xstr_buf = newbuf;
                         while (str_len-- > 0) {
-                            int b = raw_getc();
+                            int b = fgetc(gfile);
                             if (b == EOF)
                                 goto done;
                             xstr_buf[xstr_len++] = b;
@@ -2303,7 +2245,7 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                         int ind;
                         if (byte1 != 0x0F2)
                             goto xrom_string;
-                        suffix = raw_getc();
+                        suffix = fgetc(gfile);
                         if (suffix == EOF)
                             goto done;
                         do_suffix:
@@ -2337,8 +2279,6 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                         if (byte2 == 0x0C0) {
                             /* ASSIGN */
                             str_len = byte1 - 0x0F2;
-                            if (str_len == 0)
-                                goto xrom_string;
                             assign = 1;
                             cmd = CMD_ASGN01;
                             arg.type = ARGTYPE_STR;
@@ -2351,7 +2291,7 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                                 goto xrom_string;
                             cmd = byte2 == 0x0C2 || byte2 == 0x0CA
                                     ? CMD_KEY1X : CMD_KEY1G;
-                            suffix = raw_getc();
+                            suffix = fgetc(gfile);
                             if (suffix == EOF)
                                 goto done;
                             if (suffix < 1 || suffix > 9) {
@@ -2367,7 +2307,7 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                                 arg.val.text[0] = byte2;
                                 arg.val.text[1] = suffix;
                                 for (i = 2; i < arg.length; i++) {
-                                    int c = raw_getc();
+                                    int c = fgetc(gfile);
                                     if (c == EOF)
                                         goto done;
                                     arg.val.text[i] = c;
@@ -2382,14 +2322,14 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                             /* KEYG/KEYX suffix */
                             if (byte1 != 0x0F3)
                                 goto xrom_string;
-                            suffix = raw_getc();
+                            suffix = fgetc(gfile);
                             if (suffix == EOF)
                                 goto done;
                             if (suffix < 1 || suffix > 9)
                                 goto bad_keyg_keyx;
                             cmd = byte2 == 0x0E2 ? CMD_KEY1X : CMD_KEY1G;
                             cmd += suffix - 1;
-                            suffix = raw_getc();
+                            suffix = fgetc(gfile);
                             if (suffix == EOF)
                                 goto done;
                             goto do_suffix;
@@ -2398,11 +2338,11 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
                             int sz;
                             if (byte1 != 0x0F3)
                                 goto xrom_string;
-                            suffix = raw_getc();
+                            suffix = fgetc(gfile);
                             if (suffix == EOF)
                                 goto done;
                             sz = suffix << 8;
-                            suffix = raw_getc();
+                            suffix = fgetc(gfile);
                             if (suffix == EOF)
                                 goto done;
                             sz += suffix;
@@ -2443,13 +2383,16 @@ void core_import_programs(int num_progs, const char *raw_file_name) {
     flags.f.trace_print = saved_trace;
     flags.f.normal_print = saved_normal;
 
-    if (raw_file_name != NULL)
-        raw_close("import");
+    if (raw_file_name != NULL) {
+        if (ferror(gfile))
+            shell_message("An error occurred during program import.");
+        fclose(gfile);
+    }
     free(xstr_buf);
 }
 
-static int real2buf(char *buf, phloat x) {
-    int bufptr = phloat2string(x, buf, 49, 2, 0, 3, 0, MAX_MANT_DIGITS);
+static int real2buf(char *buf, phloat x, const char *format = NULL, bool force_decimal = true) {
+    int bufptr = phloat2string(x, buf, 49, force_decimal ? 0 : 1, 0, 3, 0, MAX_MANT_DIGITS, format);
     /* Convert small-caps 'E' to regular 'e' */
     for (int i = 0; i < bufptr; i++)
         if (buf[i] == 24)
@@ -2457,7 +2400,7 @@ static int real2buf(char *buf, phloat x) {
     return bufptr;
 }
 
-static int complex2buf(char *buf, phloat re, phloat im, bool always_rect) {
+static int complex2buf(char *buf, phloat re, phloat im, bool always_rect, const char *format = NULL) {
     bool polar = !always_rect && flags.f.polar;
     phloat x, y;
     if (polar) {
@@ -2468,14 +2411,14 @@ static int complex2buf(char *buf, phloat re, phloat im, bool always_rect) {
         x = re;
         y = im;
     }
-    int bufptr = phloat2string(x, buf, 99, 2, 0, 3, 0, MAX_MANT_DIGITS);
+    int bufptr = phloat2string(x, buf, 99, 0, 0, 3, 0, MAX_MANT_DIGITS, format);
     if (polar) {
         string2buf(buf, 99, &bufptr, " \342\210\240 ", 5);
     } else {
         if (y >= 0 || p_isinf(y) != 0 || p_isnan(y))
             buf[bufptr++] = '+';
     }
-    bufptr += phloat2string(y, buf + bufptr, 99 - bufptr, 2, 0, 3, 0, MAX_MANT_DIGITS);
+    bufptr += phloat2string(y, buf + bufptr, 99 - bufptr, 0, 0, 3, 0, MAX_MANT_DIGITS, format);
     if (!polar)
         buf[bufptr++] = 'i';
     /* Convert small-caps 'E' to regular 'e' */
@@ -2655,14 +2598,16 @@ char *core_copy() {
         buf[0] = 0;
         return buf;
     } else if (stack[sp]->type == TYPE_REAL) {
+        const char *format = core_settings.localized_copy_paste ? number_format() : NULL;
         char *buf = (char *) malloc(50);
-        int bufptr = real2buf(buf, ((vartype_real *) stack[sp])->x);
+        int bufptr = real2buf(buf, ((vartype_real *) stack[sp])->x, format, false);
         buf[bufptr] = 0;
         return buf;
     } else if (stack[sp]->type == TYPE_COMPLEX) {
+        const char *format = core_settings.localized_copy_paste ? number_format() : NULL;
         char *buf = (char *) malloc(100);
         vartype_complex *c = (vartype_complex *) stack[sp];
-        int bufptr = complex2buf(buf, c->re, c->im, false);
+        int bufptr = complex2buf(buf, c->re, c->im, false, format);
         buf[bufptr] = 0;
         return buf;
     } else if (stack[sp]->type == TYPE_STRING) {
@@ -2672,6 +2617,7 @@ char *core_copy() {
         buf[bufptr] = 0;
         return buf;
     } else if (stack[sp]->type == TYPE_REALMATRIX) {
+        const char *format = core_settings.localized_copy_paste ? number_format() : NULL;
         vartype_realmatrix *rm = (vartype_realmatrix *) stack[sp];
         phloat *data = rm->array->data;
         char *is_string = rm->array->is_string;
@@ -2681,7 +2627,7 @@ char *core_copy() {
             for (int c = 0; c < rm->columns; c++) {
                 int bufptr;
                 if (is_string[n] == 0) {
-                    bufptr = real2buf(buf, data[n]);
+                    bufptr = real2buf(buf, data[n], format);
                     tb_write(&tb, buf, bufptr);
                 } else {
                     char *text;
@@ -2704,13 +2650,14 @@ char *core_copy() {
         }
         goto textbuf_finish;
     } else if (stack[sp]->type == TYPE_COMPLEXMATRIX) {
+        const char *format = core_settings.localized_copy_paste ? number_format() : NULL;
         vartype_complexmatrix *cm = (vartype_complexmatrix *) stack[sp];
         phloat *data = cm->array->data;
         char buf[100];
         int n = 0;
         for (int r = 0; r < cm->rows; r++) {
             for (int c = 0; c < cm->columns; c++) {
-                int bufptr = complex2buf(buf, data[n], data[n + 1], true);
+                int bufptr = complex2buf(buf, data[n], data[n + 1], true, format);
                 if (c < cm->columns - 1)
                     buf[bufptr++] = '\t';
                 tb_write(&tb, buf, bufptr);
@@ -2733,7 +2680,7 @@ const char *STR_INF = "<Infinity>";
 const char *STR_NEG_INF = "<-Infinity>";
 const char *STR_NAN = "<Not a Number>";
 
-static int scan_number(const char *buf, int len, int pos) {
+static int scan_number(const char *buf, int len, int pos, const char *format, bool no_sep = false) {
     if (buf[pos] == '<' || len > 1 && (buf[pos] == '-' || buf[pos] == '+') && buf[pos + 1] == '<') {
         int off = buf[pos] == '<' ? 0 : 1;
         if (len >= 10 + off && strncmp(buf + pos + off, STR_INF, 10) == 0)
@@ -2751,13 +2698,19 @@ static int scan_number(const char *buf, int len, int pos) {
     // 3: after E
     // 4: in exponent
     int state = 0;
-    char dec = flags.f.decimal_point ? '.' : ',';
-    char sep = flags.f.decimal_point ? ',' : '.';
+    char dec, sep;
+    if (format == NULL) {
+        dec = flags.f.decimal_point ? '.' : ',';
+        sep = flags.f.decimal_point ? ',' : '.';
+    } else {
+        dec = format[0];
+        sep = format[1];
+    }
     for (int p = pos; p < len; p++) {
         char c = buf[p];
         switch (state) {
             case 0:
-                if ((c >= '0' && c <= '9') || c == '+' || c == '-')
+                if (c >= '0' && c <= '9' || c == '+' || c == '-')
                     state = 1;
                 else if (c == dec)
                     state = 2;
@@ -2767,7 +2720,7 @@ static int scan_number(const char *buf, int len, int pos) {
                     return p;
                 break;
             case 1:
-                if ((c >= '0' && c <= '9') || c == sep || c == ' ')
+                if (c >= '0' && c <= '9' || !no_sep && (c == sep || c == ' '))
                     /* state = 1 */;
                 else if (c == dec)
                     state = 2;
@@ -2802,7 +2755,7 @@ static int scan_number(const char *buf, int len, int pos) {
     return len;
 }
 
-static bool parse_phloat(const char *p, int len, phloat *res) {
+static bool parse_phloat(const char *p, int len, phloat *res, const char *format) {
     if (p[0] == '<' || len > 1 && (p[0] == '-' || p[0] == '+') && p[1] == '<') {
         int off = p[0] == '<' ? 0 : 1;
         bool neg = p[0] == '-';
@@ -2826,7 +2779,8 @@ static bool parse_phloat(const char *p, int len, phloat *res) {
     // comply with those restrictions.
     // Note that this function does not check well-formedness;
     // that part should be checked beforehand using scan_number().
-    char buf[100];
+    const size_t BSIZE = 100;
+    char buf[BSIZE];
     bool in_mant = true;
     bool leading_zero = true;
     int exp_offset = 0;
@@ -2836,9 +2790,15 @@ static bool parse_phloat(const char *p, int len, phloat *res) {
     bool in_int_mant = true;
     bool empty_mant = true;
     int i = 0, j = 0;
-    char decimal = flags.f.decimal_point ? '.' : ',';
-    char separator = flags.f.decimal_point ? ',' : '.';
-    while (i < 100 && j < len) {
+    char decimal, separator;
+    if (format == NULL) {
+        decimal = flags.f.decimal_point ? '.' : ',';
+        separator = flags.f.decimal_point ? ',' : '.';
+    } else {
+        decimal = format[0];
+        separator = format[1];
+    }
+    while (i < BSIZE - 1 && j < len) {
         char c = p[j++];
         if (c == 0)
             break;
@@ -2850,7 +2810,7 @@ static bool parse_phloat(const char *p, int len, phloat *res) {
             in_mant = false;
         } else if (c == decimal) {
             in_int_mant = false;
-            buf[i++] = c;
+            buf[i++] = flags.f.decimal_point ? '.' : ',';
         } else if (c >= '0' && c <= '9') {
             if (in_mant) {
                 empty_mant = false;
@@ -2887,13 +2847,18 @@ static bool parse_phloat(const char *p, int len, phloat *res) {
     }
     if (in_mant && empty_mant)
         return false;
-    if (in_mant && mant_digits == 0)
+    if (in_mant && mant_digits == 0 && i < BSIZE - 1)
         buf[i++] = '0';
     if (neg_exp)
         exp = -exp;
     exp += exp_offset;
-    if (exp != 0)
-        i += sprintf(buf + i, "\030%d", exp);
+    if (exp != 0) {
+        i += snprintf(buf + i, BSIZE - i, "\030%d", exp);
+        if (i > BSIZE - 1)
+            i = BSIZE - 1;
+    }
+    if (i == 0)
+        return false;
     int err = string2phloat(buf, i, res);
     if (err == 0)
         return true;
@@ -3025,9 +2990,9 @@ static int ascii2hp(char *dst, int dstlen, const char *src, int srclen /* = -1 *
             case 0x2018:                    // left curly single quote
             case 0x2019: code =  39; break; // right curly single quote
             case 0x2191: code =  94; break; // upward-pointing arrow
+            case 0x2212: code =  45; break; // minus sign
             case 0x22a2:                    // right tack sign (i41CX)
             case 0x22a6:                    // assertion sign (Emu42)
-            case 0x2212: code =  45; break; // minus sign
             case 0x251c: code = 127; break; // append sign
             case 0x028f: code = 129; break; // small-caps y
             case 0x240a: code = 138; break; // LF symbol
@@ -3233,17 +3198,14 @@ static vartype *parse_base(const char *buf, int len) {
     bool neg = false;
     int8 n = 0;
     int i = 0;
-    while (buf[i] == ' ')
+    while (i < len && buf[i] == ' ')
         i++;
-    if (buf[i] == '-') {
+    if (i < len && buf[i] == '-') {
         neg = true;
         i++;
     }
-    while (bits < 64) {
-        char c = buf[i];
-        if (c == 0)
-            break;
-        i++;
+    while (i < len && bits < 64) {
+        char c = buf[i++];
         int d;
         if (base == 16) {
             if (c >= '0' && c <= '9')
@@ -3263,22 +3225,19 @@ static vartype *parse_base(const char *buf, int len) {
         n = n << bpd | d;
         bits += bpd;
     }
-    while (buf[i] == ' ')
+    while (i < len && buf[i] == ' ')
         i++;
-    if (buf[i] != 0)
+    if (i < len)
         return NULL;
     if (bits == 0)
         return NULL;
     if (neg)
         n = -n;
-    if ((n & 0x800000000LL) == 0)
-        n &= 0x7ffffffffLL;
-    else
-        n |= 0xfffffff000000000LL;
+    base_range_check(&n, true);
     return new_real((phloat) n);
 }
 
-static int parse_scalar(const char *buf, int len, bool strict, phloat *re, phloat *im, int *slen) {
+static int parse_scalar(const char *buf, int len, bool strict, phloat *re, phloat *im, int *slen, const char *format = NULL) {
     int i, s1, e1, s2, e2;
     bool polar = false;
     bool empty_im = false;
@@ -3289,7 +3248,7 @@ static int parse_scalar(const char *buf, int len, bool strict, phloat *re, phloa
     while (i < len && buf[i] == ' ')
         i++;
     s1 = i;
-    i = scan_number(buf, len, i);
+    i = scan_number(buf, len, i, format);
     e1 = i;
     if (e1 == s1)
         goto attempt_2;
@@ -3302,7 +3261,7 @@ static int parse_scalar(const char *buf, int len, bool strict, phloat *re, phloa
     while (i < len && buf[i] == ' ')
         i++;
     s2 = i;
-    i = scan_number(buf, len, i);
+    i = scan_number(buf, len, i, format);
     e2 = i;
     if (e2 == s2)
         goto attempt_2;
@@ -3319,10 +3278,10 @@ static int parse_scalar(const char *buf, int len, bool strict, phloat *re, phloa
     while (i < len && buf[i] == ' ')
         i++;
     s1 = i;
-    i = scan_number(buf, len, i);
+    i = scan_number(buf, len, i, format);
     e1 = i;
     s2 = i;
-    i = scan_number(buf, len, i);
+    i = scan_number(buf, len, i, format);
     e2 = i;
     if (i < len && (buf[i] == 'i' || buf[i] == 'j'))
         i++;
@@ -3364,7 +3323,7 @@ static int parse_scalar(const char *buf, int len, bool strict, phloat *re, phloa
     while (i < len && buf[i] == ' ')
         i++;
     s1 = i;
-    i = scan_number(buf, len, i);
+    i = scan_number(buf, len, i, format, true);
     e1 = i;
     if (e1 == s1)
         goto attempt_4;
@@ -3377,7 +3336,7 @@ static int parse_scalar(const char *buf, int len, bool strict, phloat *re, phloa
     while (i < len && buf[i] == ' ')
         i++;
     s2 = i;
-    i = scan_number(buf, len, i);
+    i = scan_number(buf, len, i, format, true);
     e2 = i;
     if (e2 == s2)
         goto attempt_4;
@@ -3395,11 +3354,11 @@ static int parse_scalar(const char *buf, int len, bool strict, phloat *re, phloa
     finish_complex:
     if (no_re)
         *re = 0;
-    else if (!parse_phloat(buf + s1, e1 - s1, re))
+    else if (!parse_phloat(buf + s1, e1 - s1, re, format))
         goto attempt_4;
     if (empty_im)
         *im = buf[s2] == '+' ? 1 : -1;
-    else if (!parse_phloat(buf + s2, e2 - s2, im))
+    else if (!parse_phloat(buf + s2, e2 - s2, im, format))
         goto attempt_4;
     if (polar)
         generic_p2r(*re, *im, re, im);
@@ -3411,7 +3370,7 @@ static int parse_scalar(const char *buf, int len, bool strict, phloat *re, phloa
     while (i < len && buf[i] == ' ')
         i++;
     s1 = i;
-    i = scan_number(buf, len, i);
+    i = scan_number(buf, len, i, format);
     e1 = i;
     if (e1 == s1)
         goto finish_string;
@@ -3421,7 +3380,7 @@ static int parse_scalar(const char *buf, int len, bool strict, phloat *re, phloa
         if (i < len)
             goto finish_string;
     }
-    if (parse_phloat(buf + s1, e1 - s1, re))
+    if (parse_phloat(buf + s1, e1 - s1, re, format))
         return TYPE_REAL;
 
     finish_string:
@@ -3529,15 +3488,18 @@ static void paste_programs(const char *buf) {
             } else {
                 // Check for 1/X, 10^X, 4STK, and generalized comparisons with 0
                 int len = hpend - prev_hppos;
-                if (len == 3 && strncmp(hpbuf + prev_hppos, "1/X", 3) == 0) {
+                if ((len == 3 || len > 3 && hpbuf[prev_hppos + 3] == ' ')
+                        && strncmp(hpbuf + prev_hppos, "1/X", 3) == 0) {
                     cmd = CMD_INV;
                     arg.type = ARGTYPE_NONE;
                     goto store;
-                } else if (len == 4 && strncmp(hpbuf + prev_hppos, "10^X", 4) == 0) {
+                } else if ((len == 4 || len > 4 && hpbuf[prev_hppos + 4] == ' ')
+                        && strncmp(hpbuf + prev_hppos, "10^X", 4) == 0) {
                     cmd = CMD_10_POW_X;
                     arg.type = ARGTYPE_NONE;
                     goto store;
-                } else if (len == 4 && strncmp(hpbuf + prev_hppos, "4STK", 4) == 0) {
+                } else if ((len == 4 || len > 4 && hpbuf[prev_hppos + 4] == ' ')
+                        && strncmp(hpbuf + prev_hppos, "4STK", 4) == 0) {
                     cmd = CMD_4STK;
                     arg.type = ARGTYPE_NONE;
                     goto store;
@@ -3651,7 +3613,7 @@ static void paste_programs(const char *buf) {
                 cmd_end++;
             if (cmd_end == hppos)
                 goto line_done;
-            if (cmd_end - hppos == 5 && hpbuf[hppos] == 'X' && strncmp(hpbuf + 2, "NN?", 3) == 0) {
+            if (cmd_end - hppos == 5 && hpbuf[hppos] == 'X' && strncmp(hpbuf + hppos + 2, "NN?", 3) == 0) {
                 // HP-41CX: X=NN? etc.
                 switch (hpbuf[hppos + 1]) {
                     case '=': cmd = CMD_X_EQ_NN; goto cx_comp;
@@ -3667,6 +3629,14 @@ static void paste_programs(const char *buf) {
                 arg.val.stk = 'Y';
                 goto store;
                 not_cx_comp:;
+            }
+            if (cmd_end - hppos == 6 && strncmp(hpbuf + hppos, "NEWSTR", 6) == 0) {
+                // NEWSTR; obsolete function replaced by XSTR ""
+                cmd = CMD_XSTR;
+                arg.type = ARGTYPE_XSTR;
+                arg.length = 0;
+                arg.val.xstr = NULL;
+                goto store;
             }
             cmd = find_builtin(hpbuf + hppos, cmd_end - hppos);
             int tok_start, tok_end;
@@ -4005,18 +3975,6 @@ static void paste_programs(const char *buf) {
                 arg.type = ARGTYPE_NUM;
                 arg.val.num = (a << 6) | b;
                 goto store;
-            } else if ((string_equals(hpbuf + hppos, cmd_end - hppos - 1, "FNC", 3)
-                    || string_equals(hpbuf + hppos, cmd_end - hppos - 1, "FUNC", 4))
-                    && hpbuf[cmd_end - 1] >= '0'
-                    && hpbuf[cmd_end - 1] <= '2') {
-                cmd = CMD_FUNC;
-                arg.type = ARGTYPE_NUM;
-                switch (hpbuf[cmd_end - 1]) {
-                    case '0': arg.val.num =  0; break;
-                    case '1': arg.val.num = 11; break;
-                    case '2': arg.val.num = 21; break;
-                }
-                goto store;
             } else {
                 // Number or bust!
                 if (nexttoken(hpbuf, hppos, hpend, &tok_start, &tok_end)) {
@@ -4087,12 +4045,6 @@ static void paste_programs(const char *buf) {
             store_command_after(&pc, cmd, &arg, numbuf);
 
         line_done:
-        if (cmd == CMD_RTNERR && arg.type == ARGTYPE_NONE) {
-            // Hack to handle RTNERR with no argument as RTNERR IND ST X
-            arg.type = ARGTYPE_IND_STK;
-            arg.val.stk = 'X';
-            goto store;
-        }
         pos = end + 1;
         if (hpbuf != hpbuf_s) {
             free(hpbuf);
@@ -4416,7 +4368,8 @@ void core_paste(const char *buf) {
             if (v == NULL) {
                 phloat re, im;
                 int slen;
-                int type = parse_scalar(hpbuf, len, false, &re, &im, &slen);
+                const char *format = core_settings.localized_copy_paste ? number_format() : NULL;
+                int type = parse_scalar(hpbuf, len, false, &re, &im, &slen, format);
                 switch (type) {
                     case TYPE_REAL:
                         v = new_real(re);
@@ -4462,6 +4415,7 @@ void core_paste(const char *buf) {
             int pos = 0;
             int spos = 0;
             int p = 0, row = 0, col = 0;
+            const char *format = core_settings.localized_copy_paste ? number_format() : NULL;
             while (row < rows) {
                 c = buf[pos++];
                 if (c == 0 || c == '\t' || c == '\r' || c == '\n') {
@@ -4475,7 +4429,7 @@ void core_paste(const char *buf) {
                     spos = pos;
                     phloat re, im;
                     int slen;
-                    int type = parse_scalar(hpbuf, hplen, true, &re, &im, &slen);
+                    int type = parse_scalar(hpbuf, hplen, true, &re, &im, &slen, format);
                     if (is_string != NULL) {
                         switch (type) {
                             case TYPE_REAL:
@@ -4680,7 +4634,8 @@ void do_interactive(int command) {
     if (command == CMD_GOTOROW) {
         if (sp != -1) {
             err = docmd_stoel(NULL);
-            if (err != ERR_NONE) {
+            if (err != ERR_NONE && err != ERR_NONEXISTENT) {
+                // Nonexistent happens with empty lists
                 display_error(err, true);
                 redisplay();
                 return;
@@ -4741,7 +4696,7 @@ void do_interactive(int command) {
             incomplete_saved_highlight_row = prgm_highlight_row;
             if (pc == -1)
                 pc = 0;
-            else if (prgms[current_prgm].text[pc] != CMD_END)
+            else if (!prgms[current_prgm].is_end(pc))
                 pc += get_command_length(current_prgm, pc);
             prgm_highlight_row = 1;
             start_incomplete_command(command);
@@ -4842,6 +4797,7 @@ static synonym_spec hp41_synonyms[] =
     { "X>=Y?",  false, 5, CMD_X_GE_Y  },
     { "S-N",    false, 3, CMD_S_TO_N  },
     { "N-S",    false, 3, CMD_N_TO_S  },
+    { "NN-S",   false, 4, CMD_NN_TO_S },
     { "C-N",    false, 3, CMD_C_TO_N  },
     { "N-C",    false, 3, CMD_N_TO_C  },
     { "X<>?",   false, 4, CMD_X_NE_NN },
@@ -4869,7 +4825,6 @@ int find_builtin(const char *name, int namelen) {
     }
 
     for (i = 0; true; i++) {
-        if (i == CMD_OPENF) i += 14; // Skip COPAN
         if (i == CMD_SENTINEL)
             break;
         if ((cmd_array[i].flags & FLAG_HIDDEN) != 0)
@@ -5036,8 +4991,8 @@ void start_incomplete_command(int cmd_id) {
             display_error(ERR_NO_REAL_VARIABLES, false);
         }
     } else if (argtype == ARG_MAT) {
-        if (flags.f.prgm_mode || vars_exist(CATSECT_MAT))
-            set_catalog_menu(CATSECT_MAT_ONLY);
+        if (flags.f.prgm_mode || vars_exist(CATSECT_MAT_LIST))
+            set_catalog_menu(CATSECT_MAT_LIST_ONLY);
         else if (cmd_id != CMD_DIM) {
             mode_command_entry = false;
             display_error(ERR_NO_MATRIX_VARIABLES, false);
@@ -5184,7 +5139,7 @@ void start_alpha_prgm_line() {
     incomplete_saved_highlight_row = prgm_highlight_row;
     if (pc == -1)
         pc = 0;
-    else if (prgms[current_prgm].text[pc] != CMD_END)
+    else if (!prgms[current_prgm].is_end(pc))
         pc += get_command_length(current_prgm, pc);
     prgm_highlight_row = 1;
     if (cmdline_row == 1)
@@ -5243,7 +5198,7 @@ static int handle_error(int error) {
                 || error == ERR_STOP)
             flags.f.stack_lift_disable = mode_disable_stack_lift;
         if (error == ERR_NO) {
-            if (prgms[current_prgm].text[pc] != CMD_END)
+            if (!prgms[current_prgm].is_end(pc))
                 pc += get_command_length(current_prgm, pc);
         } else if (error == ERR_STOP) {
             if (pc >= prgms[current_prgm].size)
@@ -5286,7 +5241,7 @@ static int handle_error(int error) {
                 || error == ERR_STOP)
             flags.f.stack_lift_disable = mode_disable_stack_lift;
         if (error == ERR_NO) {
-            if (prgms[current_prgm].text[pc] != CMD_END)
+            if (!prgms[current_prgm].is_end(pc))
                 pc += get_command_length(current_prgm, pc);
             goto noerr;
         } else if (error == ERR_NONE || error == ERR_YES || error == ERR_STOP) {
@@ -5336,4 +5291,26 @@ static int handle_error(int error) {
             display_error(error, true);
         return 0;
     }
+}
+
+const char *number_format() {
+    const char *uf = shell_number_format();
+    static char df[9];
+    df[0] = 0;
+    int len = ascii2hp(df, 4, uf);
+    if (len >= 4)
+        df[4] = 0;
+    else
+        df[1] = 0;
+    // Sanity enforcement:
+    // Decimal must be '.' or ','; default to '.'
+    // Grouping char must be 0 (no grouping), '.', ',', '\'', or ' '; default to 0
+    // Primary and secondary group sizes must be between 1 and 9; default to no grouping
+    if (df[0] != ',')
+        df[0] = '.';
+    if (df[1] != 0 && df[1] != '.' && df[1] != ',' && df[1] != '\'' && df[1] != ' ')
+        df[1] = 0;
+    if (df[1] != 0 && !(df[2] >= '1' && df[2] <= '9' && df[3] >= '1' && df[3] <= '9'))
+        df[1] = 0;
+    return df;
 }
