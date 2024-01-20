@@ -2550,7 +2550,7 @@ void print_program_line(int prgm_index, int4 pc) {
 int command2buf(char *buf, int len, int cmd, const arg_struct *arg) {
     int bufptr = 0;
 
-    int4 xrom_arg;
+    int4 xrom_arg = 0;
     if ((cmd_array[cmd].code1 & 0xf8) == 0xa0 && (cmd_array[cmd].flags & FLAG_HIDDEN) != 0) {
         xrom_arg = (cmd_array[cmd].code1 << 8) | cmd_array[cmd].code2;
         cmd = CMD_XROM;

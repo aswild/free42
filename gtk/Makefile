@@ -17,11 +17,6 @@
 
 PKG_CONFIG ?= pkg-config
 
-# WILD XXX
-#	 -Wno-class-memaccess \
-#	 -Wno-unknown-warning-option \
-#
-
 CPPFLAGS += -MMD
 CFLAGS ?= -O2
 

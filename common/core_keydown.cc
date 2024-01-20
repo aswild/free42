@@ -1675,7 +1675,7 @@ void keydown_command_entry(int shift, int key) {
         if (key == KEY_ENTER) {
             int i;
             if (incomplete_length == 0) {
-                int catsect;
+                int catsect = CATSECT_TOP;
                 if (mode_commandmenu == MENU_NONE
                         || (mode_commandmenu == MENU_CATALOG
                             && (catsect = get_cat_section()) == CATSECT_TOP

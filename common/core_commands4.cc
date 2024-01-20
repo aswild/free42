@@ -133,6 +133,7 @@ int docmd_insr(arg_struct *arg) {
             case TYPE_REALMATRIX: esize = sizeof(phloat); break;
             case TYPE_COMPLEXMATRIX: esize = 2 * sizeof(phloat); break;
             case TYPE_LIST: esize = sizeof(vartype *); break;
+            default: return ERR_INTERNAL_ERROR;
         }
         double d_bytes = ((double) (rows + 1)) * ((double) columns) * esize;
         if (((double) (int4) d_bytes) != d_bytes)
@@ -543,7 +544,7 @@ int docmd_putm(arg_struct *arg) {
 }
 
 int docmd_rclel(arg_struct *arg) {
-    vartype *m, *v;
+    vartype *m = NULL, *v= NULL;
     int err = matedit_get(&m);
     if (err != ERR_NONE)
         return err;

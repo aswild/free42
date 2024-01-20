@@ -1481,10 +1481,10 @@ int docmd_xstr(arg_struct *arg) {
 
 static int concat(bool extend) {
     if (stack[sp - 1]->type == TYPE_STRING) {
-        char *text;
-        int len;
-        char buf[44];
-        int templen;
+        char *text = NULL;
+        int len = 0;
+        char buf[44] = {0};
+        int templen = 0;
         if (stack[sp]->type == TYPE_STRING) {
             vartype_string *s = (vartype_string *) stack[sp];
             text = s->txt();
@@ -1757,6 +1757,7 @@ int docmd_head(arg_struct *arg) {
                 case 'Z': idx = 2; break;
                 case 'T': idx = 3; break;
                 case 'L': idx = -1; break;
+                default: return ERR_INTERNAL_ERROR;
             }
             if (idx == -1) {
                 s = lastx;
